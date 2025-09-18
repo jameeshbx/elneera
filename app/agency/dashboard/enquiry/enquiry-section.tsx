@@ -189,14 +189,25 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
   const fetchEnquiries = async () => {
     try {
       setLoading(true)
-      const response = await fetch("/api/enquiries")
+      const response = await fetch("/api/enquiries", { cache: "no-store" })
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || "Failed to fetch enquiries")
+        console.error("API error result:", result)
+        toast.error(result.error || "Failed to fetch enquiries")
+        setColumns(initialColumns.map((col) => ({ ...col, enquiries: [] })))
+        return;
       }
 
-      const enquiries = Array.isArray(result) ? result : []
+      if (!Array.isArray(result)) {
+        console.error("API did not return an array:", result)
+        toast.error("Unexpected API response for enquiries")
+        setColumns(initialColumns.map((col) => ({ ...col, enquiries: [] })))
+        return;
+      }
+
+      const enquiries = result;
+      console.log("Fetched enquiries:", enquiries);
 
       const cols = initialColumns.map((col) => ({
         ...col,
@@ -363,11 +374,11 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
     if (typeof window !== "undefined") {
       localStorage.setItem("currentEnquiry", JSON.stringify(enquiry))
     }
-    router.push(`/agency/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
+    router.push(`/agency-admin/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
   }
 
   const handleViewLeads = () => {
-    router.push("/agency/dashboard/enquiry/view-leads")
+    router.push("/agency-admin/dashboard/enquiry/view-leads")
   }
 
   const renderTagSpecificFields = () => {
