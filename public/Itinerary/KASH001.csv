@@ -1,0 +1,27 @@
+quoteId,name,days,nights,startDate,costINR,costUSD,guests,adults,kids
+KASH001,Kashmir Family,3,2,11/08/2025,38500,500,5,2,3
+
+day,time,activity,type,description
+1,8:00 AM,Breakfast,meal,Start your day with traditional Kashmiri breakfast
+1,10:00 AM,Pickup for trekking,transfer,Hotel pickup for exciting trekking adventure
+1,12:30 PM,Lunch,meal,Enjoy local cuisine with mountain views
+1,2:00 PM,Adventure activities,adventure,Thrilling outdoor adventure activities
+1,4:30 PM,Tea Tasting,activity,Experience authentic Kashmiri tea culture
+1,5:00 PM,Horse riding,adventure,Scenic horse riding through valleys
+1,7:00 PM,Cultural Activities,activity,Traditional Kashmiri cultural performances
+1,9:00 PM,Dinner,meal,Delicious dinner with local specialties
+2,8:00 AM,Breakfast,meal,Fresh morning breakfast
+2,10:00 AM,Pickup for Sight Seeing,sightseeing,Explore famous Kashmir attractions
+2,12:30 PM,Lunch,meal,Midday meal at scenic location
+2,2:00 PM,Skiing,adventure,Exciting skiing experience
+2,4:30 PM,Tea Tasting,activity,Afternoon tea break
+2,5:00 PM,Rafting,adventure,White water rafting adventure
+2,7:00 PM,Leisure Activities,activity,Relaxing evening activities
+2,9:00 PM,Dinner,meal,Evening dinner
+3,8:00 AM,Breakfast,meal,Final day breakfast
+3,10:00 AM,Pickup for trekking,adventure,Last trekking experience
+3,12:30 PM,Lunch,meal,Farewell lunch
+3,2:00 PM,Camping,adventure,Short camping experience
+3,4:30 PM,Tea Tasting,activity,Final tea session
+3,5:00 PM,Departure,transfer,Check out and departure preparation
+3,7:00 PM,Airport Drop,transfer,Safe transfer to airport

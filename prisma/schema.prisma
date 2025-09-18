@@ -1,0 +1,1179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+model File {
+  id                    String      @id @default(uuid())
+  url                   String
+  name                  String
+  size                  Int
+  type                  String
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  // Agency Form relations (one-to-one)
+  agencyBusinessLicense AgencyForm? @relation("AgencyFormBusinessLicense")
+  agencyLogo            AgencyForm? @relation("AgencyFormLogo")
+
+  // Other existing relations
+  dmcPaymentReceipt   DmcPayment?    @relation("DmcPaymentReceipt")
+  managerProfile      Manager?       @relation("ManagerProfile")
+  userProfile         UserForm?      @relation("UserProfileImage")
+  userProfileImage    User?          @relation("UserProfileImage")
+  paymentMethodQRCode PaymentMethod? @relation("PaymentMethodQRCode")
+  adminProfile        Admin?         @relation("AdminProfile")
+
+  // QR Code relation
+  agencyPaymentMethodQRCode AgencyPaymentMethod? @relation("AgencyPaymentMethodQRCode")
+
+  @@map("file")
+}
+
+model User {
+  id          String  @id @default(cuid())
+  email       String  @unique
+  password    String
+  name        String?
+  companyName String
+  phone       String?
+
+  businessType   BusinessType
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  role           Role           @default(USER)
+  userType       UserType
+  isOnline       Boolean        @default(false)
+  agencyId       String?
+  dmcId          String?
+  profileImgId   String?        @unique
+  passwordResets PasswordReset?
+  agency         Agency?        @relation(fields: [agencyId], references: [id])
+  dmc            DMC?           @relation(fields: [dmcId], references: [id])
+  profileImage   File?          @relation("UserProfileImage", fields: [profileImgId], references: [id])
+  comments       Comment[]      @relation("CommentAuthor")
+  agencyForms    AgencyForm[]   @relation("AgencyFormCreator")
+
+  @@index([email])
+  @@index([role])
+  @@index([agencyId])
+  @@index([dmcId])
+  @@index([profileImgId])
+}
+
+model Agency {
+  id             String                @id @default(uuid())
+  name           String
+  config         Json
+  createdBy      String
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  subscriptions  Subscription[]
+  users          User[]
+  paymentMethods AgencyPaymentMethod[]
+
+  customerPayments CustomerPayment[]
+
+  @@index([name])
+}
+
+model DMC {
+  id               String          @id @default(uuid())
+  name             String
+  email            String
+  config           Json
+  contactPerson    String?
+  createdBy        String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  // Relations
+  users            User[]
+  quotes           quotes[]        @relation("DMCQuotes")
+
+  @@index([name])
+}
+
+// Keep the existing quotes table structure to preserve data
+model quotes {
+  id                   String    @id @default(cuid())
+  enquiryId            String?
+  customerId           String?
+  agencyId             String?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  submitted           Boolean   @default(false)
+  submittedAt         DateTime?
+  submittedBy         String?
+  name                String?
+  config              Json?
+  contactPerson       String?
+  dmcId               String?
+  amount              Int?
+  comments            String?
+  commission          Int?
+  commissionType      String?
+  commissionValue     Int?
+  commissionAmount    Int?
+  
+  // Add these missing fields that were causing the original errors
+  phoneNumber         String?
+  designation         String?
+  email               String?
+  status              String?
+  primaryCountry      String?
+  destinationsCovered String[]
+  cities              String[]
+
+  // Relations
+  dmc DMC? @relation("DMCQuotes", fields: [dmcId], references: [id])
+
+
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Plan {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  maxRequests   Int
+  maxUsers      Int
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+model Feature {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  description   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id           String      @id @default(uuid())
+  agencyId     String
+  planId       String
+  featureId    String
+  requestLimit Int
+  userLimit    Int
+  agencyFormId String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  agencyForm   AgencyForm? @relation(fields: [agencyFormId], references: [id], onDelete: Cascade)
+  agency       Agency      @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  feature      Feature     @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  plan         Plan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([agencyId, featureId])
+  @@index([agencyId])
+  @@index([planId])
+  @@index([featureId])
+  @@index([agencyFormId])
+}
+
+model AgencyForm {
+  id                  String      @id @default(uuid())
+  name                String
+  config              Json        @default("{}")
+  contactPerson       String?
+  agencyType          AgencyType?
+  designation         String?
+  phoneNumber         String?
+  phoneCountryCode    String?     @default("+91")
+  ownerName           String?
+  email               String?
+  companyPhone        String?
+  status              String?     @default("PENDING")
+  logoPath            String?
+  businessLicensePath String?
+  companyPhoneCode    String?     @default("+91")
+  website             String?
+  landingPageColor    String?     @default("#4ECDC4")
+  gstRegistered       Boolean?    @default(true)
+  gstNumber           String?
+  yearOfRegistration  String?
+  logoId              String?     @unique
+  businessLicenseId   String?     @unique
+  panNumber           String?
+  panType             PanType?
+  headquarters        String?
+  country             String?     @default("INDIA")
+  yearsOfOperation    String?
+  createdBy           String
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  businessLicense File?          @relation("AgencyFormBusinessLicense", fields: [businessLicenseId], references: [id])
+  logo            File?          @relation("AgencyFormLogo", fields: [logoId], references: [id])
+  subscriptions   Subscription[]
+  creator         User           @relation("AgencyFormCreator", fields: [createdBy], references: [id])
+
+  @@index([name])
+  @@index([email])
+  @@index([createdBy])
+  @@index([logoId])
+  @@index([businessLicenseId])
+  @@map("AgencyForm")
+}
+
+model DMCForm {
+  id                  String          @id @default(uuid())
+  name                String
+  config              Json            @default("{}")
+  contactPerson       String?
+  designation         String?
+  phoneNumber         String?
+  phoneCountryCode    String?         @default("+91")
+  ownerName           String?
+  email               String?
+  ownerPhoneNumber    String?
+  ownerPhoneCode      String?         @default("+91")
+  website             String?
+  primaryCountry      String?
+  destinationsCovered String?
+  cities              String?
+  gstRegistered       Boolean?        @default(true)
+  gstNumber           String?
+  yearOfRegistration  String?
+  panNumber           String?
+  panType             PanType?
+  headquarters        String?
+  country             String?
+  yearsOfExperience   String?
+  createdBy           String
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  status              DMCStatus       @default(ACTIVE)
+  agencyId            String?
+  
+  sharedDMCItems      SharedDMCItem[] @relation("SharedDMCItems")
+  paymentMethods      PaymentMethod[]
+  commissions         Commission[]
+  dmcPayments         DmcPayment[]
+
+  @@index([name])
+  @@index([email])
+  @@index([createdBy])
+  @@index([agencyId])
+  @@index([status])
+}
+
+model Manager {
+  id        String    @id @default(uuid())
+  name      String
+  phone     String
+  email     String    @unique
+  username  String    @unique
+  password  String
+  profileId String?   @unique
+  createdAt DateTime  @default(now())
+  status    String    @default("INACTIVE")
+  updatedAt DateTime  @default(now()) @updatedAt
+  profile   File?     @relation("ManagerProfile", fields: [profileId], references: [id])
+  comments  Comment[] @relation("ManagerComments")
+
+  @@index([profileId])
+}
+
+model UserForm {
+  id               String     @id @default(uuid())
+  name             String
+  phoneNumber      String
+  phoneExtension   String     @default("+91")
+  email            String     @unique
+  username         String     @unique
+  password         String
+  userType         String?
+  profileImageId   String?    @unique
+  status           UserStatus @default(ACTIVE)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  createdBy        String
+  profileImage     File?      @relation("UserProfileImage", fields: [profileImageId], references: [id])
+
+  @@index([profileImageId])
+  @@index([createdBy])
+  @@map("user_form")
+}
+
+model PaymentMethod {
+  id    String            @id @default(uuid())
+  dmcId String?
+  dmc   DMCForm?          @relation(fields: [dmcId], references: [id])
+  type  PaymentMethodType
+
+  name       String?
+  identifier String?
+
+  upiProvider String?
+
+  qrCodeId String? @unique
+  qrCode   File?   @relation("PaymentMethodQRCode", fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  paymentLink String?
+
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bank Json?
+
+  @@index([dmcId])
+  @@index([type])
+  @@index([qrCodeId])
+}
+
+model enquiries {
+  id                 String              @id @default(uuid())
+  name               String
+  phone              String
+  email              String
+  locations          String?
+  tourType           String?
+  estimatedDates     String?
+  currency           String?
+  budget             Int?
+  notes              String?
+  assignedStaff      String?
+  pointOfContact     String?
+  leadSource         String?             @default("Direct")
+  flightsRequired    String?             @default("no")
+  pickupLocation     String?
+  dropLocation       String?
+  numberOfTravellers String?
+  numberOfKids       String?
+  travelingWithPets  String?
+  status             String              @default("enquiry")
+  enquiryDate        String              @default("now()")
+  tags               String?             @default("sightseeing")
+  mustSeeSpots       String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  customerId         String?
+  customer           customers?          @relation(fields: [customerId], references: [id])
+  itineraries        itineraries[]
+  sharedCustomerPdfs SharedCustomerPdf[]
+  feedback           Feedback?
+  commissions        Commission[]
+  dmcPayments        DmcPayment[]
+
+  sharedDMCs SharedDMC[] @relation("EnquirySharedDMCs")
+
+  @@index([status])
+  @@index([enquiryDate])
+  @@index([customerId])
+  @@index([email])
+}
+
+model Feedback {
+  id                   String   @id @default(uuid())
+  enquiryId            String   @unique
+  name                 String
+  phone                String
+  email                String
+  destination          String
+  dateRange            String
+  overallExperience    Int
+  accommodationQuality Int
+  transportTransfers   Int
+  serviceFromTeam      Int
+  travelAgain          Boolean
+  additionalComments   String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  enquiry enquiries @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  @@index([enquiryId])
+  @@map("feedbacks")
+}
+
+model itineraries {
+  id                         String                    @id @default(uuid())
+  enquiryId                  String
+  destinations               String?
+  startDate                  String?
+  endDate                    String?
+  travelType                 String?
+  adults                     Int?
+  children                   Int?
+  under6                     Int?
+  from7to12                  Int?
+  flightsRequired            String?
+  pickupLocation             String?
+  dropLocation               String?
+  currency                   String?
+  budget                     Int?
+  activityPreferences        String?
+  hotelPreferences           String?
+  mealPreference             String?
+  dietaryPreference          String?
+  transportPreferences       String?
+  travelingWithPets          String?
+  additionalRequests         String?
+  moreDetails                String?
+  status                     String                    @default("draft")
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+  mustSeeSpots               String?
+  accommodation              Json?
+  dailyItinerary             Json?
+  customerId                 String?
+  activeStatus               Boolean?                  @default(true)
+  budgetEstimation           Json?
+  enquiryDetails             Json?
+  location                   String?
+  numberOfDays               String?
+  travelStyle                String?
+  agencyCancellationPolicyId String?
+  cancellationPolicyType     CancellationPolicyType?   @default(DEFAULT)
+  customCancellationDeadline Int?
+  customCancellationTerms    String?
+  pdfUrl                     String?                   @map("pdf_url")
+  customer                   customers?                @relation(fields: [customerId], references: [id])
+  enquiry                    enquiries                 @relation(fields: [enquiryId], references: [id])
+  feedbacks                  customer_feedbacks[]
+  sentItineraries            sent_itineraries[]
+  agencyCancellationPolicy   AgencyCancellationPolicy? @relation(fields: [agencyCancellationPolicyId], references: [id])
+  sharedCustomerPdfs         SharedCustomerPdf[]
+  customerPayment            CustomerPayment[]
+
+  BookingProgress BookingProgress[]
+  BookingFeedback BookingFeedback[]
+  BookingReminder booking_reminder[]
+
+  @@index([enquiryId])
+  @@index([customerId])
+  @@index([status])
+  @@index([startDate])
+  @@index([agencyCancellationPolicyId])
+}
+
+// Keep the existing booking_reminder table to preserve data
+model booking_reminder {
+  id          String   @id @default(cuid())
+  itineraryId String
+  enquiryId   String?
+  date        DateTime?
+  reminderDate DateTime?
+  message     String?
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  isCompleted Boolean  @default(false)
+  note        String?
+
+
+  itinerary itineraries @relation(fields: [itineraryId], references: [id])
+
+  @@index([itineraryId])
+  @@index([enquiryId])
+  @@index([reminderDate])
+  @@map("booking_reminder")
+}
+
+model AgencyCancellationPolicy {
+  id            String        @id @default(uuid())
+  name          String
+  deadlineHours Int
+  terms         String
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  itineraries   itineraries[]
+}
+
+model SharedCustomerPdf {
+  id               String          @id @default(uuid())
+  itineraryId      String
+  customerId       String
+  enquiryId        String?
+  pdfUrl           String
+  pdfFileName      String
+  customerName     String
+  customerEmail    String
+  customerPhone    String?
+  customerWhatsapp String?
+  emailSent        Boolean         @default(false)
+  emailSentAt      DateTime?
+  whatsappSent     Boolean         @default(false)
+  whatsappSentAt   DateTime?
+  downloadCount    Int             @default(0)
+  lastDownloadAt   DateTime?
+  status           SharedPdfStatus @default(GENERATED)
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  createdBy        String
+  itineraries      itineraries     @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  customer         customers       @relation(fields: [customerId], references: [id])
+  enquiry          enquiries?      @relation(fields: [enquiryId], references: [id])
+  emailLogs        EmailLog[]
+
+  @@unique([itineraryId, customerId, createdAt])
+  @@index([enquiryId])
+  @@index([status])
+  @@index([emailSent])
+  @@index([customerId], map: "SharedCustomerPdf_customerId_idx")
+  @@index([enquiryId], map: "SharedCustomerPdf_enquiryId_idx")
+  @@index([itineraryId], map: "SharedCustomerPdf_itineraryId_idx")
+  @@index([createdBy])
+  @@map("shared_customer_pdfs")
+}
+
+model EmailLog {
+  id                  String            @id @default(uuid())
+  sharedCustomerPdfId String
+  recipientEmail      String
+  recipientName       String?
+  subject             String
+  emailType           EmailType         @default(ITINERARY_SHARE)
+  status              EmailStatus       @default(PENDING)
+  sentAt              DateTime?
+  deliveredAt         DateTime?
+  openedAt            DateTime?
+  errorMessage        String?
+  retryCount          Int               @default(0)
+  maxRetries          Int               @default(3)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  sharedCustomerPdf   SharedCustomerPdf @relation(fields: [sharedCustomerPdfId], references: [id], onDelete: Cascade)
+
+  @@index([sharedCustomerPdfId])
+  @@index([recipientEmail])
+  @@index([status])
+  @@index([emailType])
+  @@index([sharedCustomerPdfId], map: "EmailLog_sharedCustomerPdfId_idx")
+  @@map("email_logs")
+}
+
+model customers {
+  id                 String               @id @default(cuid())
+  name               String
+  email              String               @unique
+  phone              String?
+  whatsappNumber     String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  enquiries          enquiries[]
+  itineraries        itineraries[]
+  feedbacks          customer_feedbacks[]
+  sentItineraries    sent_itineraries[]
+  sharedCustomerPdfs SharedCustomerPdf[]
+}
+
+model customer_feedbacks {
+  id           String       @id @default(cuid())
+  enquiryId    String?
+  type         String
+  title        String
+  description  String?
+  status       String       @default("pending")
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  customerId   String
+  documentName String?
+  documentUrl  String?
+  itineraryId  String?
+  customer     customers?   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  itinerary    itineraries? @relation(fields: [itineraryId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([itineraryId])
+  @@index([enquiryId])
+  @@map("customer_feedbacks")
+}
+
+model sent_itineraries {
+  id             String  @id @default(cuid())
+  enquiryId      String?
+  customerName   String
+  email          String
+  whatsappNumber String?
+  notes          String?
+
+  status       String       @default("sent")
+  sentDate     DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  customerId   String
+  itineraryId  String?
+  emailSent    Boolean      @default(false)
+  whatsappSent Boolean      @default(false)
+  customer     customers    @relation(fields: [customerId], references: [id])
+  itinerary    itineraries? @relation(fields: [itineraryId], references: [id])
+
+  @@index([customerId])
+  @@index([itineraryId])
+  @@index([enquiryId])
+}
+
+model FlightEnquiry {
+  id                    String   @id @default(uuid())
+  enquiryId             String?  @unique
+  name                  String
+  phone                 String
+  email                 String
+  departureCity         String
+  returnCity            String
+  departureDate         String
+  returnDate            String
+  preferredAirlineClass String   @default("economy")
+  numberOfTravellers    String
+  numberOfKids          String
+  assignedStaff         String?
+  pointOfContact        String?
+  notes                 String?
+  leadSource            String   @default("Direct")
+  status                String   @default("enquiry")
+  enquiryDate           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  createdBy             String?
+
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+  @@map("flight_enquiries")
+}
+
+model AccommodationEnquiry {
+  id                String   @id @default(uuid())
+  enquiryId         String?  @unique
+  name              String
+  phone             String
+  email             String
+  locations         String[] @default([])
+  startDate         String
+  endDate           String
+  adults            Int      @default(2)
+  children          Int      @default(0)
+  under5            Int      @default(0)
+  from6to12         Int      @default(0)
+  budget            Int      @default(500)
+  accommodationType String[] @default([])
+  hotelPreference   String[] @default([])
+  assignedStaff     String?
+  pointOfContact    String?
+  notes             String?
+  leadSource        String   @default("Direct")
+  status            String   @default("enquiry")
+  enquiryDate       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdBy         String?
+
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+  @@map("accommodation_enquiries")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  managerId String
+  authorId  String
+  manager   Manager  @relation("ManagerComments", fields: [managerId], references: [id], onDelete: Cascade)
+  author    User     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([managerId])
+  @@index([authorId])
+  @@map("comments")
+}
+
+model Staff {
+  id             String      @id @default(uuid())
+  name           String
+  email          String      @unique
+  phone          String?
+  role           String      @default("STAFF")
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  assignedShares SharedDMC[] @relation("AssignedStaff")
+
+  @@map("staff")
+}
+
+model SharedDMC {
+  id              String          @id @default(uuid())
+  dateGenerated   DateTime        @default(now())
+  pdfUrl          String?
+  isActive        Boolean         @default(false)
+  status          SharedDMCStatus @default(PENDING)
+  assignedStaffId String?
+  enquiryId       String?
+  customerId      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  assignedStaff   Staff?          @relation("AssignedStaff", fields: [assignedStaffId], references: [id])
+  enquiry         enquiries?      @relation("EnquirySharedDMCs", fields: [enquiryId], references: [id])
+  
+  sharedDMCItems  SharedDMCItem[] @relation("SharedDMCToItems")
+
+  @@index([assignedStaffId])
+  @@index([enquiryId])
+  @@index([assignedStaffId], map: "SharedDMC_assignedStaffId_idx")
+  @@index([customerId])
+  @@map("shared_dmcs")
+}
+
+model SharedDMCItem {
+  id          String        @id @default(uuid())
+  sharedDMCId String
+  dmcId       String
+  notes       String?
+  status      DMCItemStatus @default(AWAITING_TRANSFER)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  sharedDMC   SharedDMC     @relation("SharedDMCToItems", fields: [sharedDMCId], references: [id], onDelete: Cascade)
+  dmc         DMCForm       @relation("SharedDMCItems", fields: [dmcId], references: [id])
+
+  @@unique([sharedDMCId, dmcId])
+  @@index([sharedDMCId])
+  @@index([dmcId])
+  @@index([dmcId], map: "SharedDMCItem_dmcId_idx")
+  @@index([sharedDMCId], map: "SharedDMCItem_sharedDMCId_idx")
+  @@map("shared_dmc_items")
+}
+
+model Admin {
+  id        String      @id @default(uuid())
+  name      String
+  phone     String
+  email     String      @unique
+  username  String      @unique
+  password  String
+  status    AdminStatus @default(INACTIVE)
+  profileId String?     @unique
+  userId    String      @unique
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  profile   File?       @relation("AdminProfile", fields: [profileId], references: [id])
+
+  @@index([email])
+  @@index([status])
+  @@index([profileId])
+  @@index([userId])
+  @@map("admins")
+}
+
+model AgencyPaymentMethod {
+  id       String            @id @default(uuid())
+  agencyId String
+  agency   Agency?           @relation(fields: [agencyId], references: [id])
+  type     PaymentMethodType
+
+  name       String?
+  identifier String?
+
+  cardHolder String?
+  expiryDate String?
+
+  upiProvider String?
+
+  qrCodeId String? @unique
+  qrCode   File?   @relation("AgencyPaymentMethodQRCode", fields: [qrCodeId], references: [id], onDelete: Cascade)
+
+  paymentLink String?
+
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bank Json?
+
+  @@index([agencyId])
+  @@index([type])
+  @@index([qrCodeId])
+}
+
+model Commission {
+  id               String   @id @default(cuid())
+  enquiryId        String?
+  dmcId            String?
+  quotationAmount  Float?
+  commissionType   String?
+  commissionAmount Float?
+  markupPrice      Float?
+  comments         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  enquiry enquiries? @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  dmc     DMCForm?   @relation(fields: [dmcId], references: [id], onDelete: SetNull)
+
+  @@unique([enquiryId, dmcId], name: "enquiryId_dmcId")
+  @@index([enquiryId])
+  @@index([dmcId])
+  @@map("commissions")
+}
+
+model BookingProgress {
+  id          String   @id @default(cuid())
+  itineraryId String
+  enquiryId   String?
+  date        DateTime
+  service     String
+  status      String
+  dmcNotes    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  itinerary itineraries @relation(fields: [itineraryId], references: [id])
+
+  @@index([enquiryId])
+  @@index([itineraryId])
+  @@map("BookingProgress")
+}
+
+model BookingFeedback {
+  id          String   @id @default(uuid())
+  itineraryId String
+  enquiryId   String?
+  note        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  itinerary itineraries @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+
+  @@index([itineraryId])
+  @@index([enquiryId])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@map("booking_feedback")
+}
+
+model DmcPayment {
+  id                 String        @id @default(uuid())
+  dmcId              String
+  enquiryId          String
+  itineraryReference String
+  totalCost          Float
+  amountPaid         Float
+  paymentDate        DateTime
+  remainingBalance   Float
+  paymentStatus      PaymentStatus @default(PENDING)
+  paymentChannel     String
+  transactionId      String?
+  selectedBank       String?
+  receiptUrl         String?
+  receiptFileId      String?       @unique
+  invoice            Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  dmc         DMCForm   @relation(fields: [dmcId], references: [id], onDelete: Cascade)
+  enquiry     enquiries @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  receiptFile File?     @relation("DmcPaymentReceipt", fields: [receiptFileId], references: [id])
+
+  @@index([dmcId])
+  @@index([enquiryId])
+  @@index([receiptFileId])
+  @@map("dmc_payments")
+}
+
+model CustomerPayment {
+  id                 String        @id @default(cuid())
+  customerName       String
+  email              String
+  itineraryReference String
+  transactionId      String
+  totalCost          Float
+  amountPaid         Float
+  paymentDate        DateTime
+  remainingBalance   Float
+  paymentStatus      PaymentStatus
+  shareMethod        ShareMethod
+  paymentLink        String?
+  currency           String        @default("USD")
+
+  agencyId String
+  agency   Agency @relation(fields: [agencyId], references: [id])
+
+  itineraryId String
+  itinerary   itineraries @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+
+  paymentHistory PaymentHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agencyId])
+  @@index([itineraryId])
+  @@map("customer_payments")
+}
+
+model PaymentHistory {
+  id            String            @id @default(cuid())
+  paymentMethod PaymentMethodType
+  paidDate      DateTime
+  amountPaid    Float
+  pendingAmount Float
+  status        PaymentStatus
+  invoiceUrl    String?
+
+  customerPaymentId String
+  customerPayment   CustomerPayment @relation(fields: [customerPaymentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerPaymentId])
+  @@map("payment_histories")
+}
+
+enum CustomerPaymentstatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+}
+
+enum ShareMethod {
+  WHATSAPP
+  EMAIL
+}
+
+enum PaymentMethodTypestatus {
+  BANK_TRANSFER
+  UPI_METHOD
+  CASH
+  PAYMENT_LINK
+}
+
+enum AgencyPayment {
+  BANK
+  UPI
+  CARD
+  QR_CODE
+  PAYMENT_GATEWAY
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  FAILED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  NOT_INCLUDED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AdminStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// Preserve all existing enum values to prevent data loss
+enum SharedDMCStatus {
+  PENDING
+  SENT
+  RECEIVED
+  COMPLETED
+  AWAITING_TRANSFER
+  VIEWED
+  AWAITING_INTERNAL_REVIEW
+  QUOTATION_RECEIVED
+  REJECTED
+}
+
+enum PaymentMethodType {
+  BANK_ACCOUNT
+  CREDIT_CARD
+  DEBIT_CARD
+  UPI
+  QR_CODE
+  PAYMENT_GATEWAY
+}
+
+// Preserve all existing enum values to prevent data loss
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+  AGENT_USER
+  AGENT_ADMIN
+  DMC_USER
+  DMC_ADMIN
+  MANAGER
+  TL
+  EXECUTIVE
+  CUSTOMER
+  TEKKING_MYLES
+}
+
+// Preserve all existing enum values to prevent data loss
+enum UserType {
+  USER
+  AGENCY_ADMIN
+  AGENCY_MANAGER
+  TEAM_LEAD
+  EXECUTIVE
+  DMC
+  AGENCY
+  CUSTOMER
+  TEKKING_MYLES
+  MANAGER
+  TL
+  SUPER_ADMIN
+}
+
+enum BusinessType {
+  TEKKING_MYLES
+  AGENCY
+  DMC
+}
+
+enum ManagerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DMCStatus {
+  ACTIVE
+  DEACTIVE
+}
+
+enum DMCRequestStatusEnum {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AgencyType {
+  PRIVATE_LIMITED
+  PROPRIETORSHIP
+  PARTNERSHIP
+  PUBLIC_LIMITED
+  LLP
+  TOUR_OPERATOR
+  TRAVEL_AGENT
+  DMC
+  OTHER
+  ONLINE_TRAVEL_AGENCY
+  CORPORATE_TRAVEL
+  ADVENTURE_TRAVEL
+  LUXURY_TRAVEL
+  BUDGET_TRAVEL
+  SPECIALIZED_TRAVEL
+}
+
+enum PanType {
+  INDIVIDUAL
+  COMPANY
+  TRUST
+  OTHER
+  ASSOCIATION
+  HUF
+  GOVERNMENT
+  PARTNERSHIP
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum FlightRequirement {
+  YES
+  NO
+}
+
+enum TravelTag {
+  FLIGHTS
+  ACCOMMODATION
+  FULL_PACKAGE
+  SIGHTSEEING
+}
+
+enum CancellationPolicyType {
+  DEFAULT
+  CUSTOM
+}
+
+enum SharedPdfStatus {
+  GENERATED
+  SENT
+  DELIVERED
+  FAILED
+  EXPIRED
+}
+
+enum AgencyStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EmailType {
+  ITINERARY_SHARE
+  CANCELLATION_NOTICE
+  POLICY_UPDATE
+  REMINDER
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  DELIVERED
+  OPENED
+  FAILED
+  BOUNCED
+}
+
+enum CommissionType {
+  FLAT
+  PERCENTAGE
+}
+
+enum DMCItemStatus {
+  AWAITING_TRANSFER
+  AWAITING_DMC_EUROPE
+  AWAITING_TRAILS_DMC
+  ITINERARY_VIEWED
+  AWAITING_INTERNAL_REVIEW
+  QUOTATION_RECEIVED
+}
+
+enum QuoteStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  REJECTED
+  EXPIRED
+  REVISED
+}

@@ -1,0 +1,203 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto&display=swap');
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+
+
+/* Custom Variant for Dark Mode */
+@custom-variant dark (&:is(.dark ));
+
+/* Font and Theme Variables */
+@theme {
+  --font-sans: "Poppins", sans-serif; /* Default to Poppins */
+  --font-raleway: "Raleway", sans-serif; /* Keep Raleway available */
+  --font-nunito: "Nunito", sans-serif; /* Added Nunito */
+  --font-urbanist: "Urbanist", sans-serif; /* Added Urbanist */
+  --font-Beiruti: "Beiruti", serif; /* Added Beiruti */
+  --font-mono: var(--font-geist-mono);
+
+  --width-w1: 650px;
+  --width-w2: 738px;
+  --width-w3: 699;
+  --height-h1: 531px;
+  --font-nunito: "Nunito", sans-serif;
+  --font-inter:"Inter", sans-serif;
+}
+
+:root {
+  
+  --dark-green: oklch(0.25 0.2 150); /* Dark green (#183F30) */
+  --light-green: #5BC17F;
+  --greenlight:#12AA5B;
+  --primary: var(--dark-green); /* Using Dark Green as Primary */
+  --golden-yellow: #E4A321;
+  --orange-red: #F97549;
+  --deep-red: #D82108;
+  --light-blue: #6BCDEE;
+  --dark-blue: #102A43;
+  --dark-pink:#FD007F;
+  --greyish:#6B7280;
+  --light-orange:#EFB41D;
+  --pink:#FF9D7E;
+  
+  
+  
+  --greenlight:#12AA5B;
+  --greenook:#026451;
+  --custom-green: #183F30; 
+  --custom-light: #E8F6ED;
+  --custom-lightorange: rgba(244, 124, 42, 0.37);
+  --greenish: #2F7157;
+  --custom-lightwhite: #F2F2F2;
+  --dark-green: oklch(0.25 0.2 150); 
+  --orange: #F47C2A;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: var(--dark-green); 
+  --primary-foreground: oklch(0.985 0 0);
+  --destructive: var(--dark-green);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
+}
+
+.dark {
+  
+  --custom-green: #183F30; 
+  --custom-light: #E8F6ED;
+  --custom-lightwhite: #F2F2F2;
+  --greyish:#6B7280;
+  --greenish: #2F7157;
+  --custom-lightorange: rgba(244, 124, 42, 0.37);
+  --greenook:#026451;
+  --dark-green: oklch(0.25 0.2 150);
+  --primary: var(--dark-green);
+  --dark-blue: #102A43;
+  --primary-foreground: oklch(0.205 0 0);
+  --destructive: var(--dark-green);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  
+  --color-pink: var(--pink);
+  --color-light-orange: var(--light-orange);
+  --color-greenook: var(--greenook);
+  --color-custom-green: var(--custom-green);
+  --color-greenlight: var(--greenlight);
+  --color-secondary-green: var(--secondary-green);
+  --color-custom-light: var(--custom-light);
+  --color-greyish: var(--greyish);
+  --color-greenish: var(--greenish);
+  --color-greenook: var(--greenook);
+  --color-custom-lightwhite: var(--custom-lightwhite);
+  --color-custom-lightorange: var(--custom-lightorange);
+  --color-dark-green: var(--dark-green);
+  --color-light-green: var(--light-green);
+  --color-orange: var(--orange);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-golden-yellow: var(--golden-yellow);
+  --color-orange-red: var(--orange-red);
+  --color-deep-red: var(--deep-red);
+  --color-light-blue: var(--light-blue);
+  --color-dark-blue: var(--dark-blue);
+  --color-dark-pink: var(--dark-pink);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+  body {
+    /* @apply bg-background text-foreground; */
+    font-family: "Poppins", sans-serif;
+  }
+
+
+@layer utilities {
+  .w-w1 {
+    width: var(--width-w1);
+  }
+  .w-w2 {
+    width: var(--width-w2);
+  }
+  .h-h1 {
+    height: var(--height-h1);
+  }
+
+
+/* Utility Classes to Switch Fonts */
+.font-raleway {
+  font-family: "Raleway", sans-serif;
+}
+
+.font-poppins {
+  font-family: "Poppins", sans-serif;
+}
+
+.font-nunito {
+  font-family: "Nunito", sans-serif; /* Added Nunito */
+}
+
+.font-urbanist {
+  font-family: "Urbanist", sans-serif; /* Added Urbanist */
+  font-family: 'Nunito', sans-serif;
+}
+
+.font-Inter{
+  font-family: 'Inter', sans-serif;
+
+}
+.font-Helvetica{
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.font-Beiruti {
+  font-family: "Beiruti", serif; /* Added Beiruti */
+}
+.font-Lato {
+  font-family: "Lato", sans-serif;
+}
+  
+}
+
+/* Scoped scrollbar styling for card content */
+.scrollbar-card {
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #ECEDEE transparent;
+}
+/* WebKit (Chrome/Edge/Safari) */
+.scrollbar-card::-webkit-scrollbar {
+  width: 8px;   /* vertical */
+  height: 8px;  /* horizontal */
+}
+.scrollbar-card::-webkit-scrollbar-thumb {
+  background-color: #ECEDEE;
+  border-radius: 9999px;
+}
+.scrollbar-card::-webkit-scrollbar-track {
+  background: transparent;
+}

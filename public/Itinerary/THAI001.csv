@@ -1,0 +1,36 @@
+quoteId,name,days,nights,startDate,costINR,costUSD,guests,adults,kids
+THAI001,Exotic Thailand,4,3,11/08/2025,60000,750,5,2,3
+
+day,time,activity
+1,8:00,Breakfast
+1,10:00,Pickup for trekking
+1,12:30,Lunch
+1,14:00,Adventure activities
+1,16:30,Tea Tasting
+1,17:00,Horse riding
+1,19:00,Cultural Activities
+1,21:00,Dinner
+2,8:00,Breakfast
+2,10:00,Pickup for Sight Seeing
+2,12:30,Lunch
+2,14:00,Skiing
+2,16:30,Tea Tasting
+2,17:00,Rafting
+2,19:00,Leisure Activities
+2,21:00,Dinner
+3,8:00,Breakfast
+3,10:00,Pickup for Sight Seeing
+3,12:30,Lunch
+3,14:00,Skiing
+3,16:30,Tea Tasting
+3,17:00,Rafting
+3,19:00,Leisure Activities
+3,21:00,Dinner
+4,8:00,Breakfast
+4,10:00,Pickup for Sight Seeing
+4,12:30,Lunch
+4,14:00,Skiing
+4,16:30,Tea Tasting
+4,17:00,Rafting
+4,19:00,Leisure Activities
+4,21:00,Dinner
