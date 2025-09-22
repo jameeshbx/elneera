@@ -18,18 +18,23 @@ model File {
   updatedAt             DateTime    @updatedAt
   // Agency Form relations (one-to-one)
   agencyBusinessLicense AgencyForm? @relation("AgencyFormBusinessLicense")
-  agencyLogo            AgencyForm? @relation("AgencyFormLogo")
-
+  agencyLogo            Agency?     @relation("AgencyLogo")
   // Other existing relations
-  dmcPaymentReceipt   DmcPayment?    @relation("DmcPaymentReceipt")
-  managerProfile      Manager?       @relation("ManagerProfile")
-  userProfile         UserForm?      @relation("UserProfileImage")
-  userProfileImage    User?          @relation("UserProfileImage")
-  paymentMethodQRCode PaymentMethod? @relation("PaymentMethodQRCode")
-  adminProfile        Admin?         @relation("AdminProfile")
+  dmcPaymentReceipt     DmcPayment? @relation("DmcPaymentReceipt")
+  managerProfile        Manager?    @relation("ManagerProfile")
+  userProfile           UserForm?   @relation("UserProfileImage")
+  userProfileImage      User?       @relation("UserProfileImage")
+  paymentMethodQRCode   PaymentMethod? @relation("PaymentMethodQRCode")
+  adminProfile          Admin?      @relation("AdminProfile")
 
+  LogoId                String?
+  
+  
   // QR Code relation
   agencyPaymentMethodQRCode AgencyPaymentMethod? @relation("AgencyPaymentMethodQRCode")
+  agencyFormLogo        AgencyForm? @relation("AgencyFormLogo")
+
+  @@index([LogoId])
 
   @@map("file")
 }
@@ -41,6 +46,9 @@ model User {
   name        String?
   companyName String
   phone       String?
+  emailVerified DateTime?
+  status      UserStatus @default(ACTIVE)
+  profileCompleted Boolean @default(false)
 
   businessType   BusinessType
   createdAt      DateTime       @default(now())
@@ -66,17 +74,19 @@ model User {
 }
 
 model Agency {
-  id             String                @id @default(uuid())
-  name           String
-  config         Json
-  createdBy      String
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  subscriptions  Subscription[]
-  users          User[]
-  paymentMethods AgencyPaymentMethod[]
-
-  customerPayments CustomerPayment[]
+  id                String                @id @default(uuid())
+  name              String
+  config            Json
+  createdBy         String
+  logoId String? @unique
+   logo   File?   @relation("AgencyLogo", fields: [logoId], references: [id])
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  subscriptions     Subscription[]
+  users             User[]
+  paymentMethods    AgencyPaymentMethod[]
+  customerPayments  CustomerPayment[]
+  forms             AgencyForm[]
 
   @@index([name])
 }
@@ -103,7 +113,6 @@ model quotes {
   id                   String    @id @default(cuid())
   enquiryId            String?
   customerId           String?
-  agencyId             String?
 
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -189,48 +198,56 @@ model Subscription {
 }
 
 model AgencyForm {
-  id                  String      @id @default(uuid())
+  id                  String          @id @default(uuid())
   name                String
-  config              Json        @default("{}")
+  config              Json            @default("{}")
+  agencyType          AgencyType      // Add this line
   contactPerson       String?
-  agencyType          AgencyType?
   designation         String?
+  phoneCountryCode    String?         @default("+91")
   phoneNumber         String?
-  phoneCountryCode    String?     @default("+91")
   ownerName           String?
-  email               String?
+  email               String?         
+  companyPhoneCode    String?         @default("+91")
   companyPhone        String?
-  status              String?     @default("PENDING")
-  logoPath            String?
-  businessLicensePath String?
-  companyPhoneCode    String?     @default("+91")
   website             String?
-  landingPageColor    String?     @default("#4ECDC4")
-  gstRegistered       Boolean?    @default(true)
+  landingPageColor    String?         @default("#4ECDC4")
+  gstRegistered       Boolean         @default(false)
   gstNumber           String?
   yearOfRegistration  String?
-  logoId              String?     @unique
-  businessLicenseId   String?     @unique
   panNumber           String?
   panType             PanType?
   headquarters        String?
-  country             String?     @default("INDIA")
+  country             String?         @default("INDIA")
   yearsOfOperation    String?
+  logoPath            String?
+  businessLicensePath String?
   createdBy           String
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-
-  businessLicense File?          @relation("AgencyFormBusinessLicense", fields: [businessLicenseId], references: [id])
-  logo            File?          @relation("AgencyFormLogo", fields: [logoId], references: [id])
-  subscriptions   Subscription[]
-  creator         User           @relation("AgencyFormCreator", fields: [createdBy], references: [id])
+  status              String?         @default("PENDING")
+  notes               String?
+ 
+  updatedBy           String?
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectedBy          String?
+  rejectedAt          DateTime?
+  rejectionReason     String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  
+  // Relations
+  businessLicense     File?           @relation("AgencyFormBusinessLicense", fields: [businessLicenseId], references: [id])
+  logo                File?           @relation("AgencyFormLogo", fields: [logoId], references: [id])
+  businessLicenseId   String?         @unique
+  logoId              String?         @unique
+  subscriptions       Subscription[]
+  agency              Agency?         @relation(fields: [agencyId], references: [id])
+  agencyId            String?
+  creator             User            @relation("AgencyFormCreator", fields: [createdBy], references: [id])
 
   @@index([name])
-  @@index([email])
   @@index([createdBy])
-  @@index([logoId])
-  @@index([businessLicenseId])
-  @@map("AgencyForm")
+  @@index([email])
 }
 
 model DMCForm {
@@ -346,8 +363,10 @@ model PaymentMethod {
 model enquiries {
   id                 String              @id @default(uuid())
   name               String
+  agencyId           String?
   phone              String
   email              String
+  companyName        String?
   locations          String?
   tourType           String?
   estimatedDates     String?
@@ -437,7 +456,7 @@ model itineraries {
   updatedAt                  DateTime                  @updatedAt
   mustSeeSpots               String?
   accommodation              Json?
-  dailyItinerary             Json?
+  dailyItinerary             Json?                     // This will store the rich content for each day
   customerId                 String?
   activeStatus               Boolean?                  @default(true)
   budgetEstimation           Json?
@@ -457,10 +476,14 @@ model itineraries {
   agencyCancellationPolicy   AgencyCancellationPolicy? @relation(fields: [agencyCancellationPolicyId], references: [id])
   sharedCustomerPdfs         SharedCustomerPdf[]
   customerPayment            CustomerPayment[]
-
-  BookingProgress BookingProgress[]
-  BookingFeedback BookingFeedback[]
-  BookingReminder booking_reminder[]
+  originalPdfUrl             String?                  @map("original_pdf_url")
+  editedPdfUrl               String?                  @map("edited_pdf_url")
+  isEdited                   Boolean?                 @default(false) @map("is_edited")
+  editedAt                   DateTime?                @map("edited_at")
+  richContent                String?                 @db.Text          // New field for rich text content
+  BookingProgress            BookingProgress[]
+  BookingFeedback            BookingFeedback[]
+  BookingReminder            booking_reminder[]
 
   @@index([enquiryId])
   @@index([customerId])
@@ -611,17 +634,18 @@ model sent_itineraries {
   email          String
   whatsappNumber String?
   notes          String?
-
-  status       String       @default("sent")
-  sentDate     DateTime     @default(now())
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  customerId   String
-  itineraryId  String?
-  emailSent    Boolean      @default(false)
-  whatsappSent Boolean      @default(false)
-  customer     customers    @relation(fields: [customerId], references: [id])
-  itinerary    itineraries? @relation(fields: [itineraryId], references: [id])
+  status         String    @default("sent")
+  sentDate       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  customerId     String
+  itineraryId    String?
+  emailSent      Boolean   @default(false)
+  whatsappSent   Boolean   @default(false)
+  pdfUrl         String?   @map("pdf_url")
+  isEdited       Boolean   @default(false)
+  customer       customers    @relation(fields: [customerId], references: [id])
+  itinerary      itineraries? @relation(fields: [itineraryId], references: [id])
 
   @@index([customerId])
   @@index([itineraryId])
@@ -912,7 +936,7 @@ model CustomerPayment {
   paymentStatus      PaymentStatus
   shareMethod        ShareMethod
   paymentLink        String?
-  currency           String        @default("USD")
+  currency           String?       
 
   agencyId String
   agency   Agency @relation(fields: [agencyId], references: [id])
@@ -1050,6 +1074,7 @@ enum UserType {
   MANAGER
   TL
   SUPER_ADMIN
+  ADMIN
 }
 
 enum BusinessType {

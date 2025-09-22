@@ -1,15 +1,48 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib"
 import fs from "fs/promises"
 import path from "path"
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { S3Service } from "@/lib/s3-service"
+import { PrismaClient } from "@prisma/client"
+
+interface ItineraryFormData {
+  [key: string]: unknown;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  name?: string;
+  email?: string;
+  whatsappNumber?: string;
+  startDate?: string;
+  endDate?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  destinations?: string[];
+  travelType?: string;
+  budget?: number;
+  currency?: string;
+  adults?: number;
+  children?: number;
+  under6?: number;
+  from7to12?: number;
+}
 
 export async function POST(request: Request) {
   try {
     console.log("[v0] PDF generation started")
     const body = await request.json()
     console.log("[v0] Request body:", body)
-    const { enquiryId, itineraryId, formData } = body
+    const { 
+      enquiryId, 
+      itineraryId, 
+      formData,
+      isEditedVersion = false
+    } = body as {
+      enquiryId?: string;
+      itineraryId?: string;
+      formData: ItineraryFormData;
+      isEditedVersion?: boolean;
+    }
 
     const pdfTemplatePath = path.join(process.cwd(), "lib", "itinerary.pdf")
     const itineraryDir = path.join(process.cwd(), "public", "itinerary")
@@ -331,13 +364,55 @@ export async function POST(request: Request) {
       
       console.log("[v0] PDF uploaded to S3:", s3FileInfo.key)
       
+      // Update the itineraries table with the PDF URL
+      if (itineraryId) {
+        const updateData: {
+          id: string;
+          updatedAt: string;
+          editedPdfUrl?: string;
+          pdfUrl?: string;
+          isEdited?: boolean;
+        } = {
+          id: itineraryId,
+          updatedAt: new Date().toISOString()
+        };
+
+        if (isEditedVersion) {
+          updateData.editedPdfUrl = s3FileInfo.url;
+          updateData.pdfUrl = s3FileInfo.url;
+          updateData.isEdited = true;
+        } else {
+          updateData.pdfUrl = s3FileInfo.url;
+        }
+
+        try {
+          // Update the itinerary with the new PDF URL
+          const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/itineraries`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updateData),
+          });
+
+          if (!response.ok) {
+            console.error("Failed to update itinerary with PDF URL");
+            const errorData = await response.json();
+            console.error("Error details:", errorData);
+          }
+        } catch (updateError) {
+          console.error("Error updating itinerary:", updateError);
+        }
+      }
+      
       // Return JSON response with S3 URL
       return NextResponse.json({
         success: true,
-        message: "PDF generated and uploaded to S3 successfully",
+        message: `PDF generated and ${isEditedVersion ? 'edited version ' : ''}uploaded successfully`,
         pdfUrl: s3FileInfo.url,
         s3Key: s3FileInfo.key,
         filename: pdfFileName,
+        isEditedVersion
       })
     } catch (s3Error) {
       console.error("[v0] Error uploading to S3:", s3Error)
@@ -365,11 +440,41 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
-  return NextResponse.json({
-    message: "Please use POST method to generate itinerary PDF",
-    example: 'curl -X POST /api/generate-pdf -d \'{"enquiryId":"123","itineraryId":"456","formData":{}}\'',
-    templateRequired: "lib/itinerary.pdf",
-    csvData: "public/itinerary/[EVER001|GOA001|KASH001|KER001|RAJ001|THAI001].csv",
-  })
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const itineraryId = searchParams.get('itineraryId');
+    const filename = searchParams.get('filename');
+
+    if (!itineraryId || !filename) {
+      return new NextResponse('Missing required parameters', { status: 400 });
+    }
+
+    // In a real implementation, you would:
+    // 1. Generate the PDF using a library like Puppeteer, jsPDF, or a third-party service
+    // 2. Upload the PDF to a storage service (e.g., AWS S3, Google Cloud Storage)
+    // 3. Return the public URL of the uploaded PDF
+
+    // For now, we'll return a placeholder URL
+    // Replace this with your actual PDF generation and upload logic
+    const pdfUrl = `/placeholder-pdf/${filename}`;
+
+    // Update the itinerary with the PDF URL
+    const prisma = new PrismaClient();
+    await prisma.itineraries.update({
+      where: { id: itineraryId },
+      data: {
+        pdfUrl,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+
+    return NextResponse.json({ pdfUrl });
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    return new NextResponse('Failed to generate PDF', { status: 500 });
+  } finally {
+    const prisma = new PrismaClient();
+    await prisma.$disconnect();
+  }
 }

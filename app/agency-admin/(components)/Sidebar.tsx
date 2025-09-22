@@ -5,7 +5,8 @@ import type React from "react"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { signOut } from "next-auth/react"
+import { signOut, useSession } from "next-auth/react"
+import api, { type AgencyData } from "@/lib/api"
 
 type MenuItem = {
   title: string
@@ -29,6 +30,9 @@ const Sidebar = ({ expanded }: SidebarProps) => {
   const [reportsOpen, setReportsOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
+  const { data: session } = useSession()
+  const [agencyData, setAgencyData] = useState<AgencyData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const handleResize = () => {
@@ -38,6 +42,26 @@ const Sidebar = ({ expanded }: SidebarProps) => {
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
+
+  useEffect(() => {
+    const fetchAgencyData = async () => {
+      try {
+        const data = await api.getAgency();
+        console.log('Agency Data:', data);
+        console.log('Logo URL:', data?.logoUrl);
+        console.log('Is logo URL valid:', Boolean(data?.logoUrl));
+        setAgencyData(data);
+      } catch (error) {
+        console.error('Failed to fetch agency data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+  
+    if (session) {
+      fetchAgencyData();
+    }
+  }, [session]);
 
   const toggleReports = () => {
     setReportsOpen(!reportsOpen)
@@ -184,26 +208,39 @@ const Sidebar = ({ expanded }: SidebarProps) => {
         {/* Logo Section */}
         <div className="flex items-center justify-center p-2 mb-6">
           <Link href="/" data-cy="sidebar-logo-link" className="flex items-center">
-            {!isCollapsed ? (
-              <Image
-                src="/Alogo.png"
-                alt="Company Logo"
-                width={180}
-                height={120}
-                className="mb-2"
-                priority
-                data-cy="sidebar-logo"
-              />
+            {isLoading ? (
+              <div className="h-10 w-10 animate-pulse rounded-full bg-gray-200"></div>
             ) : (
-              <Image
-                src="/Alogo.png"
-                alt="Company Logo"
-                width={40}
-                height={40}
-                priority
-                className="mx-auto"
-                data-cy="sidebar-logo"
-              />
+              <div className="relative h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
+                {agencyData?.logoUrl ? (
+                  <Image
+                    src={agencyData.logoUrl.startsWith('http') 
+                      ? agencyData.logoUrl 
+                      : `${process.env.NEXT_PUBLIC_BASE_URL || ''}${agencyData.logoUrl}`}
+                    alt="Agency Logo"
+                    fill
+                    className="object-cover"
+                    sizes="40px"
+                    priority
+                    onError={(e) => {
+                      console.error('Error loading logo:', agencyData.logoUrl);
+                      e.currentTarget.style.display = 'none';
+                      const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback');
+                      if (fallback) fallback.classList.remove('hidden');
+                    }}
+                  />
+                ) : null}
+                <div className="logo-fallback absolute inset-0 flex items-center justify-center bg-gray-200 hidden">
+                  <span className="text-xs font-medium text-gray-500">
+                    {agencyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                  </span>
+                </div>
+              </div>
+            )}
+            {!isCollapsed && (
+              <span className="ml-2 text-lg font-semibold">
+                {agencyData?.name || 'Agency'}
+              </span>
             )}
           </Link>
         </div>

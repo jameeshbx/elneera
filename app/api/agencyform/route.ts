@@ -6,7 +6,22 @@ import nodemailer from "nodemailer"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 import { existsSync } from "fs"
-import { AgencyType, PanType } from "@prisma/client"
+// Define enum values as string literals (fallback if Prisma enums don't exist)
+const AGENCY_TYPES = [
+  'PRIVATE_LIMITED', 'PROPRIETORSHIP', 'PARTNERSHIP', 'PUBLIC_LIMITED', 'LLP',
+  'TOUR_OPERATOR', 'TRAVEL_AGENT', 'DMC', 'OTHER', 'ONLINE_TRAVEL_AGENCY',
+  'CORPORATE_TRAVEL', 'ADVENTURE_TRAVEL', 'LUXURY_TRAVEL', 'BUDGET_TRAVEL', 'SPECIALIZED_TRAVEL'
+] as const;
+
+type AgencyType = typeof AGENCY_TYPES[number];
+
+const PAN_TYPES = [
+  'INDIVIDUAL', 'COMPANY', 'TRUST', 'OTHER', 'ASSOCIATION', 'HUF', 'GOVERNMENT'
+] as const;
+
+type PanType = typeof PAN_TYPES[number];
+
+
 
 // Email configuration
 const transporter = nodemailer.createTransport({
@@ -38,6 +53,15 @@ async function saveFile(file: File, directory: string): Promise<string> {
   return `/uploads/${directory}/${fileName}`
 }
 
+// Helper function to validate enum values
+function isValidAgencyType(value: string): value is AgencyType {
+  return AGENCY_TYPES.includes(value as AgencyType)
+}
+
+function isValidPanType(value: string): value is PanType {
+  return PAN_TYPES.includes(value as PanType)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -55,7 +79,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const isAuthorized = user.userType === "AGENCY" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+    const isAuthorized = user.userType === "AGENCY_ADMIN" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
 
     if (!isAuthorized) {
       return NextResponse.json(
@@ -88,24 +112,22 @@ export async function POST(request: NextRequest) {
     const country = formData.get("country")?.toString() || "INDIA"
     const yearsOfOperation = formData.get("yearsOfOperation")?.toString()
 
-    // Validate and convert enum values
-    const agencyType = agencyTypeString as AgencyType
-    const panType = panTypeString as PanType
-
-    // Validate enum values
-    if (!Object.values(AgencyType).includes(agencyType)) {
+    // Validate and convert enum values using Prisma types
+    if (!agencyTypeString || !isValidAgencyType(agencyTypeString)) {
       return NextResponse.json(
-        { error: "Invalid agency type" },
+        { error: `Invalid agency type. Received: ${agencyTypeString}` },
         { status: 400 }
-      )
+      );
     }
+    const agencyType = agencyTypeString;
 
-    if (!Object.values(PanType).includes(panType)) {
+    if (!panTypeString || !isValidPanType(panTypeString)) {
       return NextResponse.json(
-        { error: "Invalid PAN type" },
+        { error: `Invalid PAN type. Received: ${panTypeString}` },
         { status: 400 }
-      )
+      );
     }
+    const panType = panTypeString;
 
     // Handle file uploads
     const logoFile = formData.get("logo") as File
@@ -168,8 +190,8 @@ export async function POST(request: NextRequest) {
           headquarters,
           country,
           yearsOfOperation,
-          logoPath, // Use logoPath instead of logoId
-          businessLicensePath, // Use businessLicensePath instead of businessLicenseId
+          logoPath,
+          businessLicensePath,
           updatedAt: new Date(),
         }
       })
@@ -197,8 +219,8 @@ export async function POST(request: NextRequest) {
           headquarters,
           country,
           yearsOfOperation,
-          logoPath, // Use logoPath instead of logoId
-          businessLicensePath, // Use businessLicensePath instead of businessLicenseId
+          logoPath,
+          businessLicensePath,
           createdBy: user.id,
         }
       })

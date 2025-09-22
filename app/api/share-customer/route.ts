@@ -3,6 +3,80 @@ import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 
+interface CustomerData {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  whatsappNumber: string;
+  companyName?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Itinerary {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  pdfUrl: string | null;
+  activeStatus: boolean | null;
+  status: string;
+  enquiry?: {
+    name: string;
+    locations: string | null;
+  };
+  destinations: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  budget: number | null;
+  currency: string | null;
+  enquiryId: string;
+  customerId: string | null;
+}
+
+interface CustomerFeedback {
+  id: string;
+  customerId: string | null;
+  itineraryId: string | null;
+  type: string;
+  title: string;
+  description: string | null;
+  status: string;
+  documentUrl: string | null;
+  documentName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface SentItinerary {
+  id: string;
+  customerId: string | null;
+  enquiryId: string | null;
+  customerName: string;
+  email: string;
+  whatsappNumber: string | null;
+  notes: string | null;
+  status: string;
+  sentDate: Date;
+  itineraryId: string | null;
+  pdfUrl: string | null;
+  isEdited: boolean;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+type PrismaFilter = {
+  itineraryId?: string;
+  customerId?: string;
+  enquiryId?: string;
+};
+
+type ItineraryFilter = {
+  id?: string;
+  enquiryId?: string;
+  customerId?: string;
+};
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -13,8 +87,8 @@ export async function GET(request: NextRequest) {
     console.log("API Parameters:", { enquiryId, customerId, itineraryId })
 
     // Handle both enquiryId and customerId parameters
-    let customerData = null
-    let finalCustomerId = null
+    let customerData: CustomerData | null = null
+    let finalCustomerId: string | null = null
 
     if (enquiryId) {
       // Fetch enquiry first to get customer info
@@ -42,6 +116,7 @@ export async function GET(request: NextRequest) {
           travelingWithPets: true,
           pickupLocation: true,
           dropLocation: true,
+          
         },
       })
 
@@ -56,8 +131,9 @@ export async function GET(request: NextRequest) {
         email: enquiry.email,
         phone: enquiry.phone,
         whatsappNumber: enquiry.phone, // Use phone as whatsapp for enquiry-based flow
-        createdAt: enquiry.enquiryDate,
-        updatedAt: new Date().toISOString(),
+     
+        createdAt: new Date(enquiry.enquiryDate),
+        updatedAt: new Date(),
       }
       finalCustomerId = enquiry.id
     } else if (customerId) {
@@ -88,8 +164,8 @@ export async function GET(request: NextRequest) {
         name: customer.name || 'Unnamed Customer',
         email: customer.email,
         phone: customer.phone || 'N/A',
-        whatsappNumber: customer.phone, // Using phone as whatsapp number
-        companyName: customer.companyName,
+        whatsappNumber: customer.phone || 'N/A', // Using phone as whatsapp number
+        companyName: customer.companyName || undefined,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
       }
@@ -99,7 +175,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch itineraries based on the available IDs
-    let itineraryFilter = {}
+    let itineraryFilter: ItineraryFilter = {}
     if (itineraryId) {
       // Only filter by specific itinerary ID if explicitly requested
       itineraryFilter = { id: itineraryId }
@@ -107,14 +183,8 @@ export async function GET(request: NextRequest) {
       // Get ALL itineraries for this enquiry
       itineraryFilter = { enquiryId: enquiryId }
     } else if (customerId) {
-      // Get itineraries for this customer - you'll need to adjust this based on your actual schema
-      // This is a placeholder - update according to how itineraries are linked to users in your schema
-      itineraryFilter = {
-        OR: [
-          { customerId: customerId },
-          { userId: customerId } // If itineraries are linked via userId
-        ]
-      }
+      // Get itineraries for this customer
+      itineraryFilter = { customerId: customerId }
     }
 
     console.log("Itinerary Filter:", itineraryFilter)
@@ -124,7 +194,6 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         createdAt: true,
-        updatedAt: true,
         pdfUrl: true,
         activeStatus: true,
         status: true,
@@ -135,6 +204,7 @@ export async function GET(request: NextRequest) {
         currency: true,
         enquiryId: true,
         customerId: true,
+        updatedAt: true,
         enquiry: {
           select: {
             name: true,
@@ -148,16 +218,16 @@ export async function GET(request: NextRequest) {
     console.log("Found itineraries:", itineraries.length)
 
     // Transform itineraries to match frontend interface - show ALL existing data
-    const transformedItineraries = itineraries.map((itinerary) => ({
+    const transformedItineraries = itineraries.map((itinerary: Itinerary) => ({
       id: itinerary.id,
       dateGenerated: new Date(itinerary.createdAt).toLocaleDateString("en-GB").replace(/\//g, " . "),
-      pdf: itinerary.pdfUrl ? "Available" : "Not Generated", // Clear status
-      pdfStatus: itinerary.pdfUrl ? "available" : "missing", // For styling
-      activeStatus: itinerary.activeStatus || false,
-      itinerary: "View Details", // Changed from "Download"
+      pdf: itinerary.pdfUrl ? "Available" : "Not Generated",
+      pdfStatus: itinerary.pdfUrl ? "available" : "missing",
+      activeStatus: itinerary.activeStatus ?? false,
+      itinerary: "View Details",
       status: itinerary.status || "draft",
       customerName: itinerary.enquiry?.name || customerData?.name || "Unknown",
-      destinations: itinerary.destinations || itinerary.enquiry?.locations || "Not specified",
+      destinations: (itinerary.destinations || itinerary.enquiry?.locations || "Not specified").split(',').map(d => d.trim()),
       startDate: itinerary.startDate,
       endDate: itinerary.endDate,
       budget: itinerary.budget,
@@ -168,11 +238,10 @@ export async function GET(request: NextRequest) {
     }))
 
     // Fetch customer feedbacks - get ALL feedbacks
-    let feedbackFilter = {}
+    let feedbackFilter: PrismaFilter = {}
     if (itineraryId) {
       feedbackFilter = { itineraryId: itineraryId }
     } else if (enquiryId) {
-      // For enquiry-based flow, get feedbacks by customer ID that matches enquiry ID
       feedbackFilter = { customerId: enquiryId }
     } else if (customerId) {
       feedbackFilter = { customerId: customerId }
@@ -197,28 +266,26 @@ export async function GET(request: NextRequest) {
     })
 
     // Transform feedbacks to match frontend interface
-    const transformedFeedbacks = feedbacks.map((feedback) => ({
+    const transformedFeedbacks = feedbacks.map((feedback: CustomerFeedback) => ({
       id: feedback.id,
       customerId: feedback.customerId || finalCustomerId,
       itineraryId: feedback.itineraryId,
       type: feedback.type,
       title: feedback.title,
       description: feedback.description,
-      time: formatDateTime(feedback.createdAt),
       status: feedback.status,
-      customerName: customerData?.name || "Unknown",
       documentUrl: feedback.documentUrl,
       documentName: feedback.documentName,
-      createdAt: feedback.createdAt.toISOString(),
-    }))
+      createdAt: feedback.createdAt,
+      updatedAt: feedback.updatedAt,
+    }));
 
     // Fetch ALL sent itineraries history
-    let sentItineraryFilter = {}
+    let sentItineraryFilter: PrismaFilter = {}
     if (itineraryId) {
       sentItineraryFilter = { itineraryId: itineraryId }
     } else if (enquiryId) {
-      // Get ALL sent itineraries for this enquiry/customer
-      sentItineraryFilter = { customerId: enquiryId }
+      sentItineraryFilter = { enquiryId: enquiryId }
     } else if (customerId) {
       sentItineraryFilter = { customerId: customerId }
     }
@@ -231,32 +298,33 @@ export async function GET(request: NextRequest) {
         email: true,
         whatsappNumber: true,
         notes: true,
-        
-        
         status: true,
         sentDate: true,
         createdAt: true,
         customerId: true,
+        enquiryId: true,
         itineraryId: true,
+        pdfUrl: true,
+        isEdited: true,
       },
       orderBy: { sentDate: "desc" },
     })
 
     // Transform sent itineraries to match frontend interface
-    const transformedSentItineraries = sentItineraries.map((sent) => ({
+    const transformedSentItineraries = sentItineraries.map((sent: SentItinerary) => ({
       id: sent.id,
       date: new Date(sent.sentDate).toLocaleDateString("en-GB").replace(/\//g, " . "),
       customerId: sent.customerId || finalCustomerId,
       customerName: sent.customerName,
       email: sent.email,
-      whatsappNumber: sent.whatsappNumber || "",
-      notes: sent.notes || "",
-     
+      whatsappNumber: sent.whatsappNumber,
+      notes: sent.notes,
       status: sent.status,
-      
-      sentDate: sent.sentDate.toISOString(),
-      itineraryId: sent.itineraryId,
-    }))
+      pdfUrl: sent.pdfUrl,
+      isEdited: sent.isEdited,
+      createdAt: sent.createdAt,
+      updatedAt: sent.updatedAt,
+    }));
 
     console.log("Response Summary:", {
       customer: customerData?.name,
@@ -287,7 +355,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { customerId, enquiryId, itineraryId, type, title,  } = body
+    const { customerId, enquiryId, itineraryId, type, title, useEditedPdf = false } = body
 
     if ((!customerId && !enquiryId) || !type || !title) {
       return NextResponse.json({ error: "Customer ID or Enquiry ID, type, and title are required" }, { status: 400 })
@@ -296,22 +364,47 @@ export async function POST(request: NextRequest) {
     // For enquiry-based flow, use enquiryId as customerId
     const finalCustomerId = customerId || enquiryId
 
+    // Get the itinerary to check for PDF
+    let pdfUrl: string | null = null;
+    const isEdited = false;
+    
+    if (itineraryId) {
+      const itinerary = await prisma.itineraries.findUnique({
+        where: { id: itineraryId },
+        select: {
+          pdfUrl: true,
+        },
+      });
+
+      if (itinerary) {
+        pdfUrl = itinerary.pdfUrl;
+        // Set isEdited based on your business logic if needed
+        // For example: isEdited = itinerary.isEdited || false;
+      }
+    }
+
     // Create a new sent itinerary record
     const sentItinerary = await prisma.sent_itineraries.create({
       data: {
         customerId: finalCustomerId,
+        enquiryId: enquiryId || null,
         itineraryId: itineraryId || null,
-        customerName: body.customerName || "Unknown Customer",
+        customerName: body.customerName || 'Unknown Customer',
         email: body.email,
         whatsappNumber: body.whatsappNumber || null,
-        notes: body.notes || "",
-        status: "sent",
-        emailSent: type === "email",
-        whatsappSent: type === "whatsapp"
+        notes: body.notes || null,
+        status: 'sent',
+        sentDate: new Date(),
+        pdfUrl: pdfUrl || null,
+        isEdited: isEdited || false,
+        emailSent: type === 'email',
+        whatsappSent: type === 'whatsapp',
       },
-    })
+    });
 
-    // Get customer name for response
+    // Here you would typically send the email/WhatsApp with the PDF
+    // For now, we'll just log which PDF was used
+    console.log(`Sending ${useEditedPdf ? 'edited' : 'original'} PDF:`, pdfUrl);
 
     return NextResponse.json({
       success: true,
@@ -319,23 +412,26 @@ export async function POST(request: NextRequest) {
       sentItinerary: {
         id: sentItinerary.id,
         customerId: sentItinerary.customerId,
+        enquiryId: sentItinerary.enquiryId,
         itineraryId: sentItinerary.itineraryId,
         customerName: sentItinerary.customerName,
         email: sentItinerary.email,
         whatsappNumber: sentItinerary.whatsappNumber,
         notes: sentItinerary.notes,
         status: sentItinerary.status,
-        sentDate: sentItinerary.sentDate.toISOString(),
+        sentDate: sentItinerary.sentDate?.toISOString(),
         emailSent: sentItinerary.emailSent,
         whatsappSent: sentItinerary.whatsappSent,
+        pdfUrl: sentItinerary.pdfUrl,
+        isEditedVersion: sentItinerary.isEdited,
         createdAt: sentItinerary.createdAt.toISOString(),
       },
     })
   } catch (error) {
-    console.error("Error creating customer feedback:", error)
+    console.error("Error sending itinerary:", error)
     return NextResponse.json(
       {
-        error: "Failed to create feedback",
+        error: "Failed to send itinerary",
         details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 },

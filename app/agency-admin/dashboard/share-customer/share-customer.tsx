@@ -8,7 +8,6 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/hooks/use-toast"
 
 import type {
-  Customer,
   Itinerary,
   CustomerFeedback,
   SentItinerary,
@@ -30,7 +29,8 @@ const ShareCustomerDashboard = () => {
 
   const [showAddNotePopup, setShowAddNotePopup] = useState(false)
   const [showPDFPreview, setShowPDFPreview] = useState(false)
-  const [selectedPDFUrl, setSelectedPDFUrl] = useState<string | null>(null)
+  const [selectedPDFUrl, setSelectedPDFUrl] = useState<string | undefined>(undefined)
+  const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null)
   const [newNote, setNewNote] = useState<NewNote>({
     title: "",
     description: "",
@@ -38,7 +38,6 @@ const ShareCustomerDashboard = () => {
     document: null,
   })
 
-  const [, setSelectedCustomer] = useState<Customer | null>(null)
   const [itineraries, setItineraries] = useState<Itinerary[]>([])
   const [customerFeedbacks, setCustomerFeedbacks] = useState<CustomerFeedback[]>([])
   const [sentItineraries, setSentItineraries] = useState<SentItinerary[]>([])
@@ -50,7 +49,7 @@ const ShareCustomerDashboard = () => {
   const [sendingItinerary, setSendingItinerary] = useState(false)
   const [addingNote, setAddingNote] = useState(false)
   const [regeneratingPDF, setRegeneratingPDF] = useState<string | null>(null)
-  const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { toast } = useToast()
 
   // Keep URL and state in sync; restore from localStorage if URL lacks params
@@ -148,7 +147,7 @@ const ShareCustomerDashboard = () => {
 
       // Clear existing data if force refresh
       if (forceRefresh) {
-        setSelectedCustomer(null)
+        setSelectedItinerary(null)
         setItineraries([])
         setCustomerFeedbacks([])
         setSentItineraries([])
@@ -176,7 +175,6 @@ const ShareCustomerDashboard = () => {
 
       const data: CustomerDashboardData = await response.json()
       if (data.customer) {
-        setSelectedCustomer(data.customer)
         setFormData((prev) => ({
           ...prev,
           name: data.customer?.name || "",
@@ -330,7 +328,10 @@ const ShareCustomerDashboard = () => {
       return
     }
 
-    if (!itineraryToSend.pdfUrl) {
+    // Use editedPdfUrl if available and isEdited flag is true, otherwise use pdfUrl
+    const pdfUrlToSend = itineraryToSend.editedPdfUrl || itineraryToSend.pdfUrl;
+    
+    if (!pdfUrlToSend) {
       toast({
         variant: "destructive",
         title: "❌ Error",
@@ -359,10 +360,10 @@ const ShareCustomerDashboard = () => {
         email: formData.email.trim(),
         whatsappNumber: formData.whatsappNumber.trim(),
         notes: formData.notes?.trim() || null,
-     
+        useEditedPdf: !!itineraryToSend.editedPdfUrl, // Indicate if we're using the edited PDF
       }
 
-      console.log(" Sending request to API:", requestBody)
+      console.log("Sending request to API:", requestBody)
 
       // Add timeout to the fetch request
       const controller = new AbortController()
@@ -485,9 +486,74 @@ const ShareCustomerDashboard = () => {
     }
   }
 
-  const handleRegeneratePDF = async (itinerary: Itinerary) => {
-    setRegeneratingPDF(itinerary.id)
+  const refreshItineraryData = async () => {
+    if (!selectedItinerary?.id) return;
+    
+    setIsRefreshing(true);
+    try {
+      const response = await fetch(`/api/itineraries/${selectedItinerary.id}`);
+      if (!response.ok) throw new Error('Failed to fetch updated itinerary');
+      
+      const updatedItinerary = await response.json();
+      
+      // Update the selected itinerary with fresh data
+      setSelectedItinerary(prev => ({
+        ...prev,
+        ...updatedItinerary,
+        // Use edited PDF URL if available, otherwise fall back to the main PDF URL
+        
+        // Force refresh of PDF URL by adding a timestamp
+        pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl ? 
+          `${updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl}${(updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl)?.includes('?') ? '&' : '?'}t=${Date.now()}`
+          : null
+      }));
+      
+      // Update the itineraries list
+      setItineraries(prev => 
+        prev.map(item => 
+          item.id === updatedItinerary.id 
+            ? { 
+                ...item, 
+                ...updatedItinerary,
+                pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl
+              } 
+            : item
+        )
+      );
+      
+      toast({
+        title: "Success",
+        description: "Itinerary data refreshed",
+        variant: "default"
+      });
+    } catch (error) {
+      console.error('Error refreshing itinerary:', error);
+      toast({
+        title: "Error",
+        description: "Failed to refresh itinerary data",
+        variant: "destructive"
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && selectedItinerary?.id) {
+        refreshItineraryData();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [selectedItinerary?.id]);
+
+  const handleRegeneratePDF = async (itinerary: Itinerary) => {
+    setRegeneratingPDF(itinerary.id);
+  
     try {
       const response = await fetch("/api/generate-pdf", {
         method: "POST",
@@ -498,29 +564,47 @@ const ShareCustomerDashboard = () => {
           enquiryId: enquiryId || "",
           itineraryId: itinerary.id,
           formData: itinerary,
+          isEditedVersion: itinerary.isEdited // Pass the isEdited flag
         }),
-      })
-
+      });
+  
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to regenerate PDF")
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to regenerate PDF");
       }
-
-      const result = await response.json()
-
+  
+      const result = await response.json();
+  
       // Update the itinerary with new PDF URL and set as active
       setItineraries((prev) =>
-        prev.map((item) => ({
-          ...item,
-          ...(item.id === itinerary.id
-            ? { pdfUrl: result.pdfUrl, pdf: "Available", activeStatus: true }
-            : { activeStatus: false }), // Deactivate others
-        })),
-      )
-
+        prev.map((item) => {
+          const updatedItem = {
+            ...item,
+            ...(item.id === itinerary.id
+              ? { 
+                  pdfUrl: result.pdfUrl,
+                  ...(itinerary.isEdited ? { editedPdfUrl: result.pdfUrl } : { originalPdfUrl: result.pdfUrl }),
+                  isEdited: itinerary.isEdited,
+                  editedAt: itinerary.isEdited ? new Date().toISOString() : item.editedAt,
+                  activeStatus: true
+                }
+              : { activeStatus: false }), // Deactivate others
+          };
+          return updatedItem;
+        }),
+      );
+  
       // Set this itinerary as selected
-      setSelectedItinerary({ ...itinerary, pdfUrl: result.pdfUrl, activeStatus: true })
-
+      setSelectedItinerary(prev => ({
+        ...prev,
+        ...itinerary,
+        pdfUrl: result.pdfUrl,
+        ...(itinerary.isEdited ? { editedPdfUrl: result.pdfUrl } : { originalPdfUrl: result.pdfUrl }),
+        isEdited: itinerary.isEdited,
+        editedAt: itinerary.isEdited ? new Date().toISOString() : prev?.editedAt,
+        activeStatus: true
+      }));
+  
       // Update active status in database
       await fetch("/api/update-itinerary-status", {
         method: "PUT",
@@ -533,38 +617,60 @@ const ShareCustomerDashboard = () => {
           enquiryId: enquiryId,
           customerId: customerId,
         }),
-      })
-
+      });
+  
       toast({
         variant: "success",
         title: "✅ PDF Regenerated Successfully!",
         description: "The PDF has been regenerated and set as active.",
-      })
+      });
     } catch (error) {
-      console.error("Error regenerating PDF:", error)
+      console.error("Error regenerating PDF:", error);
       toast({
         variant: "destructive",
         title: "❌ PDF Regeneration Failed",
-        description: "Failed to regenerate PDF. Please try again.",
-      })
+        description: error instanceof Error ? error.message : "Failed to regenerate PDF",
+      });
     } finally {
-      setRegeneratingPDF(null)
+      setRegeneratingPDF(null);
     }
-  }
+  };
 
   // View PDF function
-  const handleViewPDF = (pdfUrl: string | null) => {
-    if (pdfUrl) {
-      setSelectedPDFUrl(pdfUrl)
-      setShowPDFPreview(true)
-    } else {
+  const handleViewPDF = async (pdfUrl: string | null) => {
+    if (!pdfUrl) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
-        description: "PDF not available",
-      })
+        title: "Error",
+        description: "No PDF URL provided",
+      });
+      return;
     }
-  }
+  
+    try {
+      // Extract the key from the S3 URL
+      const url = new URL(pdfUrl);
+      const key = url.pathname.substring(1); // Remove leading slash
+      
+      // Call an API endpoint to generate a fresh pre-signed URL
+      const response = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(key)}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate pre-signed URL');
+      }
+      
+      const { url: signedUrl } = await response.json();
+      setSelectedPDFUrl(signedUrl);
+      setShowPDFPreview(true);
+    } catch (error) {
+      console.error('Error generating pre-signed URL:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load PDF. Please try again.",
+      });
+    }
+  };
 
   // Download PDF function
   const handleDownloadPDF = (pdfUrl: string | null, filename: string) => {
@@ -714,6 +820,34 @@ const ShareCustomerDashboard = () => {
       </div>
     )
   }
+
+  const renderPDFViewer = () => (
+    <div className="relative w-full h-full">
+      <div className="absolute top-2 right-2 z-10 flex gap-2">
+        <button
+          onClick={() => refreshItineraryData()}
+          disabled={isRefreshing}
+          className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
+          title="Refresh PDF"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+        </button>
+        <button
+          onClick={() => setShowPDFPreview(false)}
+          className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
+          title="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <iframe
+  key={selectedPDFUrl}
+  src={selectedPDFUrl}
+  className="w-full h-full border-0"
+  title="PDF Preview"
+/>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -1160,13 +1294,7 @@ const ShareCustomerDashboard = () => {
       {showPDFPreview && selectedPDFUrl && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-4 w-full max-w-4xl mx-4 h-5/6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">PDF Preview</h3>
-              <button onClick={() => setShowPDFPreview(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <iframe src={selectedPDFUrl} className="w-full h-full border rounded" title="PDF Preview" />
+            {renderPDFViewer()}
           </div>
         </div>
       )}

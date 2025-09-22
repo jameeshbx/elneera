@@ -9,6 +9,9 @@ export interface Customer {
 }
 
 export interface Itinerary {
+  editedPdfUrl: string | undefined
+  isEdited: any
+  editedAt: any
   id: string
   enquiryId: string
   destinations: string

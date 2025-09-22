@@ -78,41 +78,42 @@ export default function LoginForm() {
       const session = await getSession();
       
       if (session?.user) {
-        const { role, userType } = session.user;
-        console.log('User data from session:', { role, userType });
+        const { role, userType, profileCompleted } = session.user;
+        console.log('User data from session:', { role, userType, profileCompleted });
 
-        // Determine the redirect path based on userType or role
+        // Get the redirect path based on role or userType
         const getRedirectPath = () => {
-          // First try to use userType
+          // First try to use userType if available
           if (userType) {
-            switch (userType.toUpperCase()) {
-              case 'AGENCY_ADMIN':
+            const upperUserType = userType.toUpperCase();
+            if (upperUserType === 'SUPER_ADMIN') return '/super-admin/dashboard';
+            if (upperUserType === 'ADMIN') return '/admin/dashboard';
+            
+            // Handle AGENCY_ADMIN specific redirection
+            if (upperUserType === 'AGENCY_ADMIN') {
+              // If profile is not completed, redirect to agency form
+              if (!profileCompleted) {
                 return '/agency-admin/agency-form';
-              case 'MANAGER':
-                return '/agency/dashboard';
-              case 'EXECUTIVE':
-                return '/executive/dashboard';
-              case 'TEAM_LEAD':
-                return '/teamlead/dashboard';
-              case 'TL':
-                return '/telecaller/dashboard';
+              }
+              return '/agency-admin/dashboard';
             }
+            
+            if (upperUserType === 'MANAGER') return '/agency/dashboard';
+            if (upperUserType === 'EXECUTIVE') return '/executive/dashboard';
+            if (upperUserType === 'TEAM_LEAD') return '/teamlead/dashboard';
+            if (upperUserType === 'TL') return '/telecaller/dashboard';
           }
 
           // Fall back to role if userType is not available
           if (role) {
-            switch (role.toUpperCase()) {
-              case 'AGENCY_ADMIN':
-                return '/agency-admin/agency-form';
-              case 'MANAGER':
-                return '/agency/dashboard';
-              case 'EXECUTIVE':
-                return '/executive/dashboard';
-              case 'TEAM_LEAD':
-                return '/teamlead/dashboard';
-              case 'TL':
-                return '/telecaller/dashboard';
-            }
+            const upperRole = role.toUpperCase();
+            if (upperRole === 'SUPER_ADMIN') return '/super-admin/dashboard';
+            if (upperRole === 'ADMIN') return '/admin/dashboard';
+            if (upperRole === 'AGENCY_ADMIN') return '/agency-admin/dashboard';
+            if (upperRole === 'MANAGER') return '/agency/dashboard';
+            if (upperRole === 'EXECUTIVE') return '/executive/dashboard';
+            if (upperRole === 'TEAM_LEAD') return '/teamlead/dashboard';
+            if (upperRole === 'TL') return '/telecaller/dashboard';
           }
 
           // Default fallback
