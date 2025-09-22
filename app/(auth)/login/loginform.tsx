@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { signIn, getSession } from "next-auth/react"
 
+
 // Import UserRole from next-auth types
 
-// Client-side validation schema (commented out since it's not currently used)
+// Client-side validation schema (commented out since it's not currently used) 
 // const loginSchema = z.object({
 //   email: z.string()
 //     .email("Please enter a valid email address")
@@ -36,108 +37,138 @@ export default function LoginForm() {
     }
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
 
-    const form = e.currentTarget as HTMLFormElement;
-    const formData = new FormData(form);
+ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  setIsLoading(true);
+  setError('');
 
-    try {
-      const email = formData.get("email") as string;
-      const password = formData.get("password") as string;
+  const form = e.currentTarget as HTMLFormElement;
+  const formData = new FormData(form);
 
-      // Basic email format validation
-      if (!email || !password) {
-        throw new Error('Please enter both email and password.');
+  try {
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    // Basic email format validation
+    if (!email || !password) {
+      throw new Error('Please enter both email and password.');
+    }
+
+    const result = await signIn('credentials', {
+      redirect: false,
+      email: email.trim().toLowerCase(),
+      password: password,
+    });
+
+    if (result?.error) {
+      console.error('❌ SignIn Error:', result.error);
+      let errorMessage = 'Login failed. Please try again.';
+
+      try {
+        const errorData = JSON.parse(result.error);
+        errorMessage = errorData.message || errorMessage;
+      } catch {
       
+        // If error is not JSON, use it as is
+        errorMessage = result.error;
       }
+      throw new Error(errorMessage);
+    }
 
-      const result = await signIn('credentials', {
-        redirect: false,
-        email: email.trim().toLowerCase(),
-        password: password,
-      });
+    // Get the user's session to determine the role
+    const session = await getSession();
+    if (session?.user) {
+      const { role, userType, email } = session.user;
+      console.log('User data from session:', { role, userType });
 
-      if (result?.error) {
-        console.error('❌ SignIn Error:', result.error);
-        let errorMessage = 'Login failed. Please try again.';
-
+      // Helper to check if agency-form is submitted - IMPROVED ERROR HANDLING
+      const checkAgencyFormSubmitted = async (email: string) => {
         try {
-          const errorData = JSON.parse(result.error);
-          errorMessage = errorData.message || errorMessage;
-        } catch  {
-          // If error is not JSON, use it as is
-          errorMessage = result.error;
+          const res = await fetch('/api/agency/check-form-submitted', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+
+          // If API doesn't exist (404), assume form not submitted
+          if (res.status === 404) {
+            console.warn('API endpoint not found - assuming form not submitted');
+            return false;
+          }
+
+          // If other error, assume form not submitted
+          if (!res.ok) {
+            console.error('API error:', res.status);
+            return false;
+          }
+
+          const data = await res.json();
+          return data.submitted === true;
+        } catch (error) {
+          console.error('Error checking form:', error);
+          return false; // Safe fallback
         }
-        throw new Error(errorMessage);
-      }
+      };
 
-      // Get the user's session to determine the role
-      const session = await getSession();
-      
-      if (session?.user) {
-        const { role, userType } = session.user;
-        console.log('User data from session:', { role, userType });
-
-        // Determine the redirect path based on userType or role
-        const getRedirectPath = () => {
-          // First try to use userType
-          if (userType) {
-            switch (userType.toUpperCase()) {
-              case 'AGENCY_ADMIN':
-                return '/agency-admin/agency-form';
-              case 'MANAGER':
-                return '/agency/dashboard';
-              case 'EXECUTIVE':
-                return '/executive/dashboard';
-              case 'TEAM_LEAD':
-                return '/teamlead/dashboard';
-              case 'TL':
-                return '/telecaller/dashboard';
-            }
+      // Determine the redirect path based on userType or role
+      const getRedirectPath = async () => {
+        // Check for agency admin (userType or role)
+        const isAgencyAdmin =
+          (userType && userType.toUpperCase() === 'AGENCY_ADMIN') ||
+          (role && role.toUpperCase() === 'AGENCY_ADMIN');
+        if (isAgencyAdmin) {
+          if (email && await checkAgencyFormSubmitted(email)) {
+            return '/agency/dashboard';
+          } else {
+            return '/agency-admin/agency-form';
           }
-
-          // Fall back to role if userType is not available
-          if (role) {
-            switch (role.toUpperCase()) {
-              case 'AGENCY_ADMIN':
-                return '/agency-admin/agency-form';
-              case 'MANAGER':
-                return '/agency/dashboard';
-              case 'EXECUTIVE':
-                return '/executive/dashboard';
-              case 'TEAM_LEAD':
-                return '/teamlead/dashboard';
-              case 'TL':
-                return '/telecaller/dashboard';
-            }
+        }
+        // Other roles
+        if (userType) {
+          switch (userType.toUpperCase()) {
+            case 'MANAGER':
+              return '/agency/dashboard';
+            case 'EXECUTIVE':
+              return '/executive/dashboard';
+            case 'TEAM_LEAD':
+              return '/teamlead/dashboard';
+            case 'TL':
+              return '/telecaller/dashboard';
           }
+        }
+        if (role) {
+          switch (role.toUpperCase()) {
+            case 'MANAGER':
+              return '/agency/dashboard';
+            case 'EXECUTIVE':
+              return '/executive/dashboard';
+            case 'TEAM_LEAD':
+              return '/teamlead/dashboard';
+            case 'TL':
+              return '/telecaller/dashboard';
+          }
+        }
+        // Default fallback
+        return '/dashboard';
+      };
 
-          // Default fallback
-          return '/dashboard';
-        };
-
-        const redirectPath = getRedirectPath();
-        console.log('Redirecting to:', redirectPath);
-
-        // Use window.location.href to ensure a full page reload
-        window.location.href = redirectPath;
-      } else {
-        throw new Error('Login successful but no user data found. Please try again.');
-      }
-    }catch(error){
-      
-      // Force a full page reload to ensure all session data is loaded
-      console.error('❌ Login error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Login failed. Please try again.';
-      setError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setIsLoading(false);
-    } 
-    };
+      const redirectPath = await getRedirectPath();
+      console.log('Redirecting to:', redirectPath);
+      window.location.href = redirectPath;
+    } else {
+      throw new Error('Login successful but no user data found. Please try again.');
+    }
+  } catch(error) {
+    // Force a full page reload to ensure all session data is loaded
+    console.error('❌ Login error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Login failed. Please try again.';
+    setError(errorMessage);
+    toast.error(errorMessage);
+  } finally {
+    setIsLoading(false);
+  } 
+};
   
 
     return (
