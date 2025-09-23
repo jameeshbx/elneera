@@ -14,25 +14,6 @@ interface CustomerData {
   updatedAt: Date;
 }
 
-interface Itinerary {
-  id: string;
-  createdAt: Date;
-  updatedAt: Date;
-  pdfUrl: string | null;
-  activeStatus: boolean | null;
-  status: string;
-  enquiry?: {
-    name: string;
-    locations: string | null;
-  };
-  destinations: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  budget: number | null;
-  currency: string | null;
-  enquiryId: string;
-  customerId: string | null;
-}
 
 interface CustomerFeedback {
   id: string;
@@ -48,22 +29,6 @@ interface CustomerFeedback {
   updatedAt: Date;
 }
 
-interface SentItinerary {
-  id: string;
-  customerId: string | null;
-  enquiryId: string | null;
-  customerName: string;
-  email: string;
-  whatsappNumber: string | null;
-  notes: string | null;
-  status: string;
-  sentDate: Date;
-  itineraryId: string | null;
-  pdfUrl: string | null;
-  isEdited: boolean;
-  createdAt: Date;
-  updatedAt?: Date;
-}
 
 type PrismaFilter = {
   itineraryId?: string;
@@ -195,6 +160,8 @@ export async function GET(request: NextRequest) {
         id: true,
         createdAt: true,
         pdfUrl: true,
+        editedPdfUrl: true,
+        isEdited: true,
         activeStatus: true,
         status: true,
         destinations: true,
@@ -218,11 +185,11 @@ export async function GET(request: NextRequest) {
     console.log("Found itineraries:", itineraries.length)
 
     // Transform itineraries to match frontend interface - show ALL existing data
-    const transformedItineraries = itineraries.map((itinerary: Itinerary) => ({
+    const transformedItineraries = itineraries.map((itinerary) => ({
       id: itinerary.id,
       dateGenerated: new Date(itinerary.createdAt).toLocaleDateString("en-GB").replace(/\//g, " . "),
-      pdf: itinerary.pdfUrl ? "Available" : "Not Generated",
-      pdfStatus: itinerary.pdfUrl ? "available" : "missing",
+      pdf: (itinerary.editedPdfUrl || itinerary.pdfUrl) ? "Available" : "Not Generated",
+      pdfStatus: (itinerary.editedPdfUrl || itinerary.pdfUrl) ? "available" : "missing",
       activeStatus: itinerary.activeStatus ?? false,
       itinerary: "View Details",
       status: itinerary.status || "draft",
@@ -232,10 +199,24 @@ export async function GET(request: NextRequest) {
       endDate: itinerary.endDate,
       budget: itinerary.budget,
       currency: itinerary.currency,
-      pdfUrl: itinerary.pdfUrl,
+      pdfUrl: itinerary.pdfUrl as string | null,
+      editedPdfUrl: itinerary.editedPdfUrl as string | null, // Add this field
+      isEdited: itinerary.isEdited || false, // Add this field
       createdAt: itinerary.createdAt,
       updatedAt: itinerary.updatedAt,
     }))
+    console.log("Found itineraries:", itineraries.length)
+
+    const activeItinerary = transformedItineraries.find(it => it.activeStatus && (it.editedPdfUrl || it.pdfUrl));
+const latestItineraryWithPDF = transformedItineraries.find(it => (it.editedPdfUrl || it.pdfUrl));
+
+const itineraryToSelect = activeItinerary || latestItineraryWithPDF;
+
+if (itineraryToSelect) {
+  console.log('Auto-selected itinerary:', itineraryToSelect.id, 'Active:', itineraryToSelect.activeStatus, 'IsEdited:', itineraryToSelect.isEdited);
+} else {
+  console.log('No itinerary with PDF found to select');
+}
 
     // Fetch customer feedbacks - get ALL feedbacks
     let feedbackFilter: PrismaFilter = {}
@@ -301,6 +282,7 @@ export async function GET(request: NextRequest) {
         status: true,
         sentDate: true,
         createdAt: true,
+        updatedAt: true,
         customerId: true,
         enquiryId: true,
         itineraryId: true,
@@ -311,7 +293,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Transform sent itineraries to match frontend interface
-    const transformedSentItineraries = sentItineraries.map((sent: SentItinerary) => ({
+    const transformedSentItineraries = sentItineraries.map((sent) => ({
       id: sent.id,
       date: new Date(sent.sentDate).toLocaleDateString("en-GB").replace(/\//g, " . "),
       customerId: sent.customerId || finalCustomerId,
@@ -320,7 +302,7 @@ export async function GET(request: NextRequest) {
       whatsappNumber: sent.whatsappNumber,
       notes: sent.notes,
       status: sent.status,
-      pdfUrl: sent.pdfUrl,
+      pdfUrl: typeof sent.pdfUrl === "string" ? sent.pdfUrl : sent.pdfUrl === null ? null : String(sent.pdfUrl),
       isEdited: sent.isEdited,
       createdAt: sent.createdAt,
       updatedAt: sent.updatedAt,
@@ -377,7 +359,7 @@ export async function POST(request: NextRequest) {
       });
 
       if (itinerary) {
-        pdfUrl = itinerary.pdfUrl;
+        pdfUrl = typeof itinerary.pdfUrl === "string" ? itinerary.pdfUrl : itinerary.pdfUrl === null ? null : String(itinerary.pdfUrl);
         // Set isEdited based on your business logic if needed
         // For example: isEdited = itinerary.isEdited || false;
       }
@@ -395,7 +377,7 @@ export async function POST(request: NextRequest) {
         notes: body.notes || null,
         status: 'sent',
         sentDate: new Date(),
-        pdfUrl: pdfUrl || null,
+        pdfUrl: pdfUrl ?? undefined,
         isEdited: isEdited || false,
         emailSent: type === 'email',
         whatsappSent: type === 'whatsapp',

@@ -183,14 +183,29 @@ const ShareCustomerDashboard = () => {
         }))
       }
 
-      setItineraries(data.itineraries || [])
+      // Sort itineraries by creation date (latest first)
+      const sortedItineraries = (data.itineraries || []).sort((a, b) => {
+        const aDate = new Date(a.createdAt || a.dateGenerated || 0).getTime();
+        const bDate = new Date(b.createdAt || b.dateGenerated || 0).getTime();
+        return bDate - aDate;
+      });
+
+      setItineraries(sortedItineraries)
       setCustomerFeedbacks(data.feedbacks || [])
       setSentItineraries(data.sentItineraries || [])
 
-      // Auto-select first itinerary with PDF if available
-      const firstItineraryWithPDF = (data.itineraries || []).find((it) => it.pdfUrl)
-      if (firstItineraryWithPDF) {
-        setSelectedItinerary(firstItineraryWithPDF)
+      // Always select the active itinerary first, if none active then select the latest
+      const activeItinerary = sortedItineraries.find(it => it.activeStatus && it.pdfUrl);
+      const latestItineraryWithPDF = sortedItineraries.find(it => it.pdfUrl);
+      
+      const itineraryToSelect = activeItinerary || latestItineraryWithPDF;
+      
+      if (itineraryToSelect) {
+        setSelectedItinerary(itineraryToSelect);
+        console.log('Auto-selected itinerary:', itineraryToSelect.id, 'Active:', itineraryToSelect.activeStatus);
+      } else {
+        setSelectedItinerary(null);
+        console.log('No itinerary with PDF found to select');
       }
     } catch (error) {
       console.error("Error fetching customer data:", error)
@@ -251,19 +266,22 @@ const ShareCustomerDashboard = () => {
 
       // If activating this itinerary, select it
       if (newActiveStatus) {
-        setSelectedItinerary(itinerary)
+        setSelectedItinerary({
+          ...itinerary,
+          activeStatus: true
+        })
       }
 
       toast({
         variant: "success",
-        title: "✅ Status Updated",
+        title: "Status Updated",
         description: `Itinerary ${newActiveStatus ? "activated" : "deactivated"} successfully`,
       })
     } catch (error) {
       console.error("Error updating active status:", error)
       toast({
         variant: "destructive",
-        title: "❌ Update Failed",
+        title: "Update Failed",
         description: "Failed to update itinerary status. Please try again.",
       })
     }
@@ -275,7 +293,7 @@ const ShareCustomerDashboard = () => {
     if (!formData.name?.trim()) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Please enter customer name",
       })
       return
@@ -284,7 +302,7 @@ const ShareCustomerDashboard = () => {
     if (!formData.email?.trim()) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Please enter customer email",
       })
       return
@@ -293,7 +311,7 @@ const ShareCustomerDashboard = () => {
     if (!validateEmail(formData.email)) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Please enter a valid email address",
       })
       return
@@ -302,7 +320,7 @@ const ShareCustomerDashboard = () => {
     if (!formData.whatsappNumber?.trim()) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Please enter WhatsApp number",
       })
       return
@@ -311,30 +329,30 @@ const ShareCustomerDashboard = () => {
     if (!validatePhoneNumber(formData.whatsappNumber)) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Please enter a valid phone number",
       })
       return
     }
 
     // Check if an itinerary is selected or available
-    const itineraryToSend = selectedItinerary || itineraries[0]
+    const itineraryToSend = selectedItinerary || itineraries.find(it => it.activeStatus && it.pdfUrl) || itineraries.find(it => it.pdfUrl)
     if (!itineraryToSend) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "No itinerary available to send. Please generate an itinerary first.",
       })
       return
     }
 
-    // Use editedPdfUrl if available and isEdited flag is true, otherwise use pdfUrl
+    // Use the appropriate PDF URL (edited or original)
     const pdfUrlToSend = itineraryToSend.editedPdfUrl || itineraryToSend.pdfUrl;
     
     if (!pdfUrlToSend) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "PDF not available for selected itinerary. Please generate PDF first.",
       })
       return
@@ -343,7 +361,7 @@ const ShareCustomerDashboard = () => {
     if (!customerId && !enquiryId) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Customer ID or Enquiry ID is required",
       })
       return
@@ -369,7 +387,7 @@ const ShareCustomerDashboard = () => {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 second timeout
 
-      const response = await fetch("/api/sent-Itinerary", {
+      const response = await fetch("/api/sent-itinerary", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -381,11 +399,9 @@ const ShareCustomerDashboard = () => {
       clearTimeout(timeoutId)
 
       console.log("API Response status:", response.status)
-      console.log(" API Response headers:", Object.fromEntries(response.headers.entries()))
 
       // Get response text first to handle both JSON and non-JSON responses
       const responseText = await response.text()
-      console.log(" Raw response:", responseText.substring(0, 500)) // Log first 500 chars
 
       // Check if response is actually JSON
       let result
@@ -393,13 +409,12 @@ const ShareCustomerDashboard = () => {
       if (contentType && contentType.includes("application/json")) {
         try {
           result = JSON.parse(responseText)
-          console.log("Parsed JSON result:", result)
         } catch (parseError) {
-          console.error(" Failed to parse JSON:", parseError)
+          console.error("Failed to parse JSON:", parseError)
           throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}`)
         }
       } else {
-        console.error(" API returned non-JSON response:", {
+        console.error("API returned non-JSON response:", {
           status: response.status,
           contentType,
           body: responseText.substring(0, 500),
@@ -421,33 +436,31 @@ const ShareCustomerDashboard = () => {
         // Handle specific error types
         if (errorMessage.includes("Email server connection failed")) {
           throw new Error(
-            " Email Configuration Error: The email server is not properly configured. Please contact your administrator.",
+            "Email Configuration Error: The email server is not properly configured. Please contact your administrator.",
           )
         } else if (errorMessage.includes("Invalid email")) {
-          throw new Error(" Invalid Email: Please check the email address and try again.")
+          throw new Error("Invalid Email: Please check the email address and try again.")
         } else if (errorMessage.includes("PDF not found")) {
-          throw new Error(" PDF Error: The itinerary PDF could not be found. Please regenerate the PDF.")
+          throw new Error("PDF Error: The itinerary PDF could not be found. Please regenerate the PDF.")
         } else {
           throw new Error(errorMessage)
         }
       }
 
       if (result.success && result.sentItinerary) {
+
         // Refresh full dashboard data to ensure persistence and show existing entries
         await fetchCustomerData(customerId, enquiryId, itineraryId)
-        setFormData((prev) => ({
-          ...prev,
-          notes: "",
-         
-        }))
+      setFormData((prev) => ({
+        ...prev,
+        notes: "",
+      }))
 
-        toast({
-          variant: "success",
-          title: "✅ Email Sent Successfully!",
-          description: `Itinerary sent to ${formData.email}. Customer will receive it shortly.`,
-        })
-
-        setSelectedItinerary(null)
+      toast({
+        variant: "success",
+        title: "Email Sent Successfully!",
+        description: `${itineraryToSend.isEdited ? 'Edited' : 'Original'} itinerary sent to ${formData.email}. Customer will receive it shortly.`,
+      })
 
         // Redirect to Share DMC section after success, preserving context
         const dmcParams = new URLSearchParams()
@@ -459,7 +472,7 @@ const ShareCustomerDashboard = () => {
         throw new Error(result.error || "Failed to send itinerary")
       }
     } catch (error) {
-      console.error("💥 Error sending itinerary:", error)
+      console.error("Error sending itinerary:", error)
 
       let errorMessage = "Failed to send email"
 
@@ -477,7 +490,7 @@ const ShareCustomerDashboard = () => {
 
       toast({
         variant: "destructive",
-        title: "❌ Email Failed",
+        title: "Email Failed",
         description: errorMessage,
         duration: 8000, // Show longer for error messages
       })
@@ -500,8 +513,6 @@ const ShareCustomerDashboard = () => {
       setSelectedItinerary(prev => ({
         ...prev,
         ...updatedItinerary,
-        // Use edited PDF URL if available, otherwise fall back to the main PDF URL
-        
         // Force refresh of PDF URL by adding a timestamp
         pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl ? 
           `${updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl}${(updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl)?.includes('?') ? '&' : '?'}t=${Date.now()}`
@@ -553,7 +564,6 @@ const ShareCustomerDashboard = () => {
 
   const handleRegeneratePDF = async (itinerary: Itinerary) => {
     setRegeneratingPDF(itinerary.id);
-  
     try {
       const response = await fetch("/api/generate-pdf", {
         method: "POST",
@@ -564,72 +574,31 @@ const ShareCustomerDashboard = () => {
           enquiryId: enquiryId || "",
           itineraryId: itinerary.id,
           formData: itinerary,
-          isEditedVersion: itinerary.isEdited // Pass the isEdited flag
+          isEditedVersion: false // This is regenerating original PDF
         }),
       });
-  
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to regenerate PDF");
       }
-  
-      const result = await response.json();
-  
-      // Update the itinerary with new PDF URL and set as active
-      setItineraries((prev) =>
-        prev.map((item) => {
-          const updatedItem = {
-            ...item,
-            ...(item.id === itinerary.id
-              ? { 
-                  pdfUrl: result.pdfUrl,
-                  ...(itinerary.isEdited ? { editedPdfUrl: result.pdfUrl } : { originalPdfUrl: result.pdfUrl }),
-                  isEdited: itinerary.isEdited,
-                  editedAt: itinerary.isEdited ? new Date().toISOString() : item.editedAt,
-                  activeStatus: true
-                }
-              : { activeStatus: false }), // Deactivate others
-          };
-          return updatedItem;
-        }),
-      );
-  
-      // Set this itinerary as selected
-      setSelectedItinerary(prev => ({
-        ...prev,
-        ...itinerary,
-        pdfUrl: result.pdfUrl,
-        ...(itinerary.isEdited ? { editedPdfUrl: result.pdfUrl } : { originalPdfUrl: result.pdfUrl }),
-        isEdited: itinerary.isEdited,
-        editedAt: itinerary.isEdited ? new Date().toISOString() : prev?.editedAt,
-        activeStatus: true
-      }));
-  
-      // Update active status in database
-      await fetch("/api/update-itinerary-status", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          itineraryId: itinerary.id,
-          activeStatus: true,
-          enquiryId: enquiryId,
-          customerId: customerId,
-        }),
-      });
-  
+
+      await response.json(); // Removed unused 'result' variable
+
+      // Refresh the full customer data to show the new itinerary
+      await fetchCustomerData(customerId, enquiryId, itineraryId);
+
       toast({
         variant: "success",
-        title: "✅ PDF Regenerated Successfully!",
-        description: "The PDF has been regenerated and set as active.",
+        title: "PDF Generated Successfully!",
+        description: "New PDF has been generated and set as active.",
       });
     } catch (error) {
-      console.error("Error regenerating PDF:", error);
+      console.error("Error generating PDF:", error);
       toast({
         variant: "destructive",
-        title: "❌ PDF Regeneration Failed",
-        description: error instanceof Error ? error.message : "Failed to regenerate PDF",
+        title: "PDF Generation Failed",
+        description: error instanceof Error ? error.message : "Failed to generate PDF",
       });
     } finally {
       setRegeneratingPDF(null);
@@ -684,7 +653,7 @@ const ShareCustomerDashboard = () => {
     } else {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "PDF not available",
       })
     }
@@ -697,7 +666,6 @@ const ShareCustomerDashboard = () => {
       [name]: value,
     }))
   }
-
 
   const handleNoteFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -714,7 +682,7 @@ const ShareCustomerDashboard = () => {
     if (!newNote.title.trim() || !newNote.description.trim()) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Please fill in all required fields",
       })
       return
@@ -723,7 +691,7 @@ const ShareCustomerDashboard = () => {
     if (!customerId && !enquiryId) {
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: "Customer ID or Enquiry ID is required",
       })
       return
@@ -767,7 +735,7 @@ const ShareCustomerDashboard = () => {
         setShowAddNotePopup(false)
         toast({
           variant: "success",
-          title: "✅ Note Added Successfully!",
+          title: "Note Added Successfully!",
           description: "The note has been successfully added.",
         })
       } else {
@@ -777,7 +745,7 @@ const ShareCustomerDashboard = () => {
       console.error("Error adding note:", error)
       toast({
         variant: "destructive",
-        title: "❌ Error",
+        title: "Error",
         description: error instanceof Error ? error.message : "Failed to add note. Please try again.",
       })
     } finally {
@@ -841,11 +809,11 @@ const ShareCustomerDashboard = () => {
         </button>
       </div>
       <iframe
-  key={selectedPDFUrl}
-  src={selectedPDFUrl}
-  className="w-full h-full border-0"
-  title="PDF Preview"
-/>
+        key={selectedPDFUrl}
+        src={selectedPDFUrl}
+        className="w-full h-full border-0"
+        title="PDF Preview"
+      />
     </div>
   );
 
@@ -873,9 +841,12 @@ const ShareCustomerDashboard = () => {
                 </div>
                 {selectedItinerary && (
                   <p className="text-sm text-green-600 mt-1">
-                    ✓ Selected: {selectedItinerary.destinations || `Itinerary ${selectedItinerary.id}`}
+                    Selected: {selectedItinerary.destinations || `Itinerary ${selectedItinerary.id}`}
                     {selectedItinerary.activeStatus && (
                       <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">ACTIVE</span>
+                    )}
+                    {selectedItinerary.isEdited && (
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">EDITED</span>
                     )}
                   </p>
                 )}
@@ -884,8 +855,9 @@ const ShareCustomerDashboard = () => {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-green-50 border-b">
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Select & Date</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-700">Select & Details</th>
                       <th className="text-left p-4 text-sm font-medium text-gray-700">PDF Status</th>
+                      <th className="text-left p-4 text-sm font-medium text-gray-700">Version</th>
                       <th className="text-left p-4 text-sm font-medium text-gray-700">Active Status</th>
                       <th className="text-left p-4 text-sm font-medium text-gray-700">Actions</th>
                     </tr>
@@ -893,7 +865,7 @@ const ShareCustomerDashboard = () => {
                   <tbody>
                     {itineraries.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="p-8 text-center text-gray-500">
+                        <td colSpan={5} className="p-8 text-center text-gray-500">
                           <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                           No itineraries found for this customer
                         </td>
@@ -919,9 +891,14 @@ const ShareCustomerDashboard = () => {
                                 className="mr-2 text-green-600"
                               />
                               <div>
-                                <span className="text-sm text-gray-600">{item.dateGenerated}</span>
+                                <div className="text-sm font-medium">
+                                  {new Date(item.createdAt || item.dateGenerated).toLocaleString()}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {item.destinations || 'Unknown destination'}
+                                </div>
                                 {item.activeStatus && (
-                                  <div className="text-xs text-green-600 font-medium">● ACTIVE</div>
+                                  <div className="text-xs text-green-600 font-medium">ACTIVE</div>
                                 )}
                               </div>
                             </div>
@@ -930,12 +907,12 @@ const ShareCustomerDashboard = () => {
                             <div className="flex items-center gap-2">
                               <div
                                 className={`w-6 h-8 rounded flex items-center justify-center text-white text-sm font-medium ${
-                                  item.pdfUrl ? "bg-green-500" : "bg-gray-400"
+                                  item.editedPdfUrl || item.pdfUrl ? "bg-green-500" : "bg-gray-400"
                                 }`}
                               >
-                                {item.pdfUrl ? "✓" : "×"}
+                                {item.editedPdfUrl || item.pdfUrl ? "✓" : "×"}
                               </div>
-                              {!item.pdfUrl && (
+                              {!item.editedPdfUrl && !item.pdfUrl && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
@@ -946,6 +923,19 @@ const ShareCustomerDashboard = () => {
                                 >
                                   {regeneratingPDF === item.id ? "Generating..." : "Generate PDF"}
                                 </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <div className="text-xs">
+                              {item.isEdited ? (
+                                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                  EDITED
+                                </span>
+                              ) : (
+                                <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
+                                  ORIGINAL
+                                </span>
                               )}
                             </div>
                           </td>
@@ -968,27 +958,36 @@ const ShareCustomerDashboard = () => {
                           </td>
                           <td className="p-4">
                             <div className="flex gap-2">
-                              {item.pdfUrl && (
+                              {(item.editedPdfUrl || item.pdfUrl) && (
                                 <>
                                   <button
                                     onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleViewPDF(item.pdfUrl ?? null)
+                                      e.stopPropagation();
+                                      const pdfToView = item.editedPdfUrl || item.pdfUrl || null;
+                                      if (pdfToView !== null) {
+                                        handleViewPDF(pdfToView);
+                                      }
                                     }}
                                     className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
-                                    disabled={!item.pdfUrl}
+                                    disabled={!item.editedPdfUrl && !item.pdfUrl}
                                   >
                                     <Eye className="w-3 h-3" />
-                                    View
+                                    View {item.isEdited ? "Edited" : "Original"}
                                   </button>
 
                                   <button
                                     onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleDownloadPDF(item.pdfUrl ?? null, `itinerary-${item.id}.pdf`)
+                                      e.stopPropagation();
+                                      const pdfToDownload = item.editedPdfUrl || item.pdfUrl;
+                                      if (pdfToDownload) {
+                                        handleDownloadPDF(
+                                          pdfToDownload,
+                                          `itinerary-${item.id}${item.isEdited ? '-edited' : ''}.pdf`
+                                        );
+                                      }
                                     }}
                                     className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
-                                    disabled={!item.pdfUrl}
+                                    disabled={!item.editedPdfUrl && !item.pdfUrl}
                                   >
                                     <Download className="w-3 h-3" />
                                     Download
@@ -1068,14 +1067,22 @@ const ShareCustomerDashboard = () => {
                   <div className="text-xs text-green-700">
                     <p>ID: {selectedItinerary.id}</p>
                     <p>Generated: {selectedItinerary.dateGenerated}</p>
-                    <p>PDF: {selectedItinerary.pdfUrl ? "✅ Available" : "❌ Not Available"}</p>
+                    <p>Type: {selectedItinerary.isEdited ? "Edited Version" : "Original Version"}</p>
+                    <p>PDF Status: {selectedItinerary.editedPdfUrl || selectedItinerary.pdfUrl ? "✅ Available" : "❌ Not Available"}</p>
+                    <p>Active Status: {selectedItinerary.activeStatus ? "✅ Active" : "⚪ Inactive"}</p>
+                    {selectedItinerary.isEdited && selectedItinerary.editedPdfUrl && (
+                      <p className="text-blue-700 font-medium">📝 Will send edited PDF</p>
+                    )}
+                    {!selectedItinerary.isEdited && selectedItinerary.pdfUrl && (
+                      <p className="text-gray-700">📄 Will send original PDF</p>
+                    )}
                   </div>
                 </div>
               )}
 
               <button
                 onClick={sendItineraryViaEmail}
-                disabled={sendingItinerary || !selectedItinerary?.pdfUrl}
+                disabled={sendingItinerary || !(selectedItinerary?.editedPdfUrl || selectedItinerary?.pdfUrl)}
                 className="w-full py-3 bg-green-900 text-white font-medium rounded-lg hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {sendingItinerary ? (
@@ -1084,11 +1091,13 @@ const ShareCustomerDashboard = () => {
                     Sending Email...
                   </>
                 ) : (
-                  <>📧 Send Itinerary via Email</>
+                  <>
+                    📧 Send {selectedItinerary?.isEdited ? 'Edited' : 'Original'} Itinerary via Email
+                  </>
                 )}
               </button>
 
-              {!selectedItinerary?.pdfUrl && (
+              {!(selectedItinerary?.editedPdfUrl || selectedItinerary?.pdfUrl) && (
                 <p className="text-center text-sm text-red-600 mt-2">
                   Please select an itinerary with PDF to send email
                 </p>

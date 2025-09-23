@@ -1,34 +1,32 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { PrismaClient } from "@prisma/client"
+// app/api/sent-itinerary/route.ts
+import { S3Service } from "@/lib/s3-service"
+import { getServerSession } from "next-auth"
+import { NextResponse } from "next/server"
+import { authOptions } from "@/lib/auth"
 import { sendEmail } from "@/lib/email"
-import fs from "fs/promises"
 import path from "path"
+import fs from "fs/promises"
 
+import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
-// Types for sent itineraries
 
-export async function POST(request: NextRequest) {
+
+export async function POST(request: Request) {
   try {
-    console.log("[v0] Email sending API called")
-    const body = await request.json()
-    console.log("[v0] Request body:", body)
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
-    const {
-      customerId,
-      itineraryId,
-      enquiryId,
-      customerName,
-      email,
-      whatsappNumber,
-      notes,
-    } = body
+    const body = await request.json()
+    const { customerId, itineraryId, enquiryId, customerName, email, whatsappNumber, notes } = body
 
     // Validate required fields
     if (!customerName || !email || !whatsappNumber) {
       return NextResponse.json(
         { error: "Missing required fields: customerName, email, or whatsappNumber" },
-        { status: 400 },
+        { status: 400 }
       )
     }
 
@@ -40,178 +38,133 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "itineraryId is required" }, { status: 400 })
     }
 
-    const generatedPdfsDir = path.join(process.cwd(), "public", "generated-pdfs")
-    let pdfFilePath = null
-    let pdfUrl = null
-
     try {
-      const files = await fs.readdir(generatedPdfsDir)
-      console.log("[v0] Available PDF files:", files)
+      // First, try to find the itinerary in S3
+      const s3Key = `itinerary-pdfs/itinerary-${itineraryId}.pdf`
+      let s3FileInfo = await S3Service.getFileInfo(s3Key)
 
-      // Find the most recent PDF file for this itinerary
-      const pdfFiles = files.filter((file) => file.startsWith(`itinerary-${itineraryId}`) && file.endsWith(".pdf"))
-
-      if (pdfFiles.length === 0) {
-        // Try to find any recent PDF file as fallback
-        const allPdfFiles = files.filter((file) => file.endsWith(".pdf"))
-        if (allPdfFiles.length > 0) {
-          // Sort by creation time (newest first) based on timestamp in filename
-          allPdfFiles.sort((a, b) => {
-            const timestampA = a.match(/-(\d+)\.pdf$/)?.[1] || "0"
-            const timestampB = b.match(/-(\d+)\.pdf$/)?.[1] || "0"
-            return Number.parseInt(timestampB) - Number.parseInt(timestampA)
-          })
-          pdfFilePath = path.join(generatedPdfsDir, allPdfFiles[0])
-          pdfUrl = `/generated-pdfs/${allPdfFiles[0]}`
-          console.log("[v0] Using fallback PDF:", allPdfFiles[0])
-        } else {
-          throw new Error("No PDF files found in generated-pdfs directory")
+      if (!s3FileInfo) {
+        // If not found in S3, check if there's a local file (for backward compatibility)
+        const localPdfPath = path.join(process.cwd(), "public", "generated-pdfs", `itinerary-${itineraryId}.pdf`)
+        try {
+          const fileBuffer = await fs.readFile(localPdfPath)
+          
+          // Upload the local file to S3 for future use
+          await S3Service.uploadFile(
+            fileBuffer,
+            `itinerary-${itineraryId}.pdf`,
+            'application/pdf',
+            'itinerary-pdfs'
+          )
+          
+          // Use the newly uploaded file
+          const newFileInfo = await S3Service.getFileInfo(s3Key)
+          if (!newFileInfo) {
+            throw new Error("Failed to upload file to S3")
+          }
+          s3FileInfo = newFileInfo
+        } catch (localError) {
+          console.error("Error reading local PDF file:", localError)
+          return NextResponse.json(
+            { 
+              error: "PDF not found",
+              details: "The itinerary PDF could not be found. Please regenerate the PDF.",
+              code: "PDF_NOT_FOUND"
+            },
+            { status: 404 }
+          )
         }
-      } else {
-        // Sort by timestamp (newest first)
-        pdfFiles.sort((a, b) => {
-          const timestampA = a.match(/-(\d+)\.pdf$/)?.[1] || "0"
-          const timestampB = b.match(/-(\d+)\.pdf$/)?.[1] || "0"
-          return Number.parseInt(timestampB) - Number.parseInt(timestampA)
-        })
-
-        const selectedPdf = pdfFiles[0]
-        pdfFilePath = path.join(generatedPdfsDir, selectedPdf)
-        pdfUrl = `/generated-pdfs/${selectedPdf}`
-        console.log("[v0] Using PDF:", selectedPdf)
       }
 
-      // Verify the PDF file exists
-      await fs.access(pdfFilePath)
-      console.log("[v0] PDF file verified at:", pdfFilePath)
-    } catch (error) {
-      console.error("[v0] Error finding PDF file:", error)
-      return NextResponse.json(
-        {
-          error: "PDF not found",
-          details: "The itinerary PDF could not be found. Please regenerate the PDF first.",
-          searchPath: generatedPdfsDir,
-        },
-        { status: 404 },
-      )
-    }
-
-    try {
+      // Send email with the S3 URL
       const emailResult = await sendEmail({
         to: email,
         subject: `Your Travel Itinerary - ${customerName}`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2c5530;">Your Travel Itinerary</h2>
-            <p>Dear ${customerName},</p>
-            <p>Thank you for choosing our travel services! Please find your detailed itinerary attached to this email.</p>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #2d3748; margin-bottom: 20px;">Your Travel Itinerary</h2>
+            <p>Hello ${customerName},</p>
+            <p>Thank you for choosing our travel services! We're excited to share your travel itinerary with you.</p>
             
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="color: #2c5530; margin-top: 0;">Contact Information</h3>
-              <p><strong>WhatsApp:</strong> ${whatsappNumber}</p>
-              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}
+            <div style="background-color: #f7fafc; border-left: 4px solid #4299e1; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0; color: #2d3748;">Trip Details</h3>
+              <p>We've attached your detailed itinerary for your upcoming trip. Please review it carefully and don't hesitate to reach out if you have any questions.</p>
+              ${notes ? `<p><strong>Your Notes:</strong> ${notes}</p>` : ''}
             </div>
             
-            <p>If you have any questions or need to make changes to your itinerary, please don't hesitate to contact us.</p>
+            <p>If you need to make any changes or have questions about your itinerary, please contact our support team.</p>
             
-            <p>Have a wonderful trip!</p>
+            <p>Safe travels,<br>The Travel Team</p>
             
-            <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 30px; color: #6b7280; font-size: 14px;">
-              <p>Best regards,<br>Your Travel Team</p>
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #718096;">
+              <p>Contact us: ${whatsappNumber} | support@elneera.com</p>
+              <p>  ${new Date().getFullYear()} Elneera Travel. All rights reserved.</p>
             </div>
           </div>
         `,
-        attachments: [
-          {
-            filename: `itinerary-${customerName.replace(/\s+/g, "-")}.pdf`,
-            path: pdfFilePath,
-            contentType: "application/pdf",
-          },
-        ],
+        attachments: [{
+          filename: `itinerary-${itineraryId}.pdf`,
+          path: s3FileInfo.url,
+          contentType: 'application/pdf'
+        }]
       })
 
-      console.log("[v0] Email sent successfully:", emailResult)
+      // In sent-itinerary/route.ts, update the database save operation:
+const sentItinerary = await prisma.sent_itineraries.create({
+  data: {
+    customerId: customerId || null,
+    enquiryId: enquiryId || null,
+    itineraryId,
+    customerName,
+    email,
+    whatsappNumber,
+    notes: notes || null,
+    sentDate: new Date(), // Use sentDate instead of sentBy
+    pdfUrl: s3FileInfo.url,
+    status: 'SENT',
+    emailSent: true
+  }
+})
 
-      // Persist a sent itinerary record
-    const finalCustomerId: string = customerId || enquiryId || "";
-    
-    // Create sent itinerary record
-    const sentItinerary = await prisma.sent_itineraries.create({
-      data: {
-        customerId: finalCustomerId,
-        customerName: customerName || "",
-        email,
-        whatsappNumber: whatsappNumber || null,
-        notes: notes || null,
-        status: "sent",
-        sentDate: new Date(),
-        itineraryId,
-        emailSent: true,
-        whatsappSent: false, // Set based on your logic
-      },
-    })
-
-    return NextResponse.json({
-      success: true,
-      message: "Itinerary sent successfully",
-      sentItinerary: {
-        id: sentItinerary.id,
-        customerId: sentItinerary.customerId,
-        itineraryId: sentItinerary.itineraryId,
-        customerName: sentItinerary.customerName,
-        email: sentItinerary.email,
-        whatsappNumber: sentItinerary.whatsappNumber,
-        notes: sentItinerary.notes,
-        status: sentItinerary.status,
-        sentDate: sentItinerary.sentDate,
-        emailSent: sentItinerary.emailSent,
-        whatsappSent: sentItinerary.whatsappSent,
-        createdAt: sentItinerary.createdAt,
-        updatedAt: sentItinerary.updatedAt,
-      },
-      emailResult,
-      pdfUrl,
-    })
-    } catch (emailError) {
-      console.error("[v0] Email sending failed:", emailError)
-
-      let errorMessage = "Failed to send email"
-      if (emailError instanceof Error) {
-        if (emailError.message.includes("connection")) {
-          errorMessage = "Email server connection failed. Please check email configuration."
-        } else if (emailError.message.includes("authentication")) {
-          errorMessage = "Email authentication failed. Please check email credentials."
-        } else {
-          errorMessage = emailError.message
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Itinerary sent successfully',
+        data: {
+          sentItinerary,
+          emailResult
         }
-      }
-
+      })
+    } catch (error) {
+      console.error("Error sending itinerary:", error)
       return NextResponse.json(
-        {
-          error: errorMessage,
-          details: emailError instanceof Error ? emailError.message : "Unknown email error",
+        { 
+          error: error instanceof Error ? error.message : "Failed to send itinerary",
+          details: error instanceof Error ? error.stack : undefined,
+          code: "SEND_ITINERARY_ERROR"
         },
-        { status: 500 },
+        { status: 500 }
       )
     }
   } catch (error) {
-    console.error("[v0] API Error:", error)
+    console.error("Error in sent-itinerary API:", error)
     return NextResponse.json(
-      {
+      { 
         error: "Internal server error",
         details: error instanceof Error ? error.message : "Unknown error",
+        code: "INTERNAL_SERVER_ERROR"
       },
-      { status: 500 },
+      { status: 500 }
     )
   } finally {
-    await prisma.$disconnect()
+    // No need to manually disconnect with Drizzle + pg-pool
+    // The pool will handle connection management automatically
   }
 }
 
 export async function GET() {
   return NextResponse.json({
     message: "Please use POST method to send itinerary via email",
-    requiredFields: ["customerName", "email", "whatsappNumber", "customerId or enquiryId"],
+    requiredFields: ["customerName", "email", "whatsappNumber", "itineraryId", "(customerId or enquiryId)"],
     optionalFields: ["notes"],
   })
 }

@@ -468,7 +468,7 @@ model itineraries {
   cancellationPolicyType     CancellationPolicyType?   @default(DEFAULT)
   customCancellationDeadline Int?
   customCancellationTerms    String?
-  pdfUrl                     String?                   @map("pdf_url")
+  pdfUrl                     Json?                    @map("pdf_url") @db.JsonB
   customer                   customers?                @relation(fields: [customerId], references: [id])
   enquiry                    enquiries                 @relation(fields: [enquiryId], references: [id])
   feedbacks                  customer_feedbacks[]
@@ -477,9 +477,11 @@ model itineraries {
   sharedCustomerPdfs         SharedCustomerPdf[]
   customerPayment            CustomerPayment[]
   originalPdfUrl             String?                  @map("original_pdf_url")
-  editedPdfUrl               String?                  @map("edited_pdf_url")
+  editedPdfUrl               Json?                    @map("edited_pdf_url") @db.JsonB
   isEdited                   Boolean?                 @default(false) @map("is_edited")
   editedAt                   DateTime?                @map("edited_at")
+  editedContent              String?
+
   richContent                String?                 @db.Text          // New field for rich text content
   BookingProgress            BookingProgress[]
   BookingFeedback            BookingFeedback[]
@@ -642,7 +644,7 @@ model sent_itineraries {
   itineraryId    String?
   emailSent      Boolean   @default(false)
   whatsappSent   Boolean   @default(false)
-  pdfUrl         String?   @map("pdf_url")
+  pdfUrl         Json?   @map("pdf_url")
   isEdited       Boolean   @default(false)
   customer       customers    @relation(fields: [customerId], references: [id])
   itinerary      itineraries? @relation(fields: [itineraryId], references: [id])
