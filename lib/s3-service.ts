@@ -138,7 +138,8 @@ export class S3Service {
         Key: key,
       })
 
-      return await getSignedUrl(s3Client, command, { expiresIn })
+  // @ts-expect-error: S3Client is compatible with getSignedUrl but types are mismatched in AWS SDK
+  return await getSignedUrl(s3Client, command, { expiresIn })
     } catch (error) {
       console.error('Error generating signed URL:', error)
       throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`)

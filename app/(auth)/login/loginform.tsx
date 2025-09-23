@@ -7,6 +7,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { signIn, getSession } from "next-auth/react"
+import { checkAgencyFormExists } from "@/lib/checkAgencyFormExists"
 
 // Import UserRole from next-auth types
 
@@ -82,12 +83,19 @@ export default function LoginForm() {
         console.log('User data from session:', { role, userType });
 
         // Determine the redirect path based on userType or role
-        const getRedirectPath = () => {
+        const getRedirectPath = async () => {
           // First try to use userType
+          if (userType && userType.toUpperCase() === 'AGENCY_ADMIN') {
+            const exists = await checkAgencyFormExists();
+            return exists ? '/agency-admin/dashboard' : '/agency-admin/agency-form';
+          }
+          if (role && role.toUpperCase() === 'AGENCY_ADMIN') {
+            const exists = await checkAgencyFormExists();
+            return exists ? '/agency-admin/dashboard' : '/agency-admin/agency-form';
+          }
+          // Other user types
           if (userType) {
             switch (userType.toUpperCase()) {
-              case 'AGENCY_ADMIN':
-                return '/agency-admin/agency-form';
               case 'MANAGER':
                 return '/agency/dashboard';
               case 'EXECUTIVE':
@@ -98,12 +106,8 @@ export default function LoginForm() {
                 return '/telecaller/dashboard';
             }
           }
-
-          // Fall back to role if userType is not available
           if (role) {
             switch (role.toUpperCase()) {
-              case 'AGENCY_ADMIN':
-                return '/agency-admin/agency-form';
               case 'MANAGER':
                 return '/agency/dashboard';
               case 'EXECUTIVE':
@@ -114,16 +118,14 @@ export default function LoginForm() {
                 return '/telecaller/dashboard';
             }
           }
-
           // Default fallback
           return '/dashboard';
         };
 
-        const redirectPath = getRedirectPath();
-        console.log('Redirecting to:', redirectPath);
-
-        // Use window.location.href to ensure a full page reload
-        window.location.href = redirectPath;
+        getRedirectPath().then((redirectPath) => {
+          console.log('Redirecting to:', redirectPath);
+          window.location.href = redirectPath;
+        });
       } else {
         throw new Error('Login successful but no user data found. Please try again.');
       }

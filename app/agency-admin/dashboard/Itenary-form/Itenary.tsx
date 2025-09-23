@@ -220,6 +220,7 @@ const transportOptions = [
 
 function ItineraryFormContent() {
   const [enquiryData, setEnquiryData] = useState<EnquiryData | null>(null)
+  const [assignedStaffName, setAssignedStaffName] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [itineraryId, setItineraryId] = useState<string | null>(null)
   const [, setAgencyCancellationPolicies] = useState<AgencyCancellationPolicy[]>([])
@@ -297,6 +298,7 @@ function ItineraryFormContent() {
         const editMode = searchParams.get("edit") === "true"
         let enquiry: EnquiryData | null = null
         let existingItinerary: ItineraryData | null = null
+        let staffId: string | null | undefined = null
 
         if (enquiryIdParam) {
           // Fetch enquiry data
@@ -349,6 +351,30 @@ function ItineraryFormContent() {
               }
             }
           }
+        }
+
+        // Determine staffId from itinerary (preferred) or enquiry
+        if (existingItinerary?.enquiry?.assignedStaff) {
+          staffId = existingItinerary.enquiry.assignedStaff
+        } else if (enquiry?.assignedStaff) {
+          staffId = enquiry.assignedStaff
+        }
+
+        // Fetch staff name from userform if staffId exists
+        if (staffId) {
+          try {
+            const staffRes = await fetch(`/api/auth/agency-add-user/${staffId}`)
+            if (staffRes.ok) {
+              const staffData = await staffRes.json()
+              setAssignedStaffName(staffData.name || staffId)
+            } else {
+              setAssignedStaffName(staffId)
+            }
+          } catch {
+            setAssignedStaffName(staffId)
+          }
+        } else {
+          setAssignedStaffName("")
         }
 
         // Populate form data with null safety checks
@@ -1459,7 +1485,7 @@ function ItineraryFormContent() {
                   </div>
                   <div className="flex">
                     <span className="text-gray-700 font-medium w-20 font-poppins">Assigned Staff:</span>
-                    <span className="text-gray-900 font-poppins">{enquiryData?.assignedStaff || "AStaff2"}</span>
+                    <span className="text-gray-900 font-poppins">{assignedStaffName || enquiryData?.assignedStaff || "AStaff2"}</span>
                   </div>
                 </div>
               </CardContent>
