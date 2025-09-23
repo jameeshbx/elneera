@@ -1,12 +1,94 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
 import { sendEmail } from "@/lib/email"
-import fs from "fs/promises"
-import path from "path"
+import { getFileStream, getItineraryPdfKey } from "@/lib/s3"
+import { S3Client, HeadObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner" 
+import * as fs from 'fs';
+import * as path from 'path'; 
+import os from 'os';
 
 const prisma = new PrismaClient()
 
-// Types for sent itineraries
+// Initialize S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION!,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+// Function to check if S3 object exists and get its info
+async function checkS3ObjectExists(bucketName: string, key: string) {
+  try {
+    const command = new HeadObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+    
+    const response = await s3Client.send(command);
+    console.log(` S3 Object exists: s3://${bucketName}/${key}`);
+    console.log(` Content Length: ${response.ContentLength} bytes`);
+    console.log(` Last Modified: ${response.LastModified}`);
+    console.log(` Content Type: ${response.ContentType}`);
+    
+    return {
+      exists: true,
+      size: response.ContentLength,
+      lastModified: response.LastModified,
+      contentType: response.ContentType,
+    };
+  } catch (error: unknown) {
+    console.error(`❌ S3 Object does not exist or access denied: s3://${bucketName}/${key}`);
+    if (error && typeof error === 'object' && 'message' in error) {
+      console.error(`Error details: ${(error as { message: string }).message}`);
+      return {
+        exists: false,
+        error: (error as { message: string }).message,
+      };
+    } else {
+      console.error('Unknown error details:', error);
+      return {
+        exists: false,
+        error: 'Unknown error',
+      };
+    }
+  }
+}
+
+// Function to generate and log S3 URL
+// Function to generate and log S3 URL
+async function getS3Url(bucketName: string, key: string, expiresIn: number = 3600) {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+    
+  // @ts-expect-error: S3Client is compatible with getSignedUrl but types are mismatched in AWS SDK
+  const signedUrl = await getSignedUrl(s3Client, command, { expiresIn });
+    console.log(` Generated S3 URL: ${signedUrl}`);
+    console.log(` URL expires in: ${expiresIn} seconds`);
+    
+    return signedUrl;
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'message' in error) {
+      console.error(`❌ Failed to generate S3 URL: ${(error as { message: string }).message}`);
+    } else {
+      console.error('❌ Failed to generate S3 URL: Unknown error', error);
+    }
+    return null;
+  }
+}
+
+// Validate S3 configuration at startup
+const requiredS3Vars = ['AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_S3_BUCKET_NAME'];
+const missingS3Vars = requiredS3Vars.filter(varName => !process.env[varName]);
+
+if (missingS3Vars.length > 0) {
+  console.error(`Missing required S3 environment variables: ${missingS3Vars.join(', ')}`);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,178 +122,168 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "itineraryId is required" }, { status: 400 })
     }
 
-    const generatedPdfsDir = path.join(process.cwd(), "public", "generated-pdfs")
-    let pdfFilePath = null
-    let pdfUrl = null
-
-    try {
-      const files = await fs.readdir(generatedPdfsDir)
-      console.log("[v0] Available PDF files:", files)
-
-      // Find the most recent PDF file for this itinerary
-      const pdfFiles = files.filter((file) => file.startsWith(`itinerary-${itineraryId}`) && file.endsWith(".pdf"))
-
-      if (pdfFiles.length === 0) {
-        // Try to find any recent PDF file as fallback
-        const allPdfFiles = files.filter((file) => file.endsWith(".pdf"))
-        if (allPdfFiles.length > 0) {
-          // Sort by creation time (newest first) based on timestamp in filename
-          allPdfFiles.sort((a, b) => {
-            const timestampA = a.match(/-(\d+)\.pdf$/)?.[1] || "0"
-            const timestampB = b.match(/-(\d+)\.pdf$/)?.[1] || "0"
-            return Number.parseInt(timestampB) - Number.parseInt(timestampA)
-          })
-          pdfFilePath = path.join(generatedPdfsDir, allPdfFiles[0])
-          pdfUrl = `/generated-pdfs/${allPdfFiles[0]}`
-          console.log("[v0] Using fallback PDF:", allPdfFiles[0])
-        } else {
-          throw new Error("No PDF files found in generated-pdfs directory")
-        }
-      } else {
-        // Sort by timestamp (newest first)
-        pdfFiles.sort((a, b) => {
-          const timestampA = a.match(/-(\d+)\.pdf$/)?.[1] || "0"
-          const timestampB = b.match(/-(\d+)\.pdf$/)?.[1] || "0"
-          return Number.parseInt(timestampB) - Number.parseInt(timestampA)
-        })
-
-        const selectedPdf = pdfFiles[0]
-        pdfFilePath = path.join(generatedPdfsDir, selectedPdf)
-        pdfUrl = `/generated-pdfs/${selectedPdf}`
-        console.log("[v0] Using PDF:", selectedPdf)
-      }
-
-      // Verify the PDF file exists
-      await fs.access(pdfFilePath)
-      console.log("[v0] PDF file verified at:", pdfFilePath)
-    } catch (error) {
-      console.error("[v0] Error finding PDF file:", error)
+    // Check if S3 is properly configured
+    if (missingS3Vars.length > 0) {
       return NextResponse.json(
-        {
-          error: "PDF not found",
-          details: "The itinerary PDF could not be found. Please regenerate the PDF first.",
-          searchPath: generatedPdfsDir,
-        },
-        { status: 404 },
+        { 
+          error: "S3 configuration is missing",
+          missingVariables: missingS3Vars,
+          message: "Please configure the required S3 environment variables"
+        }, 
+        { status: 500 }
       )
     }
 
+    // Generate the S3 key for the itinerary PDF
+    const pdfKey = getItineraryPdfKey(itineraryId);
+    const bucketName = process.env.AWS_S3_BUCKET_NAME!;
+    
+    console.log(` Checking S3 object: s3://${bucketName}/${pdfKey}`);
+    
+    // First, check if the S3 object exists
+    const objectCheck = await checkS3ObjectExists(bucketName, pdfKey);
+    
+    if (!objectCheck.exists) {
+      return NextResponse.json(
+        { 
+          error: 'PDF file not found in S3',
+          details: `The itinerary PDF does not exist at s3://${bucketName}/${pdfKey}`,
+          s3Error: objectCheck.error
+        },
+        
+        { status: 404 }
+      );
+    }
+      console.log("s3 object exists, proceeding to download and email.");
+      
+    // Generate and log the S3 URL
+    const s3Url = await getS3Url(bucketName, pdfKey);
+    
     try {
+      // Get the PDF from S3
+      console.log(` Downloading PDF from S3...`);
+  const pdfBuffer = await getFileStream(pdfKey);
+      console.log(` PDF downloaded successfully, size: ${pdfBuffer.length} bytes`);
+      
+      // Create a temporary file to store the PDF
+      const tempDir = os.tmpdir();
+      const tempFilePath = path.join(tempDir, `itinerary-${itineraryId}.pdf`);
+      
+      // Write the buffer directly to the file
+      await fs.promises.writeFile(tempFilePath, pdfBuffer);
+      console.log(` PDF saved to temporary file: ${tempFilePath}`);
+
+      // Send email with the PDF attachment
+      console.log(` Sending email to: ${email}`);
       const emailResult = await sendEmail({
         to: email,
         subject: `Your Travel Itinerary - ${customerName}`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2c5530;">Your Travel Itinerary</h2>
-            <p>Dear ${customerName},</p>
-            <p>Thank you for choosing our travel services! Please find your detailed itinerary attached to this email.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="color: #2c5530; margin-top: 0;">Contact Information</h3>
-              <p><strong>WhatsApp:</strong> ${whatsappNumber}</p>
-              ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ""}
-            </div>
-            
-            <p>If you have any questions or need to make changes to your itinerary, please don't hesitate to contact us.</p>
-            
-            <p>Have a wonderful trip!</p>
-            
-            <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 30px; color: #6b7280; font-size: 14px;">
-              <p>Best regards,<br>Your Travel Team</p>
-            </div>
-          </div>
+          <h1>Your Travel Itinerary</h1>
+          <p>Dear ${customerName},</p>
+          <p>Please find attached your travel itinerary.</p>
+          ${notes ? `<p><strong>Notes:</strong> ${notes}</p>` : ''}
+          <p>If you have any questions, please don't hesitate to contact us.</p>
+          <p>Best regards,<br>Your Travel Agency</p>
         `,
         attachments: [
           {
-            filename: `itinerary-${customerName.replace(/\s+/g, "-")}.pdf`,
-            path: pdfFilePath,
-            contentType: "application/pdf",
+            filename: `itinerary-${itineraryId}.pdf`,
+            path: tempFilePath,
+            contentType: 'application/pdf',
           },
         ],
-      })
+      });
 
-      console.log("[v0] Email sent successfully:", emailResult)
+      // Clean up the temporary file
+      fs.unlink(tempFilePath, (err) => {
+        if (err) console.error('❌ Error deleting temporary file:', err);
+        else console.log(' Temporary file cleaned up successfully');
+      });
 
-      // Persist a sent itinerary record
-    const finalCustomerId: string = customerId || enquiryId || "";
-    
-    // Create sent itinerary record
-    const sentItinerary = await prisma.sent_itineraries.create({
-      data: {
-        customerId: finalCustomerId,
-        customerName: customerName || "",
-        email,
-        whatsappNumber: whatsappNumber || null,
-        notes: notes || null,
-        status: "sent",
-        sentDate: new Date(),
-        itineraryId,
-        emailSent: true,
-        whatsappSent: false, // Set based on your logic
-      },
-    })
-
-    return NextResponse.json({
-      success: true,
-      message: "Itinerary sent successfully",
-      sentItinerary: {
-        id: sentItinerary.id,
-        customerId: sentItinerary.customerId,
-        itineraryId: sentItinerary.itineraryId,
-        customerName: sentItinerary.customerName,
-        email: sentItinerary.email,
-        whatsappNumber: sentItinerary.whatsappNumber,
-        notes: sentItinerary.notes,
-        status: sentItinerary.status,
-        sentDate: sentItinerary.sentDate,
-        emailSent: sentItinerary.emailSent,
-        whatsappSent: sentItinerary.whatsappSent,
-        createdAt: sentItinerary.createdAt,
-        updatedAt: sentItinerary.updatedAt,
-      },
-      emailResult,
-      pdfUrl,
-    })
-    } catch (emailError) {
-      console.error("[v0] Email sending failed:", emailError)
-
-      let errorMessage = "Failed to send email"
-      if (emailError instanceof Error) {
-        if (emailError.message.includes("connection")) {
-          errorMessage = "Email server connection failed. Please check email configuration."
-        } else if (emailError.message.includes("authentication")) {
-          errorMessage = "Email authentication failed. Please check email credentials."
-        } else {
-          errorMessage = emailError.message
-        }
+      if (!emailResult.success) {
+        throw new Error(emailResult.error || 'Failed to send email');
       }
 
-      return NextResponse.json(
-        {
-          error: errorMessage,
-          details: emailError instanceof Error ? emailError.message : "Unknown email error",
+      console.log(' Email sent successfully');
+
+      // Persist a sent itinerary record
+      const finalCustomerId: string = customerId || enquiryId || "";
+      
+      // Create sent itinerary record
+      const sentItinerary = await prisma.sent_itineraries.create({
+        data: {
+          customerId: finalCustomerId,
+          customerName: customerName || "",
+          email,
+          whatsappNumber: whatsappNumber || null,
+          notes: notes || null,
+          status: "sent",
+          sentDate: new Date(),
+          itineraryId,
+          emailSent: true,
+          whatsappSent: false,
         },
-        { status: 500 },
-      )
+      })
+
+      console.log(' Sent itinerary record created in database');
+
+      return NextResponse.json({
+        success: true,
+        message: 'Itinerary sent successfully',
+        s3Info: {
+          bucket: bucketName,
+          key: pdfKey,
+          size: objectCheck.size,
+          url: s3Url, // Include the signed URL in response (optional)
+        },
+        sentItinerary: {
+          id: sentItinerary.id,
+          customerId: sentItinerary.customerId,
+          itineraryId: sentItinerary.itineraryId,
+          customerName: sentItinerary.customerName,
+          email: sentItinerary.email,
+          whatsappNumber: sentItinerary.whatsappNumber,
+          notes: sentItinerary.notes,
+          status: sentItinerary.status,
+          sentDate: sentItinerary.sentDate,
+          emailSent: sentItinerary.emailSent,
+          whatsappSent: sentItinerary.whatsappSent,
+          createdAt: sentItinerary.createdAt,
+          updatedAt: sentItinerary.updatedAt,
+        },
+        emailResult,
+      });
+      
+    } catch (error) {
+      console.error('❌ Error processing itinerary:', error);
+      return NextResponse.json(
+        { 
+          error: 'Failed to process itinerary',
+          details: error instanceof Error ? error.message : 'Unknown error',
+          s3Info: {
+            bucket: bucketName,
+            key: pdfKey,
+            url: s3Url,
+          }
+        },
+        { status: 500 }
+      );
     }
   } catch (error) {
-    console.error("[v0] API Error:", error)
+    console.error('❌ Error in send-itinerary API:', error);
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error",
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   } finally {
     await prisma.$disconnect()
   }
 }
 
-export async function GET() {
-  return NextResponse.json({
-    message: "Please use POST method to send itinerary via email",
-    requiredFields: ["customerName", "email", "whatsappNumber", "customerId or enquiryId"],
-    optionalFields: ["notes"],
-  })
+export function GET() {
+  return NextResponse.json({ message: 'Method not allowed' }, { status: 405 })
 }
