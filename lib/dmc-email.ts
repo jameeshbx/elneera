@@ -1,12 +1,24 @@
 // lib/dmc-email.ts - Updated to use your existing SMTP configuration
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import nodemailer from 'nodemailer'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+
+// Initialize S3 client with proper configuration
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || 'ap-south-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+  }
+});
+
 interface EmailAttachment {
   filename: string
-  path: string
+  path?: string
+  content?: Buffer
   contentType: string
 }
 
@@ -489,15 +501,56 @@ class EmailService {
       html,
     })
   }
+
+  // Get PDF from S3
+  async getPdfFromS3(bucket: string, key: string) {
+    try {
+      const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+      const response = await s3.send(command);
+      return response.Body; // This is a stream
+    } catch (error) {
+      console.error('Error getting PDF from S3:', error)
+      throw error
+    }
+  }
+
+  // Send email with PDF attachment from S3
+  async sendEmailWithAttachment(
+    to: string,
+    subject: string,
+    text: string,
+    bucket: string,
+    key: string
+  ) {
+    try {
+      const pdfStream = await this.getPdfFromS3(bucket, key);
+
+      // ...removed unused mailOptions assignment...
+
+      return this.sendEmail({
+        to,
+        subject,
+        html: text,
+        attachments: [
+          {
+            filename: key.split('/').pop() || 'file.pdf',
+            path: pdfStream as unknown as string,
+            contentType: 'application/pdf',
+          },
+        ],
+      })
+    } catch (error) {
+      console.error('Error sending email with attachment:', error)
+      throw error
+    }
+  }
 }
 
 // Export singleton instance
 export const emailService = new EmailService()
 
-// Export individual functions for direct use
+// Export individual functions
 export const sendEmail = (options: EmailOptions) => emailService.sendEmail(options)
-
-// Export additional utility functions
 export const sendItineraryToDMC = (
   dmcEmail: string,
   dmcName: string,
@@ -506,7 +559,6 @@ export const sendItineraryToDMC = (
   destinations: string,
   pdfPath?: string
 ) => emailService.sendItineraryToDMC(dmcEmail, dmcName, enquiryId, customerName, destinations, pdfPath)
-
 export const sendQuoteToCustomer = (
   customerEmail: string,
   customerName: string,
@@ -516,6 +568,13 @@ export const sendQuoteToCustomer = (
   currency?: string,
   pdfPath?: string
 ) => emailService.sendQuoteToCustomer(customerEmail, customerName, enquiryId, destinations, totalPrice, currency, pdfPath)
+export const sendEmailWithAttachment = (
+  to: string,
+  subject: string,
+  text: string,
+  bucket: string,
+  key: string
+) => emailService.sendEmailWithAttachment(to, subject, text, bucket, key)
 
-// Export types for use in other modules
+// Export types
 export type { EmailOptions, EmailResult, EmailAttachment }

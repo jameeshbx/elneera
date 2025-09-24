@@ -18,7 +18,9 @@ model File {
   updatedAt             DateTime    @updatedAt
   // Agency Form relations (one-to-one)
   agencyBusinessLicense AgencyForm? @relation("AgencyFormBusinessLicense")
-  agencyLogo            Agency?     @relation("AgencyLogo")
+  agencyLogo            AgencyForm? @relation("AgencyFormLogo")
+  // Opposite relation for Agency.logo
+  agencyLogoAgency      Agency?     @relation("AgencyLogo")
   // Other existing relations
   dmcPaymentReceipt     DmcPayment? @relation("DmcPaymentReceipt")
   managerProfile        Manager?    @relation("ManagerProfile")
@@ -87,6 +89,9 @@ model Agency {
   paymentMethods    AgencyPaymentMethod[]
   customerPayments  CustomerPayment[]
   forms             AgencyForm[]
+
+  // Opposite relation for enquiries.agency
+  enquiries         enquiries[]
 
   @@index([name])
 }
@@ -198,7 +203,9 @@ model Subscription {
 }
 
 model AgencyForm {
-  id                  String          @id @default(uuid())
+  agencyId            String?
+  agency              Agency?        @relation(fields: [agencyId], references: [id])
+  id                  String      @id @default(uuid())
   name                String
   config              Json            @default("{}")
   agencyType          AgencyType      // Add this line
@@ -367,6 +374,8 @@ model enquiries {
   phone              String
   email              String
   companyName        String?
+  agencyId           String?             @db.Uuid
+  agency             Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
   locations          String?
   tourType           String?
   estimatedDates     String?
@@ -628,6 +637,7 @@ model customer_feedbacks {
   @@index([enquiryId])
   @@map("customer_feedbacks")
 }
+
 
 model sent_itineraries {
   id             String  @id @default(cuid())

@@ -10,14 +10,20 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); 
     }
 
     const enquiryData = await req.json();
     
     console.log("Creating enquiry:", enquiryData);
 
-    // Create the enquiry
+    // Get agencyId from session user (assuming agencyId is stored on user)
+    const agencyId = session.user.agencyId;
+    if (!agencyId) {
+      return NextResponse.json({ error: "No agencyId found for user" }, { status: 403 });
+    }
+
+    // Create the enquiry with agencyId
     const enquiry = await prisma.enquiries.create({
       data: {
         name: enquiryData.name,
@@ -42,6 +48,7 @@ export async function POST(req: NextRequest) {
         mustSeeSpots: enquiryData.mustSeeSpots,
         status: enquiryData.status || "enquiry",
         enquiryDate: enquiryData.enquiryDate,
+        agencyId: agencyId,
       }
     });
 
@@ -176,48 +183,53 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const enquiryId = searchParams.get("id");
 
-    // If enquiryId is provided, fetch single enquiry
+    // Get agencyId from session user (assuming agencyId is stored on user)
+    // If not, adjust according to your session structure
+    const agencyId = session.user.agencyId;
+    if (!agencyId) {
+      return NextResponse.json({ error: "No agencyId found for user" }, { status: 403 });
+    }
+
+    // If enquiryId is provided, fetch single enquiry (but only if it belongs to this agency)
     if (enquiryId) {
       console.log("Fetching single enquiry with ID:", enquiryId);
-      
       try {
         const enquiry = await prisma.enquiries.findUnique({
-          where: { id: enquiryId }
+          where: { id: enquiryId },
         });
-
         if (!enquiry) {
           console.log("Enquiry not found:", enquiryId);
           return NextResponse.json({ error: "Enquiry not found" }, { status: 404 });
         }
-
-        console.log("Enquiry found:", enquiry);
+        if (enquiry.agencyId !== agencyId) {
+          return NextResponse.json({ error: "Forbidden: Not your agency's enquiry" }, { status: 403 });
+        }
         return NextResponse.json(enquiry);
       } catch (dbError) {
         console.error("Database error while fetching enquiry:", dbError);
-        return NextResponse.json({ 
-          error: "Database error", 
-          details: dbError instanceof Error ? dbError.message : String(dbError) 
+        return NextResponse.json({
+          error: "Database error",
+          details: dbError instanceof Error ? dbError.message : String(dbError)
         }, { status: 500 });
       }
     }
 
-    // If no enquiryId, fetch all enquiries
-    console.log("Fetching all enquiries");
-    
+    // If no enquiryId, fetch all enquiries for this agency only
+    console.log(`Fetching all enquiries for agencyId: ${agencyId}`);
     try {
       const enquiries = await prisma.enquiries.findMany({
+        where: { agencyId },
         orderBy: {
           createdAt: 'desc'
         }
       });
-
-      console.log(`Found ${enquiries.length} enquiries`);
+      console.log(`Found ${enquiries.length} enquiries for agencyId: ${agencyId}`);
       return NextResponse.json(enquiries);
     } catch (dbError) {
       console.error("Database error while fetching enquiries:", dbError);
-      return NextResponse.json({ 
-        error: "Database error", 
-        details: dbError instanceof Error ? dbError.message : String(dbError) 
+      return NextResponse.json({
+        error: "Database error",
+        details: dbError instanceof Error ? dbError.message : String(dbError)
       }, { status: 500 });
     }
 
