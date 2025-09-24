@@ -14,7 +14,7 @@ interface ItineraryContent {
   [key: string]: unknown;
 }
 
-export async function generatePDF({
+export async function generatePDF(templateBuffer: Buffer<ArrayBufferLike>, {
   itineraryId,
 
 }: {

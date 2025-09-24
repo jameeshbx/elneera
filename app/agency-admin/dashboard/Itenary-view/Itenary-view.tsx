@@ -556,10 +556,16 @@ function ItineraryViewContent(): React.ReactElement {
           isEditedVersion: true
         }),
       });
+  
 
       const pdfResult = await pdfResponse.json();
       if (!pdfResponse.ok) {
-        throw new Error(pdfResult.error || "Failed to generate PDF");
+        console.error('PDF Generation Error:', {
+          status: pdfResponse.status,
+          statusText: pdfResponse.statusText,
+          error: pdfResult
+        });
+        throw new Error(pdfResult.error || pdfResult.message || "Failed to generate PDF");
       }
 
       // Update UI state
@@ -635,11 +641,11 @@ function ItineraryViewContent(): React.ReactElement {
         variant: "default",
       });
     } catch (error) {
-      console.error("Error:", error);
+      console.error('Error in handleSaveRichText:', error);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to save changes",
         variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
       });
     }
   };

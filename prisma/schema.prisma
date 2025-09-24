@@ -18,7 +18,7 @@ model File {
   updatedAt             DateTime    @updatedAt
   // Agency Form relations (one-to-one)
   agencyBusinessLicense AgencyForm? @relation("AgencyFormBusinessLicense")
-  agencyLogo            AgencyForm? @relation("AgencyFormLogo")
+  agencyLogo            AgencyForm? @relation("AgencyFormLogoMain")
   // Opposite relation for Agency.logo
   agencyLogoAgency      Agency?     @relation("AgencyLogo")
   // Other existing relations
@@ -31,10 +31,9 @@ model File {
 
   LogoId                String?
   
-  
   // QR Code relation
   agencyPaymentMethodQRCode AgencyPaymentMethod? @relation("AgencyPaymentMethodQRCode")
-  agencyFormLogo        AgencyForm? @relation("AgencyFormLogo")
+  agencyFormLogo        AgencyForm? @relation("AgencyFormLogoSecondary")
 
   @@index([LogoId])
 
@@ -243,15 +242,20 @@ model AgencyForm {
   updatedAt           DateTime        @updatedAt
   
   // Relations
-  businessLicense     File?           @relation("AgencyFormBusinessLicense", fields: [businessLicenseId], references: [id])
-  logo                File?           @relation("AgencyFormLogo", fields: [logoId], references: [id])
-  businessLicenseId   String?         @unique
-  logoId              String?         @unique
+  businessLicense     File?         @relation("AgencyFormBusinessLicense", fields: [businessLicenseId], references: [id])
+  logo                File?         @relation("AgencyFormLogoMain", fields: [logoId], references: [id])
+  agencyFormLogo      File?         @relation("AgencyFormLogoSecondary", fields: [agencyFormLogoId], references: [id])
+  
+  // Foreign keys
+  businessLicenseId   String?       @unique
+  logoId              String?       @unique
+  agencyFormLogoId    String?       @unique
+  
+  // Other relations
   subscriptions       Subscription[]
-  agency              Agency?         @relation(fields: [agencyId], references: [id])
-  agencyId            String?
-  creator             User            @relation("AgencyFormCreator", fields: [createdBy], references: [id])
-
+  creator             User          @relation("AgencyFormCreator", fields: [createdBy], references: [id])
+  
+  
   @@index([name])
   @@index([createdBy])
   @@index([email])
@@ -370,7 +374,6 @@ model PaymentMethod {
 model enquiries {
   id                 String              @id @default(uuid())
   name               String
-  agencyId           String?
   phone              String
   email              String
   companyName        String?
@@ -490,7 +493,12 @@ model itineraries {
   isEdited                   Boolean?                 @default(false) @map("is_edited")
   editedAt                   DateTime?                @map("edited_at")
   editedContent              String?
-
+  activePdfVersion    String?
+  lastPdfRegeneratedAt DateTime?
+  editedData          Json?
+ 
+  
+  pdfVersions        PDFVersion[]
   richContent                String?                 @db.Text          // New field for rich text content
   BookingProgress            BookingProgress[]
   BookingFeedback            BookingFeedback[]
@@ -502,6 +510,20 @@ model itineraries {
   @@index([startDate])
   @@index([agencyCancellationPolicyId])
 }
+model PDFVersion {
+  id        String   @id @default(cuid())
+  itineraryId String
+  url       String
+  version   Int
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  metadata  Json?    
+
+  itinerary   itineraries @relation(fields: [itineraryId], references: [id])
+
+  @@index([itineraryId])
+}
+
 
 // Keep the existing booking_reminder table to preserve data
 model booking_reminder {

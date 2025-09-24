@@ -15,8 +15,9 @@ import type {
   NewNote,
   CustomerDashboardData,
 } from "@/types/customer"
+import type { PDFVersion } from "@/types/pdf"
 
-const ShareCustomerDashboard = () => {
+export default function ShareCustomerDashboard(){
   const router = useRouter()
   const searchParams = useSearchParams()
   const [formData, setFormData] = useState<FormData>({
@@ -97,7 +98,7 @@ const ShareCustomerDashboard = () => {
           fetchCustomerData(restoreCustomerId, restoreEnquiryId, restoreItineraryId)
           return
         }
-      } catch {}
+      } catch { }
     }
 
     setError("Either Customer ID or Enquiry ID is required")
@@ -120,10 +121,10 @@ const ShareCustomerDashboard = () => {
       const newCustomerId = currentParams.get("customerId")
       const newEnquiryId = currentParams.get("enquiryId")
       const newItineraryId = currentParams.get("itineraryId")
-      
-      if ((newCustomerId && newCustomerId !== customerId) || 
-          (newEnquiryId && newEnquiryId !== enquiryId) ||
-          (newItineraryId && newItineraryId !== itineraryId)) {
+
+      if ((newCustomerId && newCustomerId !== customerId) ||
+        (newEnquiryId && newEnquiryId !== enquiryId) ||
+        (newItineraryId && newItineraryId !== itineraryId)) {
         // Force refresh data when parameters change
         setTimeout(() => {
           fetchCustomerData(newCustomerId, newEnquiryId, newItineraryId, true)
@@ -183,26 +184,89 @@ const ShareCustomerDashboard = () => {
         }))
       }
 
-      // Sort itineraries by creation date (latest first)
-      const sortedItineraries = (data.itineraries || []).sort((a, b) => {
-        const aDate = new Date(a.createdAt || a.dateGenerated || 0).getTime();
-        const bDate = new Date(b.createdAt || b.dateGenerated || 0).getTime();
-        return bDate - aDate;
+      // FIXED: Process itineraries with correct edited vs original PDF logic
+      const sortedItineraries = (data.itineraries || []).map(itinerary => {
+        // Determine if this is an edited version based on editedPdfUrl presence
+        const isEdited = !!(itinerary.editedPdfUrl);
+
+        // Determine which PDF URL to use and display info
+        const activePdfUrl = itinerary.editedPdfUrl || itinerary.pdfUrl;
+
+        return {
+          ...itinerary,
+          isEdited, // This will be true only if editedPdfUrl exists
+          displayVersion: isEdited ? 'REGENERATED (EDITED)' : 'GENERATED (ORIGINAL)',
+          activePdfUrl, // The current active PDF URL
+          pdfVersions: Array.isArray(itinerary.pdfVersions)
+            ? (itinerary.pdfVersions as PDFVersion[]).sort((a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            )
+            : [
+              // Create version entries based on what PDFs exist
+              ...(itinerary.editedPdfUrl ? [{
+                id: `edited-${itinerary.id}`,
+                url: itinerary.editedPdfUrl,
+                version: 2,
+                isActive: true,
+                isEdited: true,
+                createdAt: itinerary.editedAt || itinerary.updatedAt || itinerary.createdAt,
+                metadata: {
+                  regeneratedAt: itinerary.editedAt || itinerary.updatedAt,
+                  editedData: itinerary.editedData,
+                  isEdited: true
+                }
+              }] : []),
+              ...(itinerary.pdfUrl ? [{
+                id: `original-${itinerary.id}`,
+                url: itinerary.pdfUrl,
+                version: 1,
+                isActive: !itinerary.editedPdfUrl, // Only active if no edited version
+                isEdited: false,
+                createdAt: itinerary.dateGenerated || itinerary.createdAt,
+                metadata: {
+                  regeneratedAt: itinerary.dateGenerated || itinerary.createdAt,
+                  editedData: itinerary.editedData,
+                  isEdited: false
+                }
+              }] : [])
+            ].filter(Boolean) as PDFVersion[]
+        };
+      }).sort((a, b) => {
+        // Sort by most recent edited date, then creation date
+        const aDate = a.editedAt ? new Date(a.editedAt) :
+          a.lastPdfRegeneratedAt ? new Date(a.lastPdfRegeneratedAt) :
+            new Date(a.createdAt);
+        const bDate = b.editedAt ? new Date(b.editedAt) :
+          b.lastPdfRegeneratedAt ? new Date(b.lastPdfRegeneratedAt) :
+            new Date(b.createdAt);
+        return bDate.getTime() - aDate.getTime();
       });
 
-      setItineraries(sortedItineraries)
+      setItineraries(sortedItineraries);
+
+      // Select the first itinerary with a PDF (edited takes priority)
+      const firstItinerary = sortedItineraries[0];
+      if (firstItinerary && firstItinerary.activePdfUrl) {
+        setSelectedPDFUrl(firstItinerary.activePdfUrl + `?t=${Date.now()}`);
+      }
+
       setCustomerFeedbacks(data.feedbacks || [])
       setSentItineraries(data.sentItineraries || [])
 
-      // Always select the active itinerary first, if none active then select the latest
-      const activeItinerary = sortedItineraries.find(it => it.activeStatus && it.pdfUrl);
-      const latestItineraryWithPDF = sortedItineraries.find(it => it.pdfUrl);
-      
-      const itineraryToSelect = activeItinerary || latestItineraryWithPDF;
-      
+      // Always select the active itinerary first, prioritizing edited versions
+      const activeEditedItinerary = sortedItineraries.find(it => it.activeStatus && it.editedPdfUrl);
+      const activeOriginalItinerary = sortedItineraries.find(it => it.activeStatus && it.pdfUrl && !it.editedPdfUrl);
+      const latestEditedItinerary = sortedItineraries.find(it => it.editedPdfUrl);
+      const latestOriginalItinerary = sortedItineraries.find(it => it.pdfUrl && !it.editedPdfUrl);
+
+      const itineraryToSelect = activeEditedItinerary ||
+        activeOriginalItinerary ||
+        latestEditedItinerary ||
+        latestOriginalItinerary;
+
       if (itineraryToSelect) {
         setSelectedItinerary(itineraryToSelect);
-        console.log('Auto-selected itinerary:', itineraryToSelect.id, 'Active:', itineraryToSelect.activeStatus);
+        console.log('Auto-selected itinerary:', itineraryToSelect.id, 'Type:', itineraryToSelect.isEdited ? 'EDITED' : 'ORIGINAL');
       } else {
         setSelectedItinerary(null);
         console.log('No itinerary with PDF found to select');
@@ -287,7 +351,7 @@ const ShareCustomerDashboard = () => {
     }
   }
 
-  // Enhanced Send Itinerary function with better error handling
+  // FIXED: Enhanced Send Itinerary function with correct PDF selection logic
   const sendItineraryViaEmail = async () => {
     // Enhanced validation
     if (!formData.name?.trim()) {
@@ -335,8 +399,11 @@ const ShareCustomerDashboard = () => {
       return
     }
 
-    // Check if an itinerary is selected or available
-    const itineraryToSend = selectedItinerary || itineraries.find(it => it.activeStatus && it.pdfUrl) || itineraries.find(it => it.pdfUrl)
+    // FIXED: Prioritize edited PDF over original PDF
+    const itineraryToSend = selectedItinerary ||
+      itineraries.find(it => it.activeStatus && (it.editedPdfUrl || it.pdfUrl)) ||
+      itineraries.find(it => (it.editedPdfUrl || it.pdfUrl))
+
     if (!itineraryToSend) {
       toast({
         variant: "destructive",
@@ -346,9 +413,10 @@ const ShareCustomerDashboard = () => {
       return
     }
 
-    // Use the appropriate PDF URL (edited or original)
+    // FIXED: Determine which PDF to send based on availability
+    const isUsingEditedPdf = !!(itineraryToSend.editedPdfUrl);
     const pdfUrlToSend = itineraryToSend.editedPdfUrl || itineraryToSend.pdfUrl;
-    
+
     if (!pdfUrlToSend) {
       toast({
         variant: "destructive",
@@ -378,7 +446,7 @@ const ShareCustomerDashboard = () => {
         email: formData.email.trim(),
         whatsappNumber: formData.whatsappNumber.trim(),
         notes: formData.notes?.trim() || null,
-        useEditedPdf: !!itineraryToSend.editedPdfUrl, // Indicate if we're using the edited PDF
+        useEditedPdf: isUsingEditedPdf, // This tells the API which PDF to use
       }
 
       console.log("Sending request to API:", requestBody)
@@ -448,19 +516,18 @@ const ShareCustomerDashboard = () => {
       }
 
       if (result.success && result.sentItinerary) {
-
         // Refresh full dashboard data to ensure persistence and show existing entries
         await fetchCustomerData(customerId, enquiryId, itineraryId)
-      setFormData((prev) => ({
-        ...prev,
-        notes: "",
-      }))
+        setFormData((prev) => ({
+          ...prev,
+          notes: "",
+        }))
 
-      toast({
-        variant: "success",
-        title: "Email Sent Successfully!",
-        description: `${itineraryToSend.isEdited ? 'Edited' : 'Original'} itinerary sent to ${formData.email}. Customer will receive it shortly.`,
-      })
+        toast({
+          variant: "success",
+          title: "Email Sent Successfully!",
+          description: `${isUsingEditedPdf ? 'Regenerated (Edited)' : 'Generated (Original)'} itinerary sent to ${formData.email}. Customer will receive it shortly.`,
+        })
 
         // Redirect to Share DMC section after success, preserving context
         const dmcParams = new URLSearchParams()
@@ -501,37 +568,38 @@ const ShareCustomerDashboard = () => {
 
   const refreshItineraryData = async () => {
     if (!selectedItinerary?.id) return;
-    
+
     setIsRefreshing(true);
     try {
       const response = await fetch(`/api/itineraries/${selectedItinerary.id}`);
       if (!response.ok) throw new Error('Failed to fetch updated itinerary');
-      
+
       const updatedItinerary = await response.json();
-      
+
       // Update the selected itinerary with fresh data
       setSelectedItinerary(prev => ({
         ...prev,
         ...updatedItinerary,
         // Force refresh of PDF URL by adding a timestamp
-        pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl ? 
+        pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl ?
           `${updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl}${(updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl)?.includes('?') ? '&' : '?'}t=${Date.now()}`
           : null
       }));
-      
+
       // Update the itineraries list
-      setItineraries(prev => 
-        prev.map(item => 
-          item.id === updatedItinerary.id 
-            ? { 
-                ...item, 
-                ...updatedItinerary,
-                pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl
-              } 
+      setItineraries(prev =>
+        prev.map(item =>
+          item.id === updatedItinerary.id
+            ? {
+              ...item,
+              ...updatedItinerary,
+              activePdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl,
+              isEdited: !!(updatedItinerary.editedPdfUrl)
+            }
             : item
         )
       );
-      
+
       toast({
         title: "Success",
         description: "Itinerary data refreshed",
@@ -555,7 +623,7 @@ const ShareCustomerDashboard = () => {
         refreshItineraryData();
       }
     };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -565,69 +633,95 @@ const ShareCustomerDashboard = () => {
   const handleRegeneratePDF = async (itinerary: Itinerary) => {
     setRegeneratingPDF(itinerary.id);
     try {
-      const response = await fetch("/api/generate-pdf", {
-        method: "POST",
+      const response = await fetch('/api/regenerate-pdf', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          enquiryId: enquiryId || "",
           itineraryId: itinerary.id,
-          formData: itinerary,
-          isEditedVersion: false // This is regenerating original PDF
+          editedData: itinerary.editedData // Include any edited data
         }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to regenerate PDF");
+        throw new Error('Failed to regenerate PDF');
       }
 
-      await response.json(); // Removed unused 'result' variable
+      const data = await response.json();
 
-      // Refresh the full customer data to show the new itinerary
-      await fetchCustomerData(customerId, enquiryId, itineraryId);
+      if (data.success) {
+        // Update itineraries state with new PDF version
+        setItineraries(prevItineraries =>
+          prevItineraries.map(it =>
+            it.id === itinerary.id
+              ? {
+                ...it,
+                editedPdfUrl: data.pdfUrl, // Store as edited PDF URL
+                isEdited: true, // Mark as edited
+                activePdfUrl: data.pdfUrl, // Update active PDF
+                lastPdfRegeneratedAt: new Date().toISOString(),
+                pdfVersions: [
+                  ...(Array.isArray(it.pdfVersions) ? it.pdfVersions : []),
+                  {
+                    id: data.versionId,
+                    url: data.pdfUrl,
+                    version: data.version,
+                    isActive: true,
+                    createdAt: new Date().toISOString()
+                  }
+                ].map(v => ({
+                  ...v,
+                  isActive: v.id === data.versionId
+                })) as typeof it.pdfVersions
+              }
+              : it
+          )
+        );
 
-      toast({
-        variant: "success",
-        title: "PDF Generated Successfully!",
-        description: "New PDF has been generated and set as active.",
-      });
+        toast({
+          title: "Success",
+          description: "PDF regenerated successfully",
+        });
+      }
     } catch (error) {
-      console.error("Error generating PDF:", error);
+      console.error('Error regenerating PDF:', error);
       toast({
+        title: "Error",
+        description: "Failed to regenerate PDF",
         variant: "destructive",
-        title: "PDF Generation Failed",
-        description: error instanceof Error ? error.message : "Failed to generate PDF",
       });
     } finally {
       setRegeneratingPDF(null);
     }
   };
 
-  // View PDF function
-  const handleViewPDF = async (pdfUrl: string | null) => {
-    if (!pdfUrl) {
+  // FIXED: View PDF function with correct URL handling
+  const handleViewPDF = async (item: Itinerary) => {
+    // Use edited PDF if available, otherwise use original PDF
+    const pdfToView = item.editedPdfUrl || item.pdfUrl;
+
+    if (!pdfToView) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No PDF URL provided",
+        description: "No PDF available for this itinerary",
       });
       return;
     }
-  
+
     try {
       // Extract the key from the S3 URL
-      const url = new URL(pdfUrl);
+      const url = new URL(pdfToView);
       const key = url.pathname.substring(1); // Remove leading slash
-      
+
       // Call an API endpoint to generate a fresh pre-signed URL
       const response = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(key)}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to generate pre-signed URL');
       }
-      
+
       const { url: signedUrl } = await response.json();
       setSelectedPDFUrl(signedUrl);
       setShowPDFPreview(true);
@@ -846,7 +940,7 @@ const ShareCustomerDashboard = () => {
                       <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">ACTIVE</span>
                     )}
                     {selectedItinerary.isEdited && (
-                      <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">EDITED</span>
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">REGENERATED</span>
                     )}
                   </p>
                 )}
@@ -874,11 +968,9 @@ const ShareCustomerDashboard = () => {
                       itineraries.map((item, index) => (
                         <tr
                           key={item.id}
-                          className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${
-                            selectedItinerary?.id === item.id ? "ring-2 ring-green-500 bg-green-50" : ""
-                          } ${
-                            item.activeStatus ? "border-l-4 border-l-green-500" : ""
-                          } cursor-pointer hover:bg-green-50`}
+                          className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${selectedItinerary?.id === item.id ? "ring-2 ring-green-500 bg-green-50" : ""
+                            } ${item.activeStatus ? "border-l-4 border-l-green-500" : ""
+                            } cursor-pointer hover:bg-green-50`}
                           onClick={() => handleSelectItinerary(item)}
                         >
                           <td className="p-4">
@@ -906,9 +998,8 @@ const ShareCustomerDashboard = () => {
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               <div
-                                className={`w-6 h-8 rounded flex items-center justify-center text-white text-sm font-medium ${
-                                  item.editedPdfUrl || item.pdfUrl ? "bg-green-500" : "bg-gray-400"
-                                }`}
+                                className={`w-6 h-8 rounded flex items-center justify-center text-white text-sm font-medium ${item.editedPdfUrl || item.pdfUrl ? "bg-green-500" : "bg-gray-400"
+                                  }`}
                               >
                                 {item.editedPdfUrl || item.pdfUrl ? "✓" : "×"}
                               </div>
@@ -928,13 +1019,17 @@ const ShareCustomerDashboard = () => {
                           </td>
                           <td className="p-4">
                             <div className="text-xs">
-                              {item.isEdited ? (
+                              {item.editedPdfUrl ? (
                                 <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                  EDITED
+                                  REGENERATED
+                                </span>
+                              ) : item.pdfUrl ? (
+                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                                  GENERATED
                                 </span>
                               ) : (
                                 <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
-                                  ORIGINAL
+                                  NOT GENERATED
                                 </span>
                               )}
                             </div>
@@ -945,14 +1040,12 @@ const ShareCustomerDashboard = () => {
                                 e.stopPropagation()
                                 handleToggleActiveStatus(item)
                               }}
-                              className={`w-12 h-6 rounded-full p-1 transition-colors ${
-                                item.activeStatus ? "bg-green-400" : "bg-gray-300"
-                              } hover:opacity-80`}
+                              className={`w-12 h-6 rounded-full p-1 transition-colors ${item.activeStatus ? "bg-green-400" : "bg-gray-300"
+                                } hover:opacity-80`}
                             >
                               <div
-                                className={`w-4 h-4 rounded-full bg-white transition-transform ${
-                                  item.activeStatus ? "translate-x-6" : "translate-x-0"
-                                }`}
+                                className={`w-4 h-4 rounded-full bg-white transition-transform ${item.activeStatus ? "translate-x-6" : "translate-x-0"
+                                  }`}
                               ></div>
                             </button>
                           </td>
@@ -963,10 +1056,7 @@ const ShareCustomerDashboard = () => {
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      const pdfToView = item.editedPdfUrl || item.pdfUrl || null;
-                                      if (pdfToView !== null) {
-                                        handleViewPDF(pdfToView);
-                                      }
+                                      handleViewPDF(item);  // Pass the entire item instead of just the URL
                                     }}
                                     className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
                                     disabled={!item.editedPdfUrl && !item.pdfUrl}
@@ -1058,7 +1148,7 @@ const ShareCustomerDashboard = () => {
                   />
                 </div>
               </div>
-              
+
 
               {/* Selected Itinerary Info */}
               {selectedItinerary && (
@@ -1311,4 +1401,4 @@ const ShareCustomerDashboard = () => {
   )
 }
 
-export default ShareCustomerDashboard
+
