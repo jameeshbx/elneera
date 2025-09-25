@@ -34,7 +34,7 @@ export default function SeeItInAction() {
             <div className="bg-gray-100 rounded-xl aspect-video relative overflow-hidden">
               {/* Dashboard mockup image that shows before video plays */}
               <Image
-                src="/elneera-logo.png"
+                src="/logo/elneeraf.png"
                 width={800}
                 height={600}
                 alt="Dashboard preview"

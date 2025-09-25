@@ -18,18 +18,17 @@ const Footer = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Logo and company info */}
           <div className="flex flex-col items-center sm:items-start">
-            <Link href="/" className="flex items-center">
-                  <div className="absolute h-68 w-75 ml-[-96px]">
-                          <Image
-                src="/elneera-logo.png"
-                alt="Trekking Miles"
-                width={176}  // Original dimensions
-                height={64}
-                className="w-[300px] h-auto object-contain" // Tailwind CSS scaling
-                priority
-              />
-                        </div>
-            </Link>
+          <Link href="/" className="flex items-center">
+  <div className="relative w-[180px] h-[60px]">  {/* Fixed dimensions container */}
+    <Image
+      src="/logo/elneeraf.png"
+      alt="Trekking Miles"
+      fill  // This makes the image fill the parent container
+      className="object-contain"  // Maintains aspect ratio
+      priority
+    />
+  </div>
+</Link>
           </div>
           
           {/* Quick Links */}

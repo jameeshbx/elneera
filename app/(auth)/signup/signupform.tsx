@@ -152,13 +152,13 @@ export default function SignupForm() {
 
               <div className="relative z-10">
                 <div className="flex items-center justify-center md:justify-start">
-                  <Image
-                                     src="/elneera-white.png"
-                                     alt="Trekking Miles Logo"
-                                     width={200}
-                                     height={80}
-                                     className="object-contain mt-[-125px] w-[360px] "
-                                   />
+                <Image
+  src="/logo/elneeraw.png"
+  alt="Trekking Miles Logo"
+  width={50}
+  height={20}
+  className="object-contain mt-[56px] w-[137px] ml-[126px]"
+/>
                                  </div>
                 
 

@@ -240,13 +240,13 @@ export default function LoginForm() {
                 </div>
                 <div className="relative z-10">
                   <div className="flex items-center justify-center md:justify-start">
-                    <Image
-                      src="/elneera-white.png"
-                      alt="Trekking Miles Logo"
-                      width={200}
-                      height={80}
-                      className="object-contain mt-[-125px] w-[360px] "
-                    />
+                 <Image
+             src="/logo/elneeraw.png"
+             alt="Trekking Miles Logo"
+             width={50}
+             height={20}
+             className="object-contain mt-[56px] w-[137px] ml-[126px]"
+           />
                   </div>
                   <h1 className="mt-8 md:mt-12 lg-mt-[-30] text-3xl font-nunito md:text-4xl font-semibold text-white text-center md:text-left">
                     Start your remarkable journey with us!

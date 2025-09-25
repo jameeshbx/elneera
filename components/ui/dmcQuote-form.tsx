@@ -205,7 +205,7 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
           {/* Logo */}
           <div className="flex justify-center mb-6">
             <Image
-              src="/elneera-logo.png"
+              src="/logo/elneeraf.png"
               alt="elneera"
               width={176}
               height={64}

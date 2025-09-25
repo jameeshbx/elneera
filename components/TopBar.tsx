@@ -52,22 +52,22 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* Logo - Visible on both mobile and desktop */}
         <Link
-          href="/"
-          onClick={(e) => handleSmoothScroll(e, "home")}
-          className="flex items-center z-20"
-          data-cy="navbar-logo"
-        >
-          <div className="absolute h-68 w-75 mk-[-96px]">
-            <Image
-  src="/elneera-logo.png"
-  alt="Trekking Miles"
-  width={176}  // Original dimensions
-  height={64}
-  className="w-[300px] h-auto object-contain" // Tailwind CSS scaling
-  priority
-/>
-          </div>
-        </Link>
+  href="/"
+  onClick={(e) => handleSmoothScroll(e, "home")}
+  className="flex items-center z-20"
+  data-cy="navbar-logo"
+>
+  <div className="relative">  {/* Changed from absolute to relative */}
+    <Image
+      src="/logo/elneeraf.png"
+      alt="Trekking Miles"
+      width={100}  // Reduced from 476 to 300 to match the container
+      height={39}  // Maintain aspect ratio (300/476 * 94)
+      className="w-auto h-10 md:h-16" // Responsive height
+      priority
+    />
+  </div>
+</Link>
 
         {/* Mobile Menu Button */}
         <button

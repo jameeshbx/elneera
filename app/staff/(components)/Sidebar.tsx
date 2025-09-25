@@ -199,7 +199,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           <Link href="/" data-cy="sidebar-logo-link">
             {isMobile ? (
               <Image
-                src="/elneera-logo.png"
+                src="/logo/elneeraf.png"
                 alt="Company Logo"
                 width={64}
                 height={64}
@@ -209,7 +209,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
               />
             ) : isCollapsed ? (
               <Image
-                src="/elneera-logo.png"
+                src="/logo/elneeraf.png"
                 alt="Company Logo"
                 width={480}
                 height={80}
@@ -219,7 +219,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
               />
             ) : (
               <Image
-                src="/elneera-logo.png"
+                src="/logo/elneeraf.png"
                 alt="Company Logo"
                 width={420}
                 height={60}
