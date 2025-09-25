@@ -114,39 +114,18 @@ model DMC {
 
 // Keep the existing quotes table structure to preserve data
 model quotes {
-  id                   String    @id @default(cuid())
-  enquiryId            String?
-  customerId           String?
-
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  submitted           Boolean   @default(false)
-  submittedAt         DateTime?
-  submittedBy         String?
-  name                String?
-  config              Json?
-  contactPerson       String?
-  dmcId               String?
-  amount              Int?
-  comments            String?
-  commission          Int?
-  commissionType      String?
-  commissionValue     Int?
-  commissionAmount    Int?
-  
-  // Add these missing fields that were causing the original errors
-  phoneNumber         String?
-  designation         String?
-  email               String?
-  status              String?
-  primaryCountry      String?
-  destinationsCovered String[]
-  cities              String[]
+  id          String   @id @default(cuid())
+  enquiryId   String?
+  dmcId       String?
+  amount      Float?
+  comments    String?
+  currency    String?  // New field
+  status      String?  @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   dmc DMC? @relation("DMCQuotes", fields: [dmcId], references: [id])
-
-
 }
 
 model PasswordReset {

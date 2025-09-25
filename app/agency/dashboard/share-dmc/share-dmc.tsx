@@ -159,7 +159,7 @@ const DMCAdminInterface = () => {
       if (!dmcResponse.ok) {
         const errorData = await dmcResponse.text()
         console.error("DMC API Error:", errorData)
-        throw new Error(`Failed to fetch DMCs: ${dmcResponse.statusText}`)
+        throw new Error("Failed to fetch DMCs: " + dmcResponse.statusText)
       }
 
       const dmcData = await dmcResponse.json()
@@ -184,9 +184,9 @@ const DMCAdminInterface = () => {
         // Try to parse as JSON for better error info
         try {
           const errorJson = JSON.parse(errorData)
-          throw new Error(errorJson.error || errorJson.details || `Failed to fetch shared DMCs: ${sharedResponse.statusText}`)
+          throw new Error(errorJson.error || errorJson.details || "Failed to fetch shared DMCs: " + sharedResponse.statusText)
         } catch  {
-          throw new Error(`Failed to fetch shared DMCs: ${sharedResponse.statusText}`)
+          throw new Error("Failed to fetch shared DMCs: " + sharedResponse.statusText)
         }
       }
 
@@ -351,20 +351,10 @@ const DMCAdminInterface = () => {
 
   const addDMCToItinerary = async (itineraryId: string, dmcId: string) => {
     if (!dmcId) return
-  
-    // Ensure we have enquiryId for proper data association
-    if (!enquiryId) {
-      toast({
-        title: "Error",
-        description: "Enquiry ID is required to add DMC",
-        variant: "destructive",
-      })
-      return
-    }
-  
+
     try {
       setAddingDMC(dmcId)
-  
+
       // First add the DMC to the itinerary
       const response = await fetch("/api/share-dmc", {
         method: "PUT",
@@ -375,33 +365,28 @@ const DMCAdminInterface = () => {
           id: itineraryId,
           action: "addDMC",
           dmcId: dmcId,
-          enquiryId: enquiryId, // Always include enquiryId
-          customerId: customerId,
+          enquiryId: enquiryId,
           dateGenerated: new Date().toISOString().split("T")[0],
         }),
       })
-  
+
       const result = await response.json()
-  
+
       if (!response.ok || !result.success) {
         throw new Error(result.error || result.details || "Failed to add DMC")
       }
-  
-      // Update local state with new DMC - only if it matches current enquiry
-      const updatedItinerary = result.data
-      if (updatedItinerary.enquiryId === enquiryId) {
-        setItineraries((prev) =>
-          prev.map((itin) =>
-            itin.id === itineraryId
-              ? {
-                  ...itin,
-                  selectedDMCs: [...itin.selectedDMCs, ...updatedItinerary.selectedDMCs],
-                }
-              : itin,
-          ),
-        )
-      }
-  
+
+      // Update local state with new DMC
+      setItineraries((prev) =>
+        prev.map((itin) =>
+          itin.id === itineraryId
+            ? {
+                ...itin,
+                selectedDMCs: [...itin.selectedDMCs, ...result.data.selectedDMCs],
+              }
+            : itin,
+        ),
+      )
 
       // Find the itinerary and automatically send PDF email
       const itinerary = itineraries.find(itin => itin.id === itineraryId)
@@ -410,13 +395,16 @@ const DMCAdminInterface = () => {
       
       if (itinerary && itinerary.pdfUrl) {
         try {
+          // Create a properly formatted date string
+          const currentDate = new Date().toISOString();
+          
           const emailPayload = {
             selectedDMCs: [dmcId],
             enquiryId: enquiryId,
-            customerId: customerId,
+            customerId: customerId || undefined,
             selectedItinerary: itinerary,
-            dateGenerated: itinerary.dateGenerated,
-            assignedStaffId: itinerary.assignedStaffId,
+            dateGenerated: currentDate, // Use the properly formatted date
+            assignedStaffId: itinerary.assignedStaffId || "staff-1",
           }
           
           console.log("📧 Sending email with payload:", JSON.stringify(emailPayload, null, 2))
@@ -472,7 +460,6 @@ const DMCAdminInterface = () => {
   const handleViewUpdates = (dmcItem: SharedDMCItem, itinerary: SharedItinerary) => {
     setSelectedDMCItem(dmcItem)
     setSelectedItinerary(itinerary)
-    
     setCommunicationLogs([])
     setShowCommunicationLog(true)
   }
@@ -726,7 +713,7 @@ const DMCAdminInterface = () => {
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
-            <Button className="bg-dark-green hover:bg-gray-500 text-white px-4 py-2 rounded-md text-sm font-medium">
+            <Button className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-md text-sm font-medium">
               Reassign Staff
             </Button>
           </div>

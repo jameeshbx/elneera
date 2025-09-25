@@ -122,6 +122,8 @@ const ShareCustomerDashboard = () => {
       const newCustomerId = currentParams.get("customerId")
       const newEnquiryId = currentParams.get("enquiryId")
       const newItineraryId = currentParams.get("itineraryId")
+      console.log("currentParams", currentParams);
+      
       
       if ((newCustomerId && newCustomerId !== customerId) || 
           (newEnquiryId && newEnquiryId !== enquiryId) ||
