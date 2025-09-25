@@ -8,7 +8,8 @@ import { useRouter } from "next/navigation"
 import { z } from "zod"
 import { toast } from "sonner"
 
-const userTypes = ["USER", "AGENCY_ADMIN", "TEAM_LEAD"] as const
+
+const userTypes = ["USER", "AGENCY_ADMIN", "TEAM_LEAD", "ADMIN", "SUPER_ADMIN"] as const
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -71,21 +72,26 @@ export default function SignupForm() {
         throw new Error(error.message || "Something went wrong")
       }
 
-      toast.success("Account created successfully!")
+      const result = await response.json();
       
-       // Redirect all users to login page after successful signup
-        router.push("/login")
+      if (!result.success) {
+        throw new Error(result.message || "Failed to create account");
+      }
 
-
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          toast.error(error.issues[0].message)
-        } else if (error instanceof Error) {
-          toast.error(error.message)
-        } else {
-          toast.error("Something went wrong")
-        }
-      } finally {
+      toast.success("Account created successfully! Please login to continue.");
+      
+      // Redirect to login page after successful signup
+      router.push('/login');
+      return;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.issues[0].message)
+      } else if (error instanceof Error) {
+        toast.error(error.message)
+      } else {
+        toast.error("Something went wrong")
+      }
+    } finally {
       setIsLoading(false)
     }
   }
@@ -420,4 +426,3 @@ export default function SignupForm() {
     </div>
   )
 }
-       

@@ -236,14 +236,22 @@ const MapComponent: React.FC<MapComponentProps> = ({
     const existingMarkers = document.querySelectorAll(".mapboxgl-marker");
     existingMarkers.forEach((marker) => marker.remove());
 
-    // Remove existing sources and layers
-    if (map.current.getSource("destinations")) {
-      map.current.removeLayer("destinations");
-      map.current.removeSource("destinations");
-    }
-    if (map.current.getSource("route")) {
-      map.current.removeLayer("route");
-      map.current.removeSource("route");
+    // Remove existing sources and layers with better error handling
+    try {
+      if (map.current.getLayer("destinations")) {
+        map.current.removeLayer("destinations");
+      }
+      if (map.current.getSource("destinations")) {
+        map.current.removeSource("destinations");
+      }
+      if (map.current.getLayer("route")) {
+        map.current.removeLayer("route");
+      }
+      if (map.current.getSource("route")) {
+        map.current.removeSource("route");
+      }
+    } catch (error) {
+      console.warn("Error removing existing sources/layers:", error);
     }
 
     // Add destination markers
@@ -307,30 +315,43 @@ const MapComponent: React.FC<MapComponentProps> = ({
         )
           .then((response) => response.json())
           .then((data) => {
-            if (data.routes && data.routes.length > 0) {
-              map.current!.addSource("route", {
-                type: "geojson",
-                data: {
-                  type: "Feature",
-                  properties: {},
-                  geometry: data.routes[0].geometry,
-                },
-              });
+            // Check if map is still valid and source doesn't exist
+            if (
+              map.current &&
+              map.current.isStyleLoaded() &&
+              data.routes &&
+              data.routes.length > 0
+            ) {
+              try {
+                // Double-check that source doesn't exist before adding
+                if (!map.current.getSource("route")) {
+                  map.current.addSource("route", {
+                    type: "geojson",
+                    data: {
+                      type: "Feature",
+                      properties: {},
+                      geometry: data.routes[0].geometry,
+                    },
+                  });
 
-              map.current!.addLayer({
-                id: "route",
-                type: "line",
-                source: "route",
-                layout: {
-                  "line-join": "round",
-                  "line-cap": "round",
-                },
-                paint: {
-                  "line-color": "#3b82f6",
-                  "line-width": 4,
-                  "line-opacity": 0.8,
-                },
-              });
+                  map.current.addLayer({
+                    id: "route",
+                    type: "line",
+                    source: "route",
+                    layout: {
+                      "line-join": "round",
+                      "line-cap": "round",
+                    },
+                    paint: {
+                      "line-color": "#3b82f6",
+                      "line-width": 4,
+                      "line-opacity": 0.8,
+                    },
+                  });
+                }
+              } catch (error) {
+                console.warn("Error adding route source/layer:", error);
+              }
             }
           })
           .catch((error) => {

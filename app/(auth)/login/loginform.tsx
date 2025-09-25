@@ -60,6 +60,7 @@ export default function LoginForm() {
       email: email.trim().toLowerCase(),
       password: password,
     });
+  
 
     if (result?.error) {
       console.error('❌ SignIn Error:', result.error);
@@ -75,12 +76,12 @@ export default function LoginForm() {
       }
       throw new Error(errorMessage);
     }
-
+  
     // Get the user's session to determine the role
     const session = await getSession();
     if (session?.user) {
-      const { role, userType, email } = session.user;
-      console.log('User data from session:', { role, userType });
+      const { role, userType, email, profileCompleted } = session.user;
+      console.log('User data from session:', { role, userType, profileCompleted });
 
       // Helper to check if agency-form is submitted - IMPROVED ERROR HANDLING
       const checkAgencyFormSubmitted = async (email: string) => {
@@ -124,9 +125,20 @@ export default function LoginForm() {
             return '/agency-admin/agency-form';
           }
         }
+        // Handle AGENCY_ADMIN specific redirection for profileCompleted
+        if (userType && userType.toUpperCase() === 'AGENCY_ADMIN') {
+          if (!profileCompleted) {
+            return '/agency-admin/agency-form';
+          }
+          return '/agency-admin/dashboard';
+        }
         // Other roles
         if (userType) {
           switch (userType.toUpperCase()) {
+            case 'SUPER_ADMIN':
+              return '/super-admin/dashboard';
+            case 'ADMIN':
+              return '/admin/dashboard';
             case 'MANAGER':
               return '/agency/dashboard';
             case 'EXECUTIVE':
@@ -139,6 +151,12 @@ export default function LoginForm() {
         }
         if (role) {
           switch (role.toUpperCase()) {
+            case 'SUPER_ADMIN':
+              return '/super-admin/dashboard';
+            case 'ADMIN':
+              return '/admin/dashboard';
+            case 'AGENCY_ADMIN':
+              return '/agency-admin/dashboard';
             case 'MANAGER':
               return '/agency/dashboard';
             case 'EXECUTIVE':

@@ -7,6 +7,12 @@ export function getRoleBasedPath(role: UserRole, userType?: UserType): string {
   // First check if we have a userType and use that for more specific routing
   if (userType) {
     switch (userType.toUpperCase()) {
+      case 'SUPER_ADMIN':
+        return '/super-admin/dashboard';
+      case 'ADMIN':
+        return '/admin/dashboard';
+      case 'AGENCY_ADMIN':
+        return '/agency-admin/dashboard';
       case 'MANAGER':
         return '/agency/dashboard';
       case 'EXECUTIVE':

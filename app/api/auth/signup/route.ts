@@ -1,20 +1,35 @@
 import { NextResponse } from "next/server";
-import { PrismaClient, UserType } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { sendEmail } from "@/lib/email";
 import { getWelcomeEmail } from "@/emails/welcome-email";
+import { USER_TYPES } from "@/types/user";
 
 const prisma = new PrismaClient();
 
-import { USER_TYPES } from "@/types/user";
+// Define UserType based on your Prisma schema enum values
+type UserType = 
+  | 'USER'
+  | 'AGENCY_ADMIN'
+  | 'AGENCY_MANAGER'
+  | 'TEAM_LEAD'
+  | 'EXECUTIVE'
+  | 'DMC'
+  | 'AGENCY'
+  | 'CUSTOMER'
+  | 'TEKKING_MYLES'
+  | 'MANAGER'
+  | 'TL'
+  | 'SUPER_ADMIN'
+  | 'ADMIN';
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
-  userType: z.enum(USER_TYPES as unknown as [string, string, string], {
+  userType: z.enum(USER_TYPES, {
     message: `User type must be one of: ${USER_TYPES.join(", ")}`
   }),
 });
@@ -45,10 +60,12 @@ export async function POST(req: Request) {
         name: validatedData.name,
         email: validatedData.email,
         password: hashedPassword,
+        userType: validatedData.userType as UserType, // Cast to UserType
+        profileCompleted: validatedData.userType === 'AGENCY_ADMIN' ? false : true,
         companyName: validatedData.companyName,
-       userType: validatedData.userType as UserType,
         businessType: 'AGENCY',
-        role: validatedData.userType === 'AGENCY_ADMIN' ? 'ADMIN' : 'USER',
+        emailVerified: null,
+        status: 'ACTIVE',
       },
     });
 
@@ -58,12 +75,14 @@ export async function POST(req: Request) {
 
     try {
       // Send welcome email
-      const emailContent = getWelcomeEmail(validatedData.name);
+      const emailData = getWelcomeEmail(validatedData.name);
       await sendEmail({
         to: validatedData.email,
-        subject: emailContent.subject,
-        html: emailContent.html
+        subject: emailData.subject,
+        html: emailData.html,
+        attachments: []
       });
+
       console.log("Welcome email sent successfully");
     } catch (emailError) {
       console.error("Failed to send welcome email:", emailError);
@@ -73,10 +92,10 @@ export async function POST(req: Request) {
     console.log("User created successfully");
     return NextResponse.json(
       { 
-        message: "User created successfully. Welcome email sent.", 
+        success: true, 
         user: userWithoutPassword 
       },
-      { status: 201 }
+      { status: 200 }
     );
     
   } catch (error) {

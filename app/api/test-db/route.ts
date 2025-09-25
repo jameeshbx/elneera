@@ -1,5 +1,5 @@
 // Simple test API to verify database connectivity
-import {   NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
@@ -8,10 +8,27 @@ export async function GET() {
   try {
     console.log("=== Database Test API Started ===")
     
-    // Test basic connection
+    // Test database connection
     await prisma.$connect()
-    console.log("✅ Database connection successful")
     
+    // Check total count of itineraries
+    const count = await prisma.itineraries.count();
+    
+    // Get first 5 itineraries
+    const itineraries = await prisma.itineraries.findMany({
+      take: 5,
+      select: {
+        id: true,
+        enquiryId: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        customerId: true,
+        pdfUrl: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     // Test DMCForm table
     let dmcCount = 0
     try {
@@ -42,7 +59,9 @@ export async function GET() {
       data: {
         dmcCount,
         sharedCount,
-        connectionStatus: "OK"
+        connectionStatus: "OK",
+        itinerariesCount: count,
+        sampleItineraries: itineraries,
       }
     })
     

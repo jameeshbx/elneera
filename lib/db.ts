@@ -1,35 +1,51 @@
-// This is a mock database connection.
-// In a real application, you would set up your actual database connection here,
-// for example, using 'mysql2/promise' or another ORM/client.
-interface MockQueryResult {
-  // This interface can be generic or specific depending on the mock's needs.
-  // For insert operations, it might contain insertId.
-  insertId?: number
-  // For select operations, it would contain the columns of the selected rows.
-  // Since this is a generic mock, we keep it minimal.
-  [key: string]: unknown // Changed from any to unknown for safer typing
+import { Pool, QueryResultRow } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import * as schema from '@/lib/schema';
+
+// Use connection string from environment variable or fall back to local config
+const connectionString = process.env.POSTGRES_URL || 
+  `postgres://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`;
+
+if (!connectionString) {
+  throw new Error('Database connection string is not defined. Please set POSTGRES_URL or individual PG* environment variables.');
 }
 
-interface MockDatabase {
-  execute: <T extends MockQueryResult>(query: string, params?: unknown[]) => Promise<[T[], unknown]> // Changed any to unknown
-}
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
-export async function connectDB(): Promise<MockDatabase> {
-  console.log("Connecting to mock database...")
-  // Simulate a database connection
-  return {
-    execute: async <T extends MockQueryResult>(query: string, params?: unknown[]): Promise<[T[], unknown]> => {
-      // Changed any to unknown
-      console.log("Executing query:", query, params)
-      // Simulate a successful insert operation
-      if (query.includes("INSERT INTO")) {
-        // Corrected: Wrap the single result object in an array
-        return [[{ insertId: Math.floor(Math.random() * 1000) + 1 }] as T[], null]
-      }
-      // Simulate fetching data for SELECT queries
-      // For a generic mock, returning an empty array is the safest default.
-      // Consumers (like share-customer/route.ts) will need to cast this to their expected type.
-      return [[] as T[], null]
-    },
+// Export the database client
+export const db = drizzle(pool, { schema });
+
+// Export a query function for direct SQL queries if needed
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  text: string, 
+  params: unknown[] = []
+): Promise<{ rows: T[] }> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query<T>(text, params);
+    return result;
+  } finally {
+    client.release();
   }
+}
+
+// For backward compatibility
+export async function connectDB() {
+  return {
+    execute: async <T extends QueryResultRow>(
+      query: string, 
+      params: unknown[] = []
+    ): Promise<[T[], unknown]> => {
+      try {
+        const result = await pool.query<T>(query, params);
+        return [result.rows, null];
+      } catch (error) {
+        console.error('Database query error:', error);
+        return [[], error];
+      }
+    },
+  };
 }

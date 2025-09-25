@@ -120,3 +120,48 @@ export const createDMC = async (data: DMCCreateData) => {
     throw error
   }
 }
+
+// Agency Types
+export interface AgencyData {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  // Add other agency fields as needed
+}
+
+// API Client
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+
+const api = {
+  // Existing DMC methods...
+  fetchDMCs,
+  createDMC,
+  
+  // Agency methods
+  getAgency: async (): Promise<AgencyData> => {
+    try {
+      const response = await fetch(`${API_URL}/api/agency/me`, {
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('API Error Response:', data);
+        throw new Error(data.error || 'Failed to fetch agency data');
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error in getAgency:', error);
+      throw error; // Re-throw to be handled by the component
+    }
+  },
+
+  // Add other agency-related methods as needed
+};
+
+export default api;

@@ -371,7 +371,7 @@ const ShareCustomerDashboard = () => {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 second timeout
 
-      const response = await fetch("/api/sent-itinerary", { 
+      const response = await fetch("/api/sent-itinerary", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
