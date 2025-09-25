@@ -227,9 +227,9 @@ export default function AgencyForm() {
             {/* Logo positioned absolutely on the left */}
             <div className="absolute top-6 left-6 z-20">
                 <Image
-                    src="/img/login/cropped-logo-1_1567c4bc-84c5-4188-81e0-d5dd9ed8ef8d (1) 1.svg"
+                    src="/logo/elneeraw.png"
                     alt="Company Logo"
-                    width={180}
+                    width={100}
                     height={40}
                     className="w-[180px] h-auto"
                 />

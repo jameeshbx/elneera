@@ -51,7 +51,7 @@ describe("Agency Form", () => {
   
       it("should handle logo upload", () => {
         // Mock file upload
-        cy.get("#logo-upload").selectFile("cypress/fixtures/sample-elneera-logo.png", { force: true })
+        cy.get("#logo-upload").selectFile("cypress/fixtures/sample-/logo/elneeraf.png.png", { force: true })
   
         // Verify upload state
         cy.contains("Uploading file...").should("be.visible")

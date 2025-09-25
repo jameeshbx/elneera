@@ -259,7 +259,7 @@ export default function FeedbackForm({ enquiryId }: FeedbackFormProps) {
           {/* Logo */}
           <div className=" ">
             <Image
-              src="/elneera-logo.png"
+              src="/logo/elneeraf.png"
               alt="Trekking Miles"
               width={176}  // Original dimensions
               height={64}
