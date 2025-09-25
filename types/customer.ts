@@ -8,6 +8,8 @@ export interface Customer {
   updatedAt: string
 }
 
+import type { PDFVersion } from './pdf'
+
 export interface Itinerary {
   id: string
   enquiryId: string
@@ -23,6 +25,13 @@ export interface Itinerary {
   status: string
   createdAt: string
   updatedAt: string
+  pdfVersions: PDFVersion[]
+  editedData?: any
+  editedPdfUrl?: string
+  isEdited?: boolean
+  editedAt?: string
+  lastPdfRegeneratedAt?: string
+  activePdfVersion?: string
 }
 
 export interface CustomerFeedback {

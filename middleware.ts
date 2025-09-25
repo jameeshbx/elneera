@@ -2,7 +2,7 @@ import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
- const publicPaths = [
+const publicPaths = [
   "/",
   "/login",
   "/signup",
@@ -13,6 +13,7 @@ import { getToken } from "next-auth/jwt";
   "/_next/**",
   "/favicon.ico",
 ];
+
 // Paths that are only accessible to authenticated users with specific roles
 const adminPaths = [
   "/admin/**",
@@ -33,8 +34,6 @@ const roleBasedPaths = {
   TEAM_LEAD: "/teamlead/dashboard",
   TL: "/telecaller/dashboard",
   AGENT_USER: "/agent/dashboard",
-
-  // DMC roles
   DMC_ADMIN: "/dmc/dashboard",
   DMC_USER: "/dmc/dashboard"
 } as const;
@@ -46,6 +45,20 @@ function getDashboardPath(role: string): string {
   const path = roleBasedPaths[role as UserRole];
   return path || '/';
 }
+
+// Add this function to handle role-based redirection
+function getRoleBasedRedirect(role: string, userType?: string): string {
+  // First check userType if available
+  if (userType) {
+    const path = roleBasedPaths[userType as keyof typeof roleBasedPaths];
+    if (path) return path;
+  }
+  
+  // Fall back to role
+  const path = roleBasedPaths[role as keyof typeof roleBasedPaths];
+  return path || '/dashboard';
+}
+
 // Public API routes that don't require authentication
 const preFormAgencyAdminPaths = [
   "/agency-admin/agency-form",
@@ -69,102 +82,64 @@ const postFormAgencyAdminPaths = [
 
 // Helper function to check if path is allowed for the user role
 function isPathAllowed(pathname: string, token: any): boolean {
-  const userRole = token?.role?.toUpperCase();
-  const isAgencyFormSubmitted = token?.agencyFormSubmitted === true;
-
-  console.log('[isPathAllowed] Checking path:', { pathname, userRole, isAgencyFormSubmitted });
-
   // Allow public paths
   if (publicPaths.some(path => 
     path === pathname || 
-    (path.endsWith('/**') && pathname.startsWith(path.slice(0, -3)))
+    (path.endsWith('**') && pathname.startsWith(path.slice(0, -2)))
   )) {
     return true;
   }
 
-    // Handle specific role paths
-  switch(userRole) {
-    case 'AGENCY_ADMIN':
-      if (isAgencyFormSubmitted) {
-        return postFormAgencyAdminPaths.some(path => 
-          path === pathname || (path.endsWith('/**') && pathname.startsWith(path.slice(0, -3)))
-        );
-      } else {
-        return preFormAgencyAdminPaths.some(path => 
-          path === pathname || (path.endsWith('/**') && pathname.startsWith(path.slice(0, -3)))
-        );
-      }
+  // If no token, only allow public paths
+  if (!token) return false;
 
-    case 'MANAGER':
-      return pathname.startsWith('/agency/') || pathname === '/api/agency';
+  const userRole = token.role as UserRole;
+  const userType = token.userType as string;
 
-    case 'TL':
-    case 'TELEMARKETER':
-      return pathname.startsWith('/telecaller/') || pathname === '/api/telecaller';
-
-    case 'EXECUTIVE':
-      return pathname.startsWith('/executive/') || pathname === '/api/executive';
-
-    case 'TEAM_LEAD':
-      return pathname.startsWith('/teamlead/') || pathname === '/api/teamlead';
-      // Check if the path is in the allowed lists based on form submission status
-      const allowedPaths = isAgencyFormSubmitted 
-        ? postFormAgencyAdminPaths 
-        : preFormAgencyAdminPaths;
-
-      // Allow access to allowed paths
-      if (allowedPaths.some(path => 
-        pathname === path || 
-        (path.endsWith('/**') && pathname.startsWith(path.slice(0, -3)))
-      )) {
-        return true;
-      }
-
-      // Allow access to static assets
-      if (pathname.startsWith('/_next/') || pathname.startsWith('/images/')) {
-        return true;
-      }
-
-      // If form is not submitted, only allow access to the form
-      if (!isAgencyFormSubmitted && pathname === '/agency-admin/agency-form') {
-        return true;
-      }
-      return false;
-
-    case 'MANAGER':
-      return pathname.startsWith('/agency/');
-
-    case 'TL':
-      return pathname.startsWith('/telecaller/');
-
-    case 'TEAM_LEAD':
-      return pathname.startsWith('/teamlead/');
-
-    case 'EXECUTIVE':
-      return pathname.startsWith('/executive/');
-
-    case 'ADMIN':
-    case 'SUPER_ADMIN':
-      return pathname.startsWith('/admin/') || pathname.startsWith('/super-admin/');
-
-    case 'DMC_ADMIN':
-    case 'DMC_USER':
-      return pathname.startsWith('/dmc/');
-
-    default:
-      console.warn('No role matched for path access check:', { userRole, pathname });
-      return false;
+  // Special handling for AGENCY_ADMIN userType
+  if (userType === 'AGENCY_ADMIN') {
+    return pathname.startsWith('/agency-admin/') || 
+           pathname === '/api/agencyform' ||
+           pathname.startsWith('/api/agency/');
   }
+
+  // Check admin paths
+  if (adminPaths.some(path => pathname.startsWith(path.replace('/**', '')))) {
+    return userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+  }
+
+  // Check agency admin paths
+  if (agencyAdminPaths.some(path => pathname.startsWith(path.replace('/**', '')))) {
+    return userRole === 'AGENCY_ADMIN' || userType === 'AGENCY_ADMIN';
+  }
+
+  // Default to allowing access for authenticated users
+  return true;
 }
 
 export default withAuth(
   async function middleware(req) {
     const { pathname } = req.nextUrl;
     const token = await getToken({ req });
-    const userRole = token?.role?.toUpperCase();
-    const isAgencyFormSubmitted = token?.agencyFormSubmitted === true;
 
-    console.log(`[Middleware] Path: ${pathname}, Role: ${userRole}, Form Submitted: ${isAgencyFormSubmitted}`);
+    // Redirect to dashboard if user is already authenticated and trying to access auth pages
+    if (token) {
+      // Allow access to signup page for new users
+      if (pathname === '/signup') {
+        // Only allow access to signup if not logged in as ADMIN or SUPER_ADMIN
+        if (['ADMIN', 'SUPER_ADMIN'].includes(token.role)) {
+          const redirectUrl = getRoleBasedRedirect(token.role, token.userType);
+          return NextResponse.redirect(new URL(redirectUrl, req.url));
+        }
+        return NextResponse.next();
+      }
+      
+      // Redirect other auth pages to dashboard
+      if (['/login', '/forgot-password', '/reset-password'].includes(pathname)) {
+        const redirectUrl = getRoleBasedRedirect(token.role, token.userType);
+        return NextResponse.redirect(new URL(redirectUrl, req.url));
+      }
+    }
 
     // Skip middleware for API routes and static files
     if (pathname.startsWith('/api/') || pathname.startsWith('/_next/') || pathname.startsWith('/images/')) {
@@ -198,14 +173,14 @@ export default withAuth(
 
     // Get user role from token
     // Handle authenticated users
-    if (token && userRole) {
+    if (token && token.role) {
       // Redirect from login/signup to appropriate dashboard
       if (pathname === '/login' || pathname === '/signup') {
-        let redirectPath = getDashboardPath(userRole);
+        let redirectPath = getRoleBasedRedirect(token.role, token.userType);
 
         // Special handling for AGENCY_ADMIN based on form submission
-        if (userRole === 'AGENCY_ADMIN') {
-          redirectPath = isAgencyFormSubmitted 
+        if (token.role === 'AGENCY_ADMIN') {
+          redirectPath = token.agencyFormSubmitted 
             ? '/agency-admin/profile' 
             : '/agency-admin/agency-form';
         }
@@ -214,14 +189,14 @@ export default withAuth(
       }
 
       // Handle AGENCY_ADMIN form submission state
-      if (userRole === 'AGENCY_ADMIN') {
+      if (token.role === 'AGENCY_ADMIN') {
         // If form is not submitted, only allow access to the form
-        if (!isAgencyFormSubmitted && pathname !== '/agency-admin/agency-form') {
+        if (!token.agencyFormSubmitted && pathname !== '/agency-admin/agency-form') {
           return NextResponse.redirect(new URL('/agency-admin/agency-form', req.url));
         }
 
         // If form is submitted, don't allow access to the form
-        if (isAgencyFormSubmitted && pathname === '/agency-admin/agency-form') {
+        if (token.agencyFormSubmitted && pathname === '/agency-admin/agency-form') {
           return NextResponse.redirect(new URL('/agency-admin/profile', req.url));
         }
       }
@@ -229,14 +204,14 @@ export default withAuth(
     
 
     // Handle AGENCY_ADMIN specific logic
-    if (userRole === 'AGENCY_ADMIN') {
+    if (token?.role === 'AGENCY_ADMIN') {
       // Block access to admin/super-admin routes
       if (pathname.startsWith('/admin/') || pathname.startsWith('/super-admin/')) {
         return NextResponse.redirect(new URL('/unauthorized', req.url));
       }
       
       // If form is not submitted, only allow access to the form
-      if (!isAgencyFormSubmitted) {
+      if (!token.agencyFormSubmitted) {
         if (pathname !== '/agency-admin/agency-form' && 
             !pathname.startsWith('/api/') &&
             !pathname.startsWith('/_next/')) {
@@ -259,8 +234,8 @@ export default withAuth(
       path === pathname || 
       (path.endsWith('/**') && pathname.startsWith(path.slice(0, -3)))
     )) {
-      const redirectUrl = new URL('/agency-admin/dashboard', req.url);
-      return NextResponse.redirect(redirectUrl);
+      const redirectUrl = getRoleBasedRedirect(token.role, token.userType);
+      return NextResponse.redirect(new URL(redirectUrl, req.url));
     }
   }
 
@@ -268,13 +243,18 @@ export default withAuth(
   if (!isPathAllowed(pathname, token)) {
     console.log('[Middleware] Path not allowed for role. Checking role-based redirection...', { 
       pathname, 
-      userRole,
+      role: token?.role,
       rolePaths: roleBasedPaths
     });
 
     // Get the appropriate dashboard path based on user role
-    const userRoleKey = userRole as UserRole;
-    const userDashboardPath = roleBasedPaths[userRoleKey];
+    const userRoleKey = token?.role?.toUpperCase() as UserRole | undefined;
+    let userDashboardPath: string | undefined;
+    
+    if (userRoleKey && userRoleKey in roleBasedPaths) {
+      userDashboardPath = roleBasedPaths[userRoleKey];
+    }
+    
     const hasAccess = userDashboardPath && 
                    (pathname === userDashboardPath || 
                     pathname.startsWith(userDashboardPath.split('/')[1] + '/'));

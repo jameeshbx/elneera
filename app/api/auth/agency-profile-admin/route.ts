@@ -3,6 +3,27 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 
+interface TeamMemberProfileImage {
+  url: string;
+}
+
+interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  profileImage: TeamMemberProfileImage | null;
+  updatedAt: Date;
+}
+
+interface TeamMemberResponse {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  lastLoggedIn: string
+  avatarColor: string
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
@@ -24,7 +45,7 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const isAuthorized = user.userType === "AGENCY" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+    const isAuthorized = user.userType === "AGENCY_ADMIN" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
 
     if (!isAuthorized) {
       return NextResponse.json(
@@ -50,14 +71,7 @@ export async function GET() {
     }
 
     // Fetch team members only if user_form table exists
-    let teamMembers: {
-      id: string
-      name: string
-      email: string
-      avatarUrl: string | null
-      lastLoggedIn: string
-      avatarColor: string
-    }[] = []
+    let teamMembers: TeamMemberResponse[] = []
 
     try {
       const tableExists = await ensureUserFormTableExists()
@@ -90,7 +104,7 @@ export async function GET() {
           return colors[Math.abs(hash) % colors.length]
         }
 
-        teamMembers = userFormRecords.map((member) => ({
+        teamMembers = userFormRecords.map((member: TeamMember) => ({
           id: member.id,
           name: member.name,
           email: member.email,

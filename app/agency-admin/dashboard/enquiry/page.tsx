@@ -1,6 +1,6 @@
 "use client";
 
-import Enquirysection from "./enquiry-section";
+import Enquirysection from "@/app/agency-admin/dashboard/enquiry/enquiry-section";
 import { TopBarContainer } from "@/app/admin/(components)/TobBarContainer";
 
 export default function Enquiry() {

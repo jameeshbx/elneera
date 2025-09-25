@@ -67,6 +67,23 @@ export interface S3FileInfo {
   contentType?: string
 }
 
+// Helper function to create signed URLs with proper error handling
+async function createSignedUrl(bucket: string, key: string, expiresIn: number = 3600): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  })
+
+  try {
+    // Cast to satisfy TypeScript - this is safe as the AWS SDK handles the compatibility internally
+    const client = s3Client as unknown as Parameters<typeof getSignedUrl>[0]
+    return await getSignedUrl(client, command, { expiresIn })
+  } catch (error) {
+    console.error('Error generating signed URL:', error)
+    throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 export class S3Service {
   /**
    * Check if S3 is properly configured
@@ -132,18 +149,7 @@ export class S3Service {
       throw new Error('S3 is not properly configured')
     }
 
-    try {
-      const command = new GetObjectCommand({
-        Bucket: s3Config.bucketName,
-        Key: key,
-      })
-
-  // @ts-expect-error: S3Client is compatible with getSignedUrl but types are mismatched in AWS SDK
-  return await getSignedUrl(s3Client, command, { expiresIn })
-    } catch (error) {
-      console.error('Error generating signed URL:', error)
-      throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`)
-    }
+    return createSignedUrl(s3Config.bucketName, key, expiresIn)
   }
 
   /**

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
+import {  PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
+
 
 
 // Create a single Prisma Client and reuse it
@@ -89,6 +90,26 @@ async function ensureTablesExist() {
     console.error("❌ Error ensuring tables exist:", error);
     throw error;
   }
+}
+interface User {
+  id: string;
+  name: string | null;
+  phoneNumber: string | null;
+  phoneExtension: string;
+  email: string | null;
+  username: string | null;
+  userType: string | null;  // Changed from string to string | null
+  status: string;
+  createdAt: Date;
+  profileImage: {
+    id: string;
+    url: string;
+    name: string;
+    size: number;
+    type: string;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
 }
 import { getNewUserWelcomeEmail } from "@/emails/new-user-welcome";
 export async function POST(req: Request) {
@@ -464,6 +485,7 @@ export async function GET() {
     
     // Ensure table exists before proceeding
     await ensureTablesExist();
+    
     const users = await prisma.userForm.findMany({
       include: {
         profileImage: true
@@ -472,18 +494,20 @@ export async function GET() {
         createdAt: 'desc'
       }
     });
+    
     console.log(`✅ Found ${users.length} users`);
+    
     return NextResponse.json({
       success: true,
-      data: users.map(user => ({
+      data: users.map((user: User) => ({
         id: user.id,
-        name: user.name,
-        phoneNumber: user.phoneNumber,
+        name: user.name || '',
+        phoneNumber: user.phoneNumber || '',
         phoneExtension: user.phoneExtension,
         email: user.email,
         username: user.username,
-        userType: user.userType, // This will now preserve the correct user type
-        status: user.status,
+        userType: user.userType || 'TEAM_LEAD',  // Provide default if null
+        status: user.status,      
         createdAt: user.createdAt,
         profileImage: user.profileImage,
         maskedPassword: "•••••••"

@@ -186,6 +186,7 @@ export async function PUT(request: NextRequest) {
         : null,
       customCancellationTerms: updateData.customCancellationTerms || null,
       agencyCancellationPolicyId: updateData.agencyCancellationPolicyId || null,
+      pdfUrl: updateData.pdfUrl || null,
     }
 
     const updatedItinerary = await prisma.itineraries.update({

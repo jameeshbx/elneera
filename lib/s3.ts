@@ -23,10 +23,10 @@ const s3Client = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
-})
+});
 
 // Function to get a readable stream of a file from S3
-export async function getFileStream(key: string) {
+export async function getFileStream(key: string): Promise<Buffer> {
   if (!process.env.AWS_S3_BUCKET_NAME) {
     throw new Error('S3 bucket name is not configured')
   }
@@ -43,7 +43,12 @@ export async function getFileStream(key: string) {
       throw new Error('No file found in S3')
     }
 
-    // Convert the response body to a buffer
+    // Handle different body types
+    if (response.Body instanceof Uint8Array) {
+      return Buffer.from(response.Body)
+    }
+
+    // Convert the response body to a buffer for readable streams
     const chunks: Buffer[] = []
     const stream = response.Body as Readable
     
@@ -59,7 +64,7 @@ export async function getFileStream(key: string) {
 }
 
 // Function to get a signed URL for a file in S3
-export async function getSignedFileUrl(key: string, expiresIn = 3600) {
+export async function getSignedFileUrl(key: string, expiresIn = 3600): Promise<string> {
   if (!process.env.AWS_S3_BUCKET_NAME) {
     throw new Error('S3 bucket name is not configured')
   }
@@ -70,9 +75,8 @@ export async function getSignedFileUrl(key: string, expiresIn = 3600) {
   })
 
   try {
-    // Use the command and s3Client to generate the signed URL
-  // @ts-expect-error: S3Client is compatible with getSignedUrl but types are mismatched in AWS SDK
-  return await getSignedUrl(s3Client, command, { expiresIn })
+    // Remove the type annotation and let TypeScript infer the correct type
+    return await getSignedUrl(s3Client, command, { expiresIn })
   } catch (error) {
     console.error('Error generating signed URL:', error)
     throw new Error('Failed to generate signed URL')

@@ -163,7 +163,7 @@ export default function ProfilePage() {
 
   const [accountData, setAccountData] = useState<AccountData>({
     username: "",
-    password: "********",
+    password: "",
     role: "",
     location: "",
     status: "",
@@ -220,9 +220,15 @@ export default function ProfilePage() {
         })
 
         if (!response.ok) {
-          const errorData = await response.json()
-          console.error("API Error Response:", errorData)
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+          let errorMessage = `HTTP error! status: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            console.error("API Error Response:", errorData);
+            errorMessage = errorData.error || errorData.message || errorMessage;
+          } catch (e) {
+            console.error("Failed to parse error response:", e);
+          }
+          throw new Error(errorMessage);
         }
 
         const data: ApiResponse = await response.json()

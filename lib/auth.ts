@@ -1,11 +1,9 @@
-import { NextAuthOptions, DefaultSession } from "next-auth";
+import { NextAuthOptions, User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { z } from "zod";
-import { PrismaClient, User } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { UserRole, UserType } from "@/types/next-auth";
-
-
 
 // Map Prisma Role to UserRole
 type PrismaUser = User & {
@@ -29,6 +27,7 @@ type UserFormUser = {
 // Extend the User type to include custom fields
 type ExtendedUser = PrismaUser & {
   isActive?: boolean;
+  password?: string;  
   agency?: ({
     id: string;
     name: string;
@@ -45,56 +44,13 @@ type ExtendedUser = PrismaUser & {
   }) | null;
 };
 
-// Extend the built-in session types
-declare module "next-auth" {
-  interface Session extends DefaultSession {
-    user: {
-      id: string;
-      email: string | null;
-      name: string | null;
-      image?: string | null;
-      role: UserRole;
-      userType: UserType;
-      agencyId?: string | null;
-      agencyFormSubmitted?: boolean;
-      isActive?: boolean;
-    } & DefaultSession["user"];
-  }
-
-  interface User {
-    id: string;
-    email: string | null;
-    name: string | null;
-    role: UserRole;
-    userType: UserType;
-    agencyId?: string | null;
-    agencyFormSubmitted?: boolean;
-    isActive?: boolean;
-  }
-}
-
-declare module "next-auth/jwt" {
-  interface JWT {
-    id: string;
-    email: string | null;
-    name: string | null;
-    role: UserRole;
-    userType: UserType;
-    agencyId?: string | null;
-    agencyFormSubmitted?: boolean;
-    isActive?: boolean;
-  }
-}
-
 // Create a single PrismaClient instance to avoid too many connections
-const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-});
+const prismaClient = prisma;
 
 // Add database connection check
 async function checkDatabaseConnection() {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prismaClient.$queryRaw`SELECT 1`;
     console.log('✅ Database connection successful');
     return true;
   } catch (error) {
@@ -113,7 +69,7 @@ const loginSchema = z.object({
 function mapUserTypeToRole(userType: string): UserRole {
   switch (userType.toUpperCase()) {
     case 'AGENCY_ADMIN':
-      return 'AGENT_ADMIN';
+      return 'AGENCY_ADMIN';
     case 'MANAGER':
       return 'MANAGER';
     case 'TEAM_LEAD':
@@ -173,7 +129,7 @@ export const authOptions: NextAuthOptions = {
           try {
             // Check if password is in plain text (for development only)
             console.log('🔍 Querying main user table for:', normalizedEmail);
-            user = await prisma.user.findUnique({
+            user = await prismaClient.user.findUnique({
               where: { email: normalizedEmail },
               include: {
                 agency: true
@@ -183,7 +139,7 @@ export const authOptions: NextAuthOptions = {
              // If not found in main table, check user_form table
              if (!user) {
               console.log('🔍 User not found in main table, checking user_form table');
-              userFormUser = await prisma.userForm.findUnique({
+              userFormUser = await prismaClient.userForm.findUnique({
                 where: { email: normalizedEmail }
               }) as UserFormUser | null;
 
@@ -273,41 +229,28 @@ export const authOptions: NextAuthOptions = {
 
           // Handle regular users (from main user table)
           if (user) {
-            // If user has an agency, check if they have an agency form
-            if (user?.agency) {
-              const agencyForm = await prisma.agencyForm.findFirst({
-                where: { createdBy: user.id },
-                select: {
-                  id: true,
-                  name: true,
-                  email: true
-                }
-              });
-  // Add agency form to user object if it exists
-  if (agencyForm) {
-    user.agency = {
-      ...user.agency,
-      agencyForm
-    };
-  }
-}
+            const userWithPassword = user as ExtendedUser & { password: string };
 
-if (!user.password) {
-  console.warn('⚠️ User has no password set:', normalizedEmail);
-  throw new Error(JSON.stringify({
-    error: 'NoPasswordSet',
-    message: 'Account not properly configured. Please use the password reset option or contact support.'
-  }));
-}
+            if (!userWithPassword.password) {
+              console.warn('⚠️ User has no password set:', normalizedEmail);
+              throw new Error(JSON.stringify({
+                error: 'NoPasswordSet',
+                message: 'Account not properly configured. Please use the password reset option or contact support.'
+              }));
+            }
 
-console.log('🔑 Verifying password for regular user:', user.id);
-let isValid = false;
-try {
-  isValid = await bcrypt.compare(password, user.password);
-} catch (bcryptError) {
-  console.error('❌ Bcrypt compare error:', bcryptError);
-  throw new Error('Error during password verification. Please try again.');            }
-            
+            console.log('🔑 Verifying password for regular user:', user.id);
+            let isValid = false;
+            try {
+              isValid = await bcrypt.compare(credentials.password, userWithPassword.password);
+            } catch (error) {
+              console.error('❌ Password verification error:', error);
+              throw new Error(JSON.stringify({
+                error: 'PasswordVerificationError',
+                message: 'Error verifying password'
+              }));
+            }
+
             if (!isValid) {
               console.warn('❌ Invalid password for user:', user.id);
               throw new Error(JSON.stringify({
