@@ -19,7 +19,8 @@ model File {
   // Agency Form relations (one-to-one)
   agencyBusinessLicense AgencyForm? @relation("AgencyFormBusinessLicense")
   agencyLogo            AgencyForm? @relation("AgencyFormLogo")
-
+  // Opposite relation for Agency.logo
+  agencyLogoAgency      Agency?     @relation("AgencyLogo")
   // Other existing relations
   dmcPaymentReceipt   DmcPayment?    @relation("DmcPaymentReceipt")
   managerProfile      Manager?       @relation("ManagerProfile")
@@ -27,6 +28,7 @@ model File {
   userProfileImage    User?          @relation("UserProfileImage")
   paymentMethodQRCode PaymentMethod? @relation("PaymentMethodQRCode")
   adminProfile        Admin?         @relation("AdminProfile")
+
 
   // QR Code relation
   agencyPaymentMethodQRCode AgencyPaymentMethod? @relation("AgencyPaymentMethodQRCode")
@@ -41,6 +43,9 @@ model User {
   name        String?
   companyName String
   phone       String?
+  emailVerified DateTime?
+  status      UserStatus @default(ACTIVE)
+  profileCompleted Boolean @default(false)
 
   businessType   BusinessType
   createdAt      DateTime       @default(now())
@@ -66,17 +71,22 @@ model User {
 }
 
 model Agency {
-  id             String                @id @default(uuid())
-  name           String
-  config         Json
-  createdBy      String
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  subscriptions  Subscription[]
-  users          User[]
-  paymentMethods AgencyPaymentMethod[]
+  id                String                @id @default(uuid())
+  name              String
+  config            Json
+  createdBy         String
+  logoId            String?               @unique
+  logo              File?                 @relation("AgencyLogo", fields: [logoId], references: [id])
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  subscriptions     Subscription[]
+  users             User[]
+  paymentMethods    AgencyPaymentMethod[]
+  customerPayments  CustomerPayment[]
+  forms             AgencyForm[]
 
-  customerPayments CustomerPayment[]
+  // Opposite relation for enquiries.agency
+  enquiries         enquiries[]
 
   @@index([name])
 }
@@ -100,40 +110,18 @@ model DMC {
 
 // Keep the existing quotes table structure to preserve data
 model quotes {
-  id                   String    @id @default(cuid())
-  enquiryId            String?
-  customerId           String?
-  agencyId             String?
-
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  submitted           Boolean   @default(false)
-  submittedAt         DateTime?
-  submittedBy         String?
-  name                String?
-  config              Json?
-  contactPerson       String?
-  dmcId               String?
-  amount              Int?
-  comments            String?
-  commission          Int?
-  commissionType      String?
-  commissionValue     Int?
-  commissionAmount    Int?
-  
-  // Add these missing fields that were causing the original errors
-  phoneNumber         String?
-  designation         String?
-  email               String?
-  status              String?
-  primaryCountry      String?
-  destinationsCovered String[]
-  cities              String[]
+  id          String   @id @default(cuid())
+  enquiryId   String?
+  dmcId       String?
+  amount      Float?
+  comments    String?
+  currency    String?  // New field
+  status      String?  @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   dmc DMC? @relation("DMCQuotes", fields: [dmcId], references: [id])
-
-
 }
 
 model PasswordReset {
@@ -189,6 +177,8 @@ model Subscription {
 }
 
 model AgencyForm {
+  agencyId            String?
+  agency              Agency?        @relation(fields: [agencyId], references: [id])
   id                  String      @id @default(uuid())
   name                String
   config              Json        @default("{}")
@@ -348,6 +338,8 @@ model enquiries {
   name               String
   phone              String
   email              String
+  agencyId           String?             @db.Uuid
+  agency             Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
   locations          String?
   tourType           String?
   estimatedDates     String?
@@ -457,7 +449,10 @@ model itineraries {
   agencyCancellationPolicy   AgencyCancellationPolicy? @relation(fields: [agencyCancellationPolicyId], references: [id])
   sharedCustomerPdfs         SharedCustomerPdf[]
   customerPayment            CustomerPayment[]
-
+  originalPdfUrl             String?                  @map("original_pdf_url")
+  editedPdfUrl               String?                  @map("edited_pdf_url")
+  isEdited                   Boolean?                 @default(false) @map("is_edited")
+  editedAt                   DateTime?                @map("edited_at")
   BookingProgress BookingProgress[]
   BookingFeedback BookingFeedback[]
   BookingReminder booking_reminder[]
@@ -604,6 +599,7 @@ model customer_feedbacks {
   @@map("customer_feedbacks")
 }
 
+
 model sent_itineraries {
   id             String  @id @default(cuid())
   enquiryId      String?
@@ -611,17 +607,18 @@ model sent_itineraries {
   email          String
   whatsappNumber String?
   notes          String?
-
-  status       String       @default("sent")
-  sentDate     DateTime     @default(now())
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  customerId   String
-  itineraryId  String?
-  emailSent    Boolean      @default(false)
-  whatsappSent Boolean      @default(false)
-  customer     customers    @relation(fields: [customerId], references: [id])
-  itinerary    itineraries? @relation(fields: [itineraryId], references: [id])
+  status         String    @default("sent")
+  sentDate       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  customerId     String
+  itineraryId    String?
+  emailSent      Boolean   @default(false)
+  whatsappSent   Boolean   @default(false)
+  pdfUrl         String?   @map("pdf_url")
+  isEdited       Boolean   @default(false)
+  customer       customers    @relation(fields: [customerId], references: [id])
+  itinerary      itineraries? @relation(fields: [itineraryId], references: [id])
 
   @@index([customerId])
   @@index([itineraryId])
@@ -1050,6 +1047,7 @@ enum UserType {
   MANAGER
   TL
   SUPER_ADMIN
+  ADMIN
 }
 
 enum BusinessType {

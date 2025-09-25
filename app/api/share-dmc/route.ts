@@ -420,12 +420,18 @@ export async function POST(request: NextRequest) {
                 </div>
                 <p>Please review the ${attachments ? 'attached itinerary' : 'itinerary details'} and provide your quotation.</p>
                 <div style="background-color: #e8f5f4; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                  <p style="margin: 0;"><strong>Next Steps:</strong></p>
-                  <ul style="margin: 10px 0;">
-                    <li>Review the itinerary requirements</li>
-                    <li>Prepare your quotation</li>
-                    <li>Respond with your best offer</li>
-                  </ul>
+                  <div class="info-box">
+                <h4>🎯 Next Steps</h4>
+                <ol>
+                    <li><strong>Review</strong> the attached itinerary carefully</li>
+                    <li><strong>Prepare</strong> your detailed quotation</li>
+                    <li><strong>Submit</strong> your competitive quote within 48 hours</li>
+                </ol>
+            </div>
+            
+            <div style="text-align: center;">
+                <a href="${process.env.NEXT_PUBLIC_APP_URL}/dmc-quote?enquiryId=${enquiryId}&dmcId=${dmc.id}" class="cta-button">Submit Your Quote</a>
+            </div>
                 </div>
                 <p>We look forward to your response!</p>
                 <p>Best regards,<br><strong>Travel Team</strong></p>
@@ -626,6 +632,7 @@ export async function PUT(request: NextRequest) {
       const existingItem = await prisma.sharedDMCItem.findUnique({
         where: { id: updateData.itemId },
       })
+      console.log("Existing item:", existingItem)
 
       if (!existingItem) {
         return NextResponse.json({ 
@@ -963,68 +970,9 @@ export async function PUT(request: NextRequest) {
         })
       }
 
-      // Always send email
-      let emailSent = false
-      let emailError: string | null = null
-
-      if (dmc.email && updateData.enquiryId) {
-        try {
-          console.log("Preparing to send DMC email to:", dmc.email, "with PDF:", updateData.pdfPath)
-          
-          // Check if PDF exists
-          let attachments = undefined
-          const resolvedPdfPath = updateData.pdfPath ? path.resolve(updateData.pdfPath) : null
-          
-          if (resolvedPdfPath && fs.existsSync(resolvedPdfPath)) {
-            attachments = [
-              {
-                filename: `itinerary-${updateData.enquiryId}.pdf`,
-                path: resolvedPdfPath,
-                contentType: "application/pdf",
-              },
-            ]
-          } else if (updateData.pdfPath) {
-            console.warn("PDF path provided but file does not exist:", updateData.pdfPath);
-          }
-
-          const emailResult = await sendEmail({
-            to: dmc.email,
-            subject: `New Itinerary Request - ${updateData.enquiryId}`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #4ECDC4;">New Itinerary Request</h2>
-                <p>Dear ${dmc.name},</p>
-                <p>You have been added to a new itinerary request for quotation.</p>
-                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                  <h3 style="margin-top: 0;">Request Details:</h3>
-                  <p><strong>Enquiry ID:</strong> ${updateData.enquiryId}</p>
-                  <p><strong>Date Generated:</strong> ${updateData.dateGenerated || new Date().toISOString().split("T")[0]}</p>
-                  <p><strong>Destinations:</strong> ${dmc.destinationsCovered}</p>
-                </div>
-                <p>Please review the ${attachments ? 'attached itinerary' : 'itinerary details'} and provide your quotation.</p>
-                <div style="background-color: #e8f5f4; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                  <p style="margin: 0;"><strong>Next Steps:</strong></p>
-                  <ul style="margin: 10px 0;">
-                    <li>Review the itinerary requirements</li>
-                    <li>Prepare your quotation</li>
-                    <li>Respond with your best offer</li>
-                  </ul>
-                </div>
-                <p>We look forward to your response!</p>
-                <p>Best regards,<br><strong>Travel Team</strong></p>
-              </div>
-            `,
-            attachments: attachments,
-          })
-          
-          console.log("DMC email send result:", emailResult)
-          emailSent = emailResult.success || false
-          emailError = emailResult.success ? null : (emailResult.error || "Failed to send email");
-        } catch (error) {
-          console.error(`Error sending email to ${dmc.name}:`, error)
-          emailError = error instanceof Error ? error.message : "Failed to send email"
-        }
-      }
+      // Email sending has been moved to the POST endpoint
+      const emailSent = false;
+      const emailError = null;
 
       const transformedDMC = {
         id: dmc.id,

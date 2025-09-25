@@ -7,6 +7,7 @@ import { Download, Plus, X, AlertCircle, CheckCircle, Clock, FileText, Eye, Refr
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/hooks/use-toast"
 
+
 import type {
   Customer,
   Itinerary,
@@ -370,7 +371,7 @@ const ShareCustomerDashboard = () => {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 second timeout
 
-      const response = await fetch("/api/sent-Itinerary", {
+      const response = await fetch("/api/sent-itinerary", { 
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -524,7 +525,7 @@ const ShareCustomerDashboard = () => {
       setSelectedItinerary({ ...itinerary, pdfUrl: result.pdfUrl, activeStatus: true })
 
       // Update active status in database
-      await fetch("/api/update-itinerary-status", {
+      await fetch("/api/update-itinerary-status", { 
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
