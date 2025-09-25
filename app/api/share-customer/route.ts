@@ -1,46 +1,45 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
+import { getSignedFileUrl } from "@/lib/s3-utils"
 
 const prisma = new PrismaClient()
 
 interface CustomerData {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  whatsappNumber: string;
-  companyName?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  id: string
+  name: string
+  email: string
+  phone: string
+  whatsappNumber: string
+  companyName?: string
+  createdAt: Date
+  updatedAt: Date
 }
-
 
 interface CustomerFeedback {
-  id: string;
-  customerId: string | null;
-  itineraryId: string | null;
-  type: string;
-  title: string;
-  description: string | null;
-  status: string;
-  documentUrl: string | null;
-  documentName: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  id: string
+  customerId: string | null
+  itineraryId: string | null
+  type: string
+  title: string
+  description: string | null
+  status: string
+  documentUrl: string | null
+  documentName: string | null
+  createdAt: Date
+  updatedAt: Date
 }
 
-
 type PrismaFilter = {
-  itineraryId?: string;
-  customerId?: string;
-  enquiryId?: string;
-};
+  itineraryId?: string
+  customerId?: string
+  enquiryId?: string
+}
 
 type ItineraryFilter = {
-  id?: string;
-  enquiryId?: string;
-  customerId?: string;
-};
+  id?: string
+  enquiryId?: string
+  customerId?: string
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -81,7 +80,6 @@ export async function GET(request: NextRequest) {
           travelingWithPets: true,
           pickupLocation: true,
           dropLocation: true,
-          
         },
       })
 
@@ -91,12 +89,11 @@ export async function GET(request: NextRequest) {
 
       // Create customer object from enquiry data
       customerData = {
-        id: enquiry.id, // Use enquiry ID as customer ID for this workflow
+        id: enquiry.id,
         name: enquiry.name,
         email: enquiry.email,
         phone: enquiry.phone,
-        whatsappNumber: enquiry.phone, // Use phone as whatsapp for enquiry-based flow
-     
+        whatsappNumber: enquiry.phone,
         createdAt: new Date(enquiry.enquiryDate),
         updatedAt: new Date(),
       }
@@ -104,9 +101,9 @@ export async function GET(request: NextRequest) {
     } else if (customerId) {
       // Fetch user with CUSTOMER role
       const customer = await prisma.user.findUnique({
-        where: { 
+        where: {
           id: customerId,
-          role: 'CUSTOMER' // Ensure we only fetch users with CUSTOMER role
+          role: "CUSTOMER",
         },
         select: {
           id: true,
@@ -123,13 +120,12 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Customer not found or user is not a customer" }, { status: 404 })
       }
 
-      // Map user data to customer format
       customerData = {
         id: customer.id,
-        name: customer.name || 'Unnamed Customer',
+        name: customer.name || "Unnamed Customer",
         email: customer.email,
-        phone: customer.phone || 'N/A',
-        whatsappNumber: customer.phone || 'N/A', // Using phone as whatsapp number
+        phone: customer.phone || "N/A",
+        whatsappNumber: customer.phone || "N/A",
         companyName: customer.companyName || undefined,
         createdAt: customer.createdAt,
         updatedAt: customer.updatedAt,
@@ -139,16 +135,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Either enquiryId or customerId is required" }, { status: 400 })
     }
 
-    // Fetch itineraries based on the available IDs
+    // Fetch itineraries with enhanced PDF version handling
     let itineraryFilter: ItineraryFilter = {}
     if (itineraryId) {
-      // Only filter by specific itinerary ID if explicitly requested
       itineraryFilter = { id: itineraryId }
     } else if (enquiryId) {
-      // Get ALL itineraries for this enquiry
       itineraryFilter = { enquiryId: enquiryId }
     } else if (customerId) {
-      // Get itineraries for this customer
       itineraryFilter = { customerId: customerId }
     }
 
@@ -172,53 +165,254 @@ export async function GET(request: NextRequest) {
         enquiryId: true,
         customerId: true,
         updatedAt: true,
+        editedAt: true,
+        lastPdfRegeneratedAt: true,
+        activePdfVersion: true,
         enquiry: {
           select: {
             name: true,
             locations: true,
           },
         },
+        pdfVersions: {
+          select: {
+            id: true,
+            url: true,
+            version: true,
+            isActive: true,
+            createdAt: true,
+            metadata: true,
+          },
+          orderBy: {
+            version: "desc",
+          },
+        },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ lastPdfRegeneratedAt: "desc" }, { editedAt: "desc" }, { createdAt: "desc" }],
     })
 
     console.log("Found itineraries:", itineraries.length)
 
-    // Transform itineraries to match frontend interface - show ALL existing data
-    const transformedItineraries = itineraries.map((itinerary) => ({
-      id: itinerary.id,
-      dateGenerated: new Date(itinerary.createdAt).toLocaleDateString("en-GB").replace(/\//g, " . "),
-      pdf: (itinerary.editedPdfUrl || itinerary.pdfUrl) ? "Available" : "Not Generated",
-      pdfStatus: (itinerary.editedPdfUrl || itinerary.pdfUrl) ? "available" : "missing",
-      activeStatus: itinerary.activeStatus ?? false,
-      itinerary: "View Details",
-      status: itinerary.status || "draft",
-      customerName: itinerary.enquiry?.name || customerData?.name || "Unknown",
-      destinations: (itinerary.destinations || itinerary.enquiry?.locations || "Not specified").split(',').map(d => d.trim()),
-      startDate: itinerary.startDate,
-      endDate: itinerary.endDate,
-      budget: itinerary.budget,
-      currency: itinerary.currency,
-      pdfUrl: itinerary.pdfUrl as string | null,
-      editedPdfUrl: itinerary.editedPdfUrl as string | null, // Add this field
-      isEdited: itinerary.isEdited || false, // Add this field
-      createdAt: itinerary.createdAt,
-      updatedAt: itinerary.updatedAt,
-    }))
-    console.log("Found itineraries:", itineraries.length)
 
-    const activeItinerary = transformedItineraries.find(it => it.activeStatus && (it.editedPdfUrl || it.pdfUrl));
-const latestItineraryWithPDF = transformedItineraries.find(it => (it.editedPdfUrl || it.pdfUrl));
 
-const itineraryToSelect = activeItinerary || latestItineraryWithPDF;
-
-if (itineraryToSelect) {
-  console.log('Auto-selected itinerary:', itineraryToSelect.id, 'Active:', itineraryToSelect.activeStatus, 'IsEdited:', itineraryToSelect.isEdited);
-} else {
-  console.log('No itinerary with PDF found to select');
+// Add a type guard function
+function getPdfUrl(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value === 'object' && 'url' in value && typeof (value as { url: unknown }).url === 'string') {
+    return (value as { url: string }).url;
+  }
+  return null;
 }
 
-    // Fetch customer feedbacks - get ALL feedbacks
+    // Transform itineraries to create separate rows for each PDF version
+    const transformedItineraries = await Promise.all(
+      itineraries.map(async (itinerary) => {
+        const processedVersions = []
+
+        // Process PDF versions from pdfVersions table
+        if (itinerary.pdfVersions && itinerary.pdfVersions.length > 0) {
+          for (const version of itinerary.pdfVersions) {
+            let signedUrl = version.url
+
+            // Generate signed URL for S3 URLs
+            if (version.url && typeof version.url === "string" && version.url.includes("amazonaws.com")) {
+              try {
+                const url = new URL(version.url)
+                const key = url.pathname.substring(1)
+                signedUrl = await getSignedFileUrl(key, 3600)
+              } catch (error) {
+                console.error("Error generating signed URL for version:", error)
+              }
+            }
+
+            const metadata = (version.metadata as Record<string, unknown>) || {}
+            const isEdited = metadata.isEdited || false
+
+            processedVersions.push({
+              id: `${itinerary.id}-v${version.version}`,
+              originalId: itinerary.id,
+              dateGenerated: new Date(version.createdAt).toLocaleDateString("en-GB").replace(/\//g, " . "),
+              pdf: "Available",
+              pdfStatus: "available",
+              activeStatus: version.isActive,
+              itinerary: "View Details",
+              status: itinerary.status || "draft",
+              customerName: itinerary.enquiry?.name || customerData?.name || "Unknown",
+              destinations: (itinerary.destinations || itinerary.enquiry?.locations || "Not specified")
+                .split(",")
+                .map((d) => d.trim()),
+              startDate: itinerary.startDate,
+              endDate: itinerary.endDate,
+              budget: itinerary.budget,
+              currency: itinerary.currency,
+              isEdited,
+              displayVersion: isEdited ? `REGENERATED (V${version.version})` : `GENERATED (V${version.version})`,
+              versionNumber: version.version,
+              activePdfUrl: signedUrl,
+              pdfUrl: signedUrl,
+              editedPdfUrl: isEdited ? signedUrl : null,
+              pdfVersions: [version],
+              createdAt: version.createdAt,
+              updatedAt: itinerary.updatedAt,
+              editedAt: itinerary.editedAt,
+              lastPdfRegeneratedAt: itinerary.lastPdfRegeneratedAt,
+              isLatestVersion: version.isActive,
+            })
+          }
+        }
+
+        // Handle legacy PDFs (fallback for older records without pdfVersions)
+        if (processedVersions.length === 0) {
+          // Check for original PDF
+          if (itinerary.pdfUrl) {
+            let pdfUrl = itinerary.pdfUrl
+            const pdfUrlStr = getPdfUrl(pdfUrl);
+            if (pdfUrlStr && typeof pdfUrlStr === "string" && pdfUrlStr.includes("amazonaws.com")) {
+              try {
+                const url = new URL(pdfUrlStr)
+                const key = url.pathname.substring(1)
+                pdfUrl = await getSignedFileUrl(key, 3600)
+              } catch (error) {
+                console.error("Error generating signed URL for original PDF:", error)
+                pdfUrl = pdfUrlStr
+              }
+            }
+
+            processedVersions.push({
+              id: `${itinerary.id}-v1`,
+              originalId: itinerary.id,
+              dateGenerated: new Date(itinerary.createdAt).toLocaleDateString("en-GB").replace(/\//g, " . "),
+              pdf: "Available",
+              pdfStatus: "available",
+              activeStatus: !itinerary.isEdited,
+              itinerary: "View Details",
+              status: itinerary.status || "draft",
+              customerName: itinerary.enquiry?.name || customerData?.name || "Unknown",
+              destinations: (itinerary.destinations || itinerary.enquiry?.locations || "Not specified")
+                .split(",")
+                .map((d) => d.trim()),
+              startDate: itinerary.startDate,
+              endDate: itinerary.endDate,
+              budget: itinerary.budget,
+              currency: itinerary.currency,
+              isEdited: false,
+              displayVersion: "GENERATED (V1)",
+              versionNumber: 1,
+              activePdfUrl: pdfUrl,
+              pdfUrl: pdfUrl,
+              editedPdfUrl: null,
+              pdfVersions: [],
+              createdAt: itinerary.createdAt,
+              updatedAt: itinerary.updatedAt,
+              editedAt: itinerary.editedAt,
+              lastPdfRegeneratedAt: itinerary.lastPdfRegeneratedAt,
+              isLatestVersion: !itinerary.isEdited,
+            })
+          }
+
+          // Check for edited PDF
+          if (itinerary.editedPdfUrl && itinerary.isEdited) {
+            let editedPdfUrl = itinerary.editedPdfUrl
+            const editedPdfUrlStr = getPdfUrl(editedPdfUrl);
+            if (editedPdfUrlStr && typeof editedPdfUrlStr === "string" && editedPdfUrlStr.includes("amazonaws.com")) {
+              try {
+                const url = new URL(editedPdfUrlStr)
+                const key = url.pathname.substring(1)
+                editedPdfUrl = await getSignedFileUrl(key, 3600)
+              } catch (error) {
+                console.error("Error generating signed URL for edited PDF:", error)
+                editedPdfUrl = editedPdfUrlStr
+              }
+            }
+
+            processedVersions.push({
+              id: `${itinerary.id}-v2`,
+              originalId: itinerary.id,
+              dateGenerated: new Date(itinerary.editedAt || itinerary.updatedAt)
+                .toLocaleDateString("en-GB")
+                .replace(/\//g, " . "),
+              pdf: "Available",
+              pdfStatus: "available",
+              activeStatus: true,
+              itinerary: "View Details",
+              status: itinerary.status || "draft",
+              customerName: itinerary.enquiry?.name || customerData?.name || "Unknown",
+              destinations: (itinerary.destinations || itinerary.enquiry?.locations || "Not specified")
+                .split(",")
+                .map((d) => d.trim()),
+              startDate: itinerary.startDate,
+              endDate: itinerary.endDate,
+              budget: itinerary.budget,
+              currency: itinerary.currency,
+              isEdited: true,
+              displayVersion: "REGENERATED (V2)",
+              versionNumber: 2,
+              activePdfUrl: editedPdfUrl,
+              pdfUrl: null,
+              editedPdfUrl: editedPdfUrl,
+              pdfVersions: [],
+              createdAt: itinerary.createdAt,
+              updatedAt: itinerary.updatedAt,
+              editedAt: itinerary.editedAt,
+              lastPdfRegeneratedAt: itinerary.lastPdfRegeneratedAt,
+              isLatestVersion: true,
+            })
+          }
+        }
+
+        // If no PDFs found, create a placeholder entry
+        if (processedVersions.length === 0) {
+          processedVersions.push({
+            id: `${itinerary.id}-no-pdf`,
+            originalId: itinerary.id,
+            dateGenerated: new Date(itinerary.createdAt).toLocaleDateString("en-GB").replace(/\//g, " . "),
+            pdf: "Not Generated",
+            pdfStatus: "missing",
+            activeStatus: false,
+            itinerary: "View Details",
+            status: itinerary.status || "draft",
+            customerName: itinerary.enquiry?.name || customerData?.name || "Unknown",
+            destinations: (itinerary.destinations || itinerary.enquiry?.locations || "Not specified")
+              .split(",")
+              .map((d) => d.trim()),
+            startDate: itinerary.startDate,
+            endDate: itinerary.endDate,
+            budget: itinerary.budget,
+            currency: itinerary.currency,
+            isEdited: false,
+            displayVersion: "NO PDF",
+            versionNumber: 0,
+            activePdfUrl: null,
+            pdfUrl: null,
+            editedPdfUrl: null,
+            pdfVersions: [],
+            createdAt: itinerary.createdAt,
+            updatedAt: itinerary.updatedAt,
+            editedAt: itinerary.editedAt,
+            lastPdfRegeneratedAt: itinerary.lastPdfRegeneratedAt,
+            isLatestVersion: false,
+          })
+        }
+
+        return processedVersions
+      }),
+    )
+
+    // Flatten the array and sort by version and date
+    const allVersions = transformedItineraries.flat().sort((a, b) => {
+      // First sort by version number (latest first)
+      if (b.versionNumber !== a.versionNumber) {
+        return b.versionNumber - a.versionNumber
+      }
+      // Then by creation date (latest first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+
+    console.log("Processed itineraries:", allVersions.length)
+
+    // Fetch customer feedbacks
     let feedbackFilter: PrismaFilter = {}
     if (itineraryId) {
       feedbackFilter = { itineraryId: itineraryId }
@@ -246,7 +440,6 @@ if (itineraryToSelect) {
       orderBy: { createdAt: "desc" },
     })
 
-    // Transform feedbacks to match frontend interface
     const transformedFeedbacks = feedbacks.map((feedback: CustomerFeedback) => ({
       id: feedback.id,
       customerId: feedback.customerId || finalCustomerId,
@@ -259,9 +452,9 @@ if (itineraryToSelect) {
       documentName: feedback.documentName,
       createdAt: feedback.createdAt,
       updatedAt: feedback.updatedAt,
-    }));
+    }))
 
-    // Fetch ALL sent itineraries history
+    // Fetch sent itineraries
     let sentItineraryFilter: PrismaFilter = {}
     if (itineraryId) {
       sentItineraryFilter = { itineraryId: itineraryId }
@@ -292,7 +485,6 @@ if (itineraryToSelect) {
       orderBy: { sentDate: "desc" },
     })
 
-    // Transform sent itineraries to match frontend interface
     const transformedSentItineraries = sentItineraries.map((sent) => ({
       id: sent.id,
       date: new Date(sent.sentDate).toLocaleDateString("en-GB").replace(/\//g, " . "),
@@ -304,13 +496,14 @@ if (itineraryToSelect) {
       status: sent.status,
       pdfUrl: typeof sent.pdfUrl === "string" ? sent.pdfUrl : sent.pdfUrl === null ? null : String(sent.pdfUrl),
       isEdited: sent.isEdited,
+      pdfVersion: sent.isEdited ? "V2" : "V1",
       createdAt: sent.createdAt,
       updatedAt: sent.updatedAt,
-    }));
+    }))
 
     console.log("Response Summary:", {
       customer: customerData?.name,
-      itinerariesCount: transformedItineraries.length,
+      itinerariesCount: allVersions.length,
       feedbacksCount: transformedFeedbacks.length,
       sentItinerariesCount: transformedSentItineraries.length,
     })
@@ -318,7 +511,7 @@ if (itineraryToSelect) {
     return NextResponse.json({
       success: true,
       customer: customerData,
-      itineraries: transformedItineraries,
+      itineraries: allVersions,
       feedbacks: transformedFeedbacks,
       sentItineraries: transformedSentItineraries,
     })
@@ -331,93 +524,65 @@ if (itineraryToSelect) {
       },
       { status: 500 },
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { customerId, enquiryId, itineraryId, type, title, useEditedPdf = false } = body
+    const { customerId, enquiryId, itineraryId, type, title, description } = body
 
     if ((!customerId && !enquiryId) || !type || !title) {
       return NextResponse.json({ error: "Customer ID or Enquiry ID, type, and title are required" }, { status: 400 })
     }
 
-    // For enquiry-based flow, use enquiryId as customerId
     const finalCustomerId = customerId || enquiryId
 
-    // Get the itinerary to check for PDF
-    let pdfUrl: string | null = null;
-    const isEdited = false;
-    
-    if (itineraryId) {
-      const itinerary = await prisma.itineraries.findUnique({
-        where: { id: itineraryId },
-        select: {
-          pdfUrl: true,
-        },
-      });
-
-      if (itinerary) {
-        pdfUrl = typeof itinerary.pdfUrl === "string" ? itinerary.pdfUrl : itinerary.pdfUrl === null ? null : String(itinerary.pdfUrl);
-        // Set isEdited based on your business logic if needed
-        // For example: isEdited = itinerary.isEdited || false;
-      }
-    }
-
-    // Create a new sent itinerary record
-    const sentItinerary = await prisma.sent_itineraries.create({
+    const feedback = await prisma.customer_feedbacks.create({
       data: {
         customerId: finalCustomerId,
         enquiryId: enquiryId || null,
         itineraryId: itineraryId || null,
-        customerName: body.customerName || 'Unknown Customer',
-        email: body.email,
-        whatsappNumber: body.whatsappNumber || null,
-        notes: body.notes || null,
-        status: 'sent',
-        sentDate: new Date(),
-        pdfUrl: pdfUrl ?? undefined,
-        isEdited: isEdited || false,
-        emailSent: type === 'email',
-        whatsappSent: type === 'whatsapp',
+        type: type,
+        title: title,
+        description: description || null,
+        status: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date(),
       },
-    });
-
-    // Here you would typically send the email/WhatsApp with the PDF
-    // For now, we'll just log which PDF was used
-    console.log(`Sending ${useEditedPdf ? 'edited' : 'original'} PDF:`, pdfUrl);
+    })
 
     return NextResponse.json({
       success: true,
-      message: "Itinerary sent successfully",
-      sentItinerary: {
-        id: sentItinerary.id,
-        customerId: sentItinerary.customerId,
-        enquiryId: sentItinerary.enquiryId,
-        itineraryId: sentItinerary.itineraryId,
-        customerName: sentItinerary.customerName,
-        email: sentItinerary.email,
-        whatsappNumber: sentItinerary.whatsappNumber,
-        notes: sentItinerary.notes,
-        status: sentItinerary.status,
-        sentDate: sentItinerary.sentDate?.toISOString(),
-        emailSent: sentItinerary.emailSent,
-        whatsappSent: sentItinerary.whatsappSent,
-        pdfUrl: sentItinerary.pdfUrl,
-        isEditedVersion: sentItinerary.isEdited,
-        createdAt: sentItinerary.createdAt.toISOString(),
+      message: "Feedback added successfully",
+      feedback: {
+        id: feedback.id,
+        customerId: feedback.customerId,
+        enquiryId: feedback.enquiryId,
+        itineraryId: feedback.itineraryId,
+        type: feedback.type,
+        title: feedback.title,
+        description: feedback.description,
+        status: feedback.status,
+        documentUrl: feedback.documentUrl,
+        documentName: feedback.documentName,
+        createdAt: feedback.createdAt.toISOString(),
+        updatedAt: feedback.updatedAt.toISOString(),
       },
     })
   } catch (error) {
-    console.error("Error sending itinerary:", error)
+    console.error("Error adding customer feedback:", error)
     return NextResponse.json(
       {
-        error: "Failed to send itinerary",
+        error: "Failed to add feedback",
         details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 },
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }
 
@@ -430,7 +595,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Feedback ID is required" }, { status: 400 })
     }
 
-    // Update feedback
     const updatedFeedback = await prisma.customer_feedbacks.update({
       where: { id: feedbackId },
       data: {
@@ -453,7 +617,7 @@ export async function PUT(request: NextRequest) {
         description: updatedFeedback.description,
         status: updatedFeedback.status,
         time: formatDateTime(updatedFeedback.updatedAt),
-        customerName: "Customer", // We don't have customer relation in update
+        customerName: "Customer",
         documentUrl: updatedFeedback.documentUrl,
         documentName: updatedFeedback.documentName,
         createdAt: updatedFeedback.createdAt.toISOString(),
@@ -468,6 +632,8 @@ export async function PUT(request: NextRequest) {
       },
       { status: 500 },
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }
 
@@ -497,10 +663,11 @@ export async function DELETE(request: NextRequest) {
       },
       { status: 500 },
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }
 
-// Helper function to format date and time
 function formatDateTime(date: Date): string {
   const now = new Date()
   const diffInHours = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60)

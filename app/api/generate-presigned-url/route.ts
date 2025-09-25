@@ -1,41 +1,45 @@
-import { NextResponse } from 'next/server';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { NextRequest, NextResponse } from 'next/server'
+import { S3Service } from '@/lib/s3-service'
 
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || 'eu-north-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const key = searchParams.get('key');
-
-  if (!key) {
-    return NextResponse.json(
-      { error: 'Missing key parameter' },
-      { status: 400 }
-    );
-  }
-
+export async function GET(request: NextRequest) {
   try {
-    const command = new GetObjectCommand({
-      Bucket: process.env.AWS_S3_BUCKET_NAME!,
-      Key: key,
-    });
+    const { searchParams } = new URL(request.url)
+    const key = searchParams.get('key')
+    const expiresIn = parseInt(searchParams.get('expiresIn') || '3600')
 
-    // Generate a pre-signed URL that's valid for 1 hour
-    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    if (!key) {
+      return NextResponse.json(
+        { error: 'S3 key is required' },
+        { status: 400 }
+      )
+    }
 
-    return NextResponse.json({ url: signedUrl });
+    // Check if S3 is configured
+    if (!S3Service.isConfigured()) {
+      return NextResponse.json(
+        { error: 'S3 is not properly configured' },
+        { status: 500 }
+      )
+    }
+
+    // Generate presigned URL
+    const url = await S3Service.getSignedUrl(key, expiresIn)
+
+    return NextResponse.json({
+      success: true,
+      url,
+      key,
+      expiresIn,
+    })
   } catch (error) {
-    console.error('Error generating pre-signed URL:', error);
+    console.error('Error generating presigned URL:', error)
     return NextResponse.json(
-      { error: 'Failed to generate pre-signed URL' },
+      {
+        success: false,
+        error: 'Failed to generate presigned URL',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
-    );
+    )
   }
 }

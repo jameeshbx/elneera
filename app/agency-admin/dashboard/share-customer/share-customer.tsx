@@ -3,21 +3,73 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Download, Plus, X, AlertCircle, CheckCircle, Clock, FileText, Eye, RefreshCw } from "lucide-react"
+import {
+  Download,
+  Plus,
+  X,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  FileText,
+  Eye,
+  RefreshCw,
+  Star,
+  FileDown,
+} from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/hooks/use-toast"
 
-import type {
-  Itinerary,
-  CustomerFeedback,
-  SentItinerary,
-  FormData,
-  NewNote,
-  CustomerDashboardData,
-} from "@/types/customer"
-import type { PDFVersion } from "@/types/pdf"
+import type { CustomerFeedback, SentItinerary, FormData, NewNote, CustomerDashboardData } from "@/types/customer"
 
-export default function ShareCustomerDashboard(){
+
+// Extended PDF Version interface
+interface PDFVersion {
+  id: string
+  url: string
+  version: number
+  isActive: boolean
+  createdAt: string
+  metadata?: {
+    isEdited?: boolean
+    fileSize?: number
+    s3Key?: string
+  }
+}
+
+// Extended Itinerary interface with PDF versioning
+interface ExtendedItinerary {
+  id: string
+  originalId?: string
+  createdAt?: Date | string
+  pdfUrl?: string | null // Changed from any to string | null
+  editedPdfUrl?: string | null // Changed from any to string | null
+  isEdited?: boolean
+  activeStatus?: boolean
+  status?: string
+  destinations?: string | string[]
+  startDate?: Date | string | null
+  endDate?: Date | string | null
+  budget?: number | null
+  currency?: string | null
+  enquiryId?: string | null
+  customerId?: string | null
+  updatedAt?: Date | string
+  editedAt?: Date | string | null
+  lastPdfRegeneratedAt?: Date | string | null
+  activePdfVersion?: string
+  customerName?: string
+  pdfVersions?: PDFVersion[]
+  activePdfUrl?: string | null
+  displayVersion?: string
+  versionNumber?: number
+  isLatestVersion?: boolean
+  dateGenerated?: string
+  pdf?: string
+  pdfStatus?: string
+  itinerary?: string
+}
+
+export default function ShareCustomerDashboard() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [formData, setFormData] = useState<FormData>({
@@ -31,7 +83,8 @@ export default function ShareCustomerDashboard(){
   const [showAddNotePopup, setShowAddNotePopup] = useState(false)
   const [showPDFPreview, setShowPDFPreview] = useState(false)
   const [selectedPDFUrl, setSelectedPDFUrl] = useState<string | undefined>(undefined)
-  const [selectedItinerary, setSelectedItinerary] = useState<Itinerary | null>(null)
+  const [selectedItinerary, setSelectedItinerary] = useState<ExtendedItinerary | null>(null)
+  const [selectedPDFVersion, setSelectedPDFVersion] = useState<string | null>(null)
   const [newNote, setNewNote] = useState<NewNote>({
     title: "",
     description: "",
@@ -39,7 +92,7 @@ export default function ShareCustomerDashboard(){
     document: null,
   })
 
-  const [itineraries, setItineraries] = useState<Itinerary[]>([])
+  const [itineraryVersions, setItineraryVersions] = useState<ExtendedItinerary[]>([])
   const [customerFeedbacks, setCustomerFeedbacks] = useState<CustomerFeedback[]>([])
   const [sentItineraries, setSentItineraries] = useState<SentItinerary[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,8 +102,7 @@ export default function ShareCustomerDashboard(){
   const [error, setError] = useState<string | null>(null)
   const [sendingItinerary, setSendingItinerary] = useState(false)
   const [addingNote, setAddingNote] = useState(false)
-  const [regeneratingPDF, setRegeneratingPDF] = useState<string | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Keep URL and state in sync; restore from localStorage if URL lacks params
@@ -58,17 +110,31 @@ export default function ShareCustomerDashboard(){
     const customerIdParam = searchParams.get("customerId")
     const enquiryIdParam = searchParams.get("enquiryId")
     const itineraryIdParam = searchParams.get("itineraryId")
+    const pdfGeneratedParam = searchParams.get("pdfGenerated")
+    const pdfTypeParam = searchParams.get("pdfType")
 
     if (customerIdParam || enquiryIdParam) {
       setCustomerId(customerIdParam)
       setEnquiryId(enquiryIdParam)
       setItineraryId(itineraryIdParam)
+
+      // Show notification if coming from PDF generation
+      if (pdfGeneratedParam === "true") {
+        setTimeout(() => {
+          toast({
+            title: "PDF Generated Successfully!",
+            description: `${pdfTypeParam === "regenerated" ? "Regenerated" : "Generated"} PDF is now available`,
+            variant: "default",
+          })
+        }, 1000)
+      }
+
       fetchCustomerData(customerIdParam, enquiryIdParam, itineraryIdParam)
       // Persist context
       if (typeof window !== "undefined") {
         localStorage.setItem(
           "shareCustomerContext",
-          JSON.stringify({ customerId: customerIdParam, enquiryId: enquiryIdParam, itineraryId: itineraryIdParam })
+          JSON.stringify({ customerId: customerIdParam, enquiryId: enquiryIdParam, itineraryId: itineraryIdParam }),
         )
       }
       return
@@ -79,7 +145,11 @@ export default function ShareCustomerDashboard(){
       try {
         const stored = localStorage.getItem("shareCustomerContext")
         if (stored) {
-          const ctx = JSON.parse(stored) as { customerId?: string | null; enquiryId?: string | null; itineraryId?: string | null }
+          const ctx = JSON.parse(stored) as {
+            customerId?: string | null
+            enquiryId?: string | null
+            itineraryId?: string | null
+          }
           const restoreCustomerId = ctx.customerId || null
           const restoreEnquiryId = ctx.enquiryId || null
           const restoreItineraryId = ctx.itineraryId || null
@@ -93,54 +163,25 @@ export default function ShareCustomerDashboard(){
           if (restoreCustomerId) params.set("customerId", restoreCustomerId)
           if (restoreEnquiryId) params.set("enquiryId", restoreEnquiryId)
           if (restoreItineraryId) params.set("itineraryId", restoreItineraryId)
-          router.replace(`/agency/dashboard/share-customer?${params.toString()}`)
+          router.replace(`/agency-admin/dashboard/share-customer?${params.toString()}`)
 
           fetchCustomerData(restoreCustomerId, restoreEnquiryId, restoreItineraryId)
           return
         }
-      } catch { }
+      } catch {
+        // Ignore localStorage errors
+      }
     }
 
     setError("Either Customer ID or Enquiry ID is required")
     setLoading(false)
-  }, [searchParams])
-
-  // Add refresh handler
-  const handleRefresh = () => {
-    fetchCustomerData(customerId, enquiryId, itineraryId, true)
-    toast({
-      title: "Refreshing",
-      description: "Fetching latest customer data...",
-    })
-  }
-
-  // Listen for parameter changes and auto-refresh
-  useEffect(() => {
-    const handleParamChange = () => {
-      const currentParams = new URLSearchParams(window.location.search)
-      const newCustomerId = currentParams.get("customerId")
-      const newEnquiryId = currentParams.get("enquiryId")
-      const newItineraryId = currentParams.get("itineraryId")
-
-      if ((newCustomerId && newCustomerId !== customerId) ||
-        (newEnquiryId && newEnquiryId !== enquiryId) ||
-        (newItineraryId && newItineraryId !== itineraryId)) {
-        // Force refresh data when parameters change
-        setTimeout(() => {
-          fetchCustomerData(newCustomerId, newEnquiryId, newItineraryId, true)
-        }, 100)
-      }
-    }
-
-    window.addEventListener('popstate', handleParamChange)
-    return () => window.removeEventListener('popstate', handleParamChange)
-  }, [customerId, enquiryId, itineraryId])
+  }, [searchParams, router, toast]) // Added missing dependencies
 
   const fetchCustomerData = async (
     customerIdParam: string | null,
     enquiryIdParam: string | null,
     itineraryIdParam: string | null,
-    forceRefresh = false
+    forceRefresh = false,
   ) => {
     try {
       setLoading(true)
@@ -149,7 +190,7 @@ export default function ShareCustomerDashboard(){
       // Clear existing data if force refresh
       if (forceRefresh) {
         setSelectedItinerary(null)
-        setItineraries([])
+        setItineraryVersions([])
         setCustomerFeedbacks([])
         setSentItineraries([])
       }
@@ -184,99 +225,101 @@ export default function ShareCustomerDashboard(){
         }))
       }
 
-      // FIXED: Process itineraries with correct edited vs original PDF logic
-      const sortedItineraries = (data.itineraries || []).map(itinerary => {
-        // Determine if this is an edited version based on editedPdfUrl presence
-        const isEdited = !!(itinerary.editedPdfUrl);
+      // Process itineraries and create separate rows for each PDF version
+      const allVersions: ExtendedItinerary[] = []
 
-        // Determine which PDF URL to use and display info
-        const activePdfUrl = itinerary.editedPdfUrl || itinerary.pdfUrl;
+      if (data.itineraries && data.itineraries.length > 0) {
+        data.itineraries.forEach((itinerary) => {
+          // Get all PDF versions for this itinerary
+          const pdfVersions = Array.isArray(itinerary.pdfVersions) ? itinerary.pdfVersions : []
 
-        return {
-          ...itinerary,
-          isEdited, // This will be true only if editedPdfUrl exists
-          displayVersion: isEdited ? 'REGENERATED (EDITED)' : 'GENERATED (ORIGINAL)',
-          activePdfUrl, // The current active PDF URL
-          pdfVersions: Array.isArray(itinerary.pdfVersions)
-            ? (itinerary.pdfVersions as PDFVersion[]).sort((a, b) =>
-              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            )
-            : [
-              // Create version entries based on what PDFs exist
-              ...(itinerary.editedPdfUrl ? [{
-                id: `edited-${itinerary.id}`,
-                url: itinerary.editedPdfUrl,
-                version: 2,
-                isActive: true,
-                isEdited: true,
-                createdAt: itinerary.editedAt || itinerary.updatedAt || itinerary.createdAt,
-                metadata: {
-                  regeneratedAt: itinerary.editedAt || itinerary.updatedAt,
-                  editedData: itinerary.editedData,
-                  isEdited: true
-                }
-              }] : []),
-              ...(itinerary.pdfUrl ? [{
-                id: `original-${itinerary.id}`,
-                url: itinerary.pdfUrl,
-                version: 1,
-                isActive: !itinerary.editedPdfUrl, // Only active if no edited version
-                isEdited: false,
-                createdAt: itinerary.dateGenerated || itinerary.createdAt,
-                metadata: {
-                  regeneratedAt: itinerary.dateGenerated || itinerary.createdAt,
-                  editedData: itinerary.editedData,
-                  isEdited: false
-                }
-              }] : [])
-            ].filter(Boolean) as PDFVersion[]
-        };
-      }).sort((a, b) => {
-        // Sort by most recent edited date, then creation date
-        const aDate = a.editedAt ? new Date(a.editedAt) :
-          a.lastPdfRegeneratedAt ? new Date(a.lastPdfRegeneratedAt) :
-            new Date(a.createdAt);
-        const bDate = b.editedAt ? new Date(b.editedAt) :
-          b.lastPdfRegeneratedAt ? new Date(b.lastPdfRegeneratedAt) :
-            new Date(b.createdAt);
-        return bDate.getTime() - aDate.getTime();
-      });
+          if (pdfVersions.length > 0) {
+            // Create a row for each PDF version
+            pdfVersions.forEach((version) => {
+              const versionItinerary: ExtendedItinerary = {
+                ...itinerary,
+                id: `${itinerary.id}-v${version.version}`, // Unique ID for each version row
+                originalId: itinerary.id, // Keep reference to original itinerary
+                activePdfUrl: version.url,
+                displayVersion: version.metadata?.isEdited
+                  ? `REGENERATED (V${version.version})`
+                  : `GENERATED (V${version.version})`,
+                versionNumber: version.version,
+                isLatestVersion: version.isActive,
+                isEdited: version.metadata?.isEdited || false,
+                createdAt: version.createdAt,
+                pdfVersions: [version], // Only include this specific version
+                activeStatus: version.isActive,
+              }
+              allVersions.push(versionItinerary)
+            })
+          } else {
+            // Handle itineraries without PDF versions (legacy)
+            let versionNumber = 1
+            let displayVersion = "GENERATED (V1)"
+            let activePdfUrl = itinerary.pdfUrl
 
-      setItineraries(sortedItineraries);
+            if (itinerary.editedPdfUrl) {
+              versionNumber = 2
+              displayVersion = "REGENERATED (V2)"
+              activePdfUrl = itinerary.editedPdfUrl
+            }
 
-      // Select the first itinerary with a PDF (edited takes priority)
-      const firstItinerary = sortedItineraries[0];
-      if (firstItinerary && firstItinerary.activePdfUrl) {
-        setSelectedPDFUrl(firstItinerary.activePdfUrl + `?t=${Date.now()}`);
+            const legacyItinerary: ExtendedItinerary = {
+              ...itinerary,
+              activePdfUrl,
+              displayVersion,
+              versionNumber,
+              isLatestVersion: true,
+              isEdited: !!itinerary.editedPdfUrl,
+              pdfVersions: [],
+            }
+            allVersions.push(legacyItinerary)
+          }
+        })
+      }
+
+      // Sort versions by creation date (newest first)
+      const sortedVersions = allVersions.sort((a, b) => {
+        const dateA = new Date(a.createdAt || "").getTime()
+        const dateB = new Date(b.createdAt || "").getTime()
+        return dateB - dateA
+      })
+
+      setItineraryVersions(sortedVersions)
+
+      // Select the latest version by default
+      const latestVersion = sortedVersions.find((version) => version.activePdfUrl)
+      if (latestVersion && latestVersion.activePdfUrl) {
+        setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
+        setSelectedItinerary(latestVersion)
+        setSelectedPDFVersion(latestVersion.activePdfUrl)
       }
 
       setCustomerFeedbacks(data.feedbacks || [])
       setSentItineraries(data.sentItineraries || [])
-
-      // Always select the active itinerary first, prioritizing edited versions
-      const activeEditedItinerary = sortedItineraries.find(it => it.activeStatus && it.editedPdfUrl);
-      const activeOriginalItinerary = sortedItineraries.find(it => it.activeStatus && it.pdfUrl && !it.editedPdfUrl);
-      const latestEditedItinerary = sortedItineraries.find(it => it.editedPdfUrl);
-      const latestOriginalItinerary = sortedItineraries.find(it => it.pdfUrl && !it.editedPdfUrl);
-
-      const itineraryToSelect = activeEditedItinerary ||
-        activeOriginalItinerary ||
-        latestEditedItinerary ||
-        latestOriginalItinerary;
-
-      if (itineraryToSelect) {
-        setSelectedItinerary(itineraryToSelect);
-        console.log('Auto-selected itinerary:', itineraryToSelect.id, 'Type:', itineraryToSelect.isEdited ? 'EDITED' : 'ORIGINAL');
-      } else {
-        setSelectedItinerary(null);
-        console.log('No itinerary with PDF found to select');
-      }
     } catch (error) {
       console.error("Error fetching customer data:", error)
       setError(error instanceof Error ? error.message : "Failed to fetch customer data")
     } finally {
       setLoading(false)
     }
+  }
+
+  // Add refresh handler
+  const handleRefresh = () => {
+    fetchCustomerData(customerId, enquiryId, itineraryId, true)
+    toast({
+      title: "Refreshing",
+      description: "Fetching latest customer data...",
+    })
+  }
+
+  // Handle itinerary selection
+  const handleSelectItinerary = (itinerary: ExtendedItinerary) => {
+    setSelectedItinerary(itinerary)
+    setSelectedPDFVersion(itinerary.activePdfUrl || null)
+    console.log("Selected itinerary version:", itinerary)
   }
 
   // Email validation function
@@ -291,67 +334,60 @@ export default function ShareCustomerDashboard(){
     return phoneRegex.test(phone.replace(/\s+/g, ""))
   }
 
-  // Handle itinerary selection
-  const handleSelectItinerary = (itinerary: Itinerary) => {
-    setSelectedItinerary(itinerary)
-    console.log("Selected itinerary:", itinerary)
-  }
-
-  const handleToggleActiveStatus = async (itinerary: Itinerary) => {
+  const handleGeneratePDF = async (itineraryId: string, isRegeneration = false) => {
     try {
-      const newActiveStatus = !itinerary.activeStatus
+      setGeneratingPDF(itineraryId)
 
-      const response = await fetch("/api/update-itinerary-status", {
-        method: "PUT",
+      const endpoint = isRegeneration ? "/api/regenerate-pdf" : "/api/generate-pdf"
+      const response = await fetch(endpoint, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          itineraryId: itinerary.id,
-          activeStatus: newActiveStatus,
-          enquiryId: enquiryId,
-          customerId: customerId,
+          itineraryId,
+          enquiryId,
+          formData: {
+            customerName: formData.name,
+            customerEmail: formData.email,
+            customerPhone: formData.whatsappNumber,
+          },
+          isEditedVersion: isRegeneration,
         }),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to update status")
+        throw new Error(errorData.error || "Failed to generate PDF")
       }
 
-      // Update local state - set this one as active and others as inactive if activating
-      setItineraries((prev) =>
-        prev.map((item) => ({
-          ...item,
-          activeStatus:
-            newActiveStatus && item.id === itinerary.id ? true : newActiveStatus ? false : item.activeStatus,
-        })),
-      )
+      const result = await response.json()
 
-      // If activating this itinerary, select it
-      if (newActiveStatus) {
-        setSelectedItinerary({
-          ...itinerary,
-          activeStatus: true
+      if (result.success) {
+        toast({
+          title: "PDF Generated Successfully!",
+          description: `${isRegeneration ? "Regenerated" : "Generated"} PDF is now available`,
+          variant: "default",
         })
-      }
 
-      toast({
-        variant: "success",
-        title: "Status Updated",
-        description: `Itinerary ${newActiveStatus ? "activated" : "deactivated"} successfully`,
-      })
+        // Refresh the data to show the new PDF
+        await fetchCustomerData(customerId, enquiryId, itineraryId, true)
+      } else {
+        throw new Error(result.error || "Failed to generate PDF")
+      }
     } catch (error) {
-      console.error("Error updating active status:", error)
+      console.error("Error generating PDF:", error)
       toast({
         variant: "destructive",
-        title: "Update Failed",
-        description: "Failed to update itinerary status. Please try again.",
+        title: "PDF Generation Failed",
+        description: error instanceof Error ? error.message : "Failed to generate PDF. Please try again.",
       })
+    } finally {
+      setGeneratingPDF(null)
     }
   }
 
-  // FIXED: Enhanced Send Itinerary function with correct PDF selection logic
+  // Send Itinerary function with PDF version selection
   const sendItineraryViaEmail = async () => {
     // Enhanced validation
     if (!formData.name?.trim()) {
@@ -399,29 +435,25 @@ export default function ShareCustomerDashboard(){
       return
     }
 
-    // FIXED: Prioritize edited PDF over original PDF
-    const itineraryToSend = selectedItinerary ||
-      itineraries.find(it => it.activeStatus && (it.editedPdfUrl || it.pdfUrl)) ||
-      itineraries.find(it => (it.editedPdfUrl || it.pdfUrl))
+    if (!selectedPDFVersion) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please select a PDF version to send",
+      })
+      return
+    }
+
+    const itineraryToSend =
+      selectedItinerary ||
+      itineraryVersions.find((it) => it.activeStatus && it.activePdfUrl) ||
+      itineraryVersions.find((it) => it.activePdfUrl)
 
     if (!itineraryToSend) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "No itinerary available to send. Please generate an itinerary first.",
-      })
-      return
-    }
-
-    // FIXED: Determine which PDF to send based on availability
-    const isUsingEditedPdf = !!(itineraryToSend.editedPdfUrl);
-    const pdfUrlToSend = itineraryToSend.editedPdfUrl || itineraryToSend.pdfUrl;
-
-    if (!pdfUrlToSend) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "PDF not available for selected itinerary. Please generate PDF first.",
       })
       return
     }
@@ -440,20 +472,18 @@ export default function ShareCustomerDashboard(){
 
       const requestBody = {
         customerId: customerId || enquiryId,
-        itineraryId: itineraryToSend.id,
+        itineraryId: itineraryToSend.originalId || itineraryToSend.id, // Use original ID for database reference
         enquiryId: enquiryId,
         customerName: formData.name.trim(),
         email: formData.email.trim(),
         whatsappNumber: formData.whatsappNumber.trim(),
         notes: formData.notes?.trim() || null,
-        useEditedPdf: isUsingEditedPdf, // This tells the API which PDF to use
+        pdfUrl: selectedPDFVersion, // Send the selected PDF version
+        pdfVersion: itineraryToSend.versionNumber,
+        isEditedVersion: itineraryToSend.isEdited,
       }
 
       console.log("Sending request to API:", requestBody)
-
-      // Add timeout to the fetch request
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 second timeout
 
       const response = await fetch("/api/sent-itinerary", {
         method: "POST",
@@ -461,18 +491,12 @@ export default function ShareCustomerDashboard(){
           "Content-Type": "application/json",
         },
         body: JSON.stringify(requestBody),
-        signal: controller.signal,
+        signal: AbortSignal.timeout(60000), // 60 second timeout
       })
 
-      clearTimeout(timeoutId)
-
-      console.log("API Response status:", response.status)
-
-      // Get response text first to handle both JSON and non-JSON responses
       const responseText = await response.text()
-
-      // Check if response is actually JSON
       let result
+
       const contentType = response.headers.get("content-type")
       if (contentType && contentType.includes("application/json")) {
         try {
@@ -488,7 +512,6 @@ export default function ShareCustomerDashboard(){
           body: responseText.substring(0, 500),
         })
 
-        // Try to extract meaningful error from HTML response
         if (responseText.includes("Email server connection failed")) {
           throw new Error("Email server connection failed. Please check email configuration.")
         } else if (responseText.includes("Internal Server Error")) {
@@ -500,19 +523,7 @@ export default function ShareCustomerDashboard(){
 
       if (!response.ok) {
         const errorMessage = result?.error || result?.message || `HTTP error! status: ${response.status}`
-
-        // Handle specific error types
-        if (errorMessage.includes("Email server connection failed")) {
-          throw new Error(
-            "Email Configuration Error: The email server is not properly configured. Please contact your administrator.",
-          )
-        } else if (errorMessage.includes("Invalid email")) {
-          throw new Error("Invalid Email: Please check the email address and try again.")
-        } else if (errorMessage.includes("PDF not found")) {
-          throw new Error("PDF Error: The itinerary PDF could not be found. Please regenerate the PDF.")
-        } else {
-          throw new Error(errorMessage)
-        }
+        throw new Error(errorMessage)
       }
 
       if (result.success && result.sentItinerary) {
@@ -523,10 +534,12 @@ export default function ShareCustomerDashboard(){
           notes: "",
         }))
 
+        const versionText = itineraryToSend?.displayVersion || "Selected PDF"
+
         toast({
-          variant: "success",
+          variant: "default",
           title: "Email Sent Successfully!",
-          description: `${isUsingEditedPdf ? 'Regenerated (Edited)' : 'Generated (Original)'} itinerary sent to ${formData.email}. Customer will receive it shortly.`,
+          description: `${versionText} sent to ${formData.email}. Customer will receive it shortly.`,
         })
 
         // Redirect to Share DMC section after success, preserving context
@@ -534,7 +547,7 @@ export default function ShareCustomerDashboard(){
         if (customerId) dmcParams.set("customerId", customerId)
         if (enquiryId) dmcParams.set("enquiryId", enquiryId)
         if (itineraryId) dmcParams.set("itineraryId", itineraryId)
-        router.push(`/agency/dashboard/share-dmc?${dmcParams.toString()}`)
+        router.push(`/agency-admin/dashboard/share-dmc?${dmcParams.toString()}`)
       } else {
         throw new Error(result.error || "Failed to send itinerary")
       }
@@ -559,181 +572,52 @@ export default function ShareCustomerDashboard(){
         variant: "destructive",
         title: "Email Failed",
         description: errorMessage,
-        duration: 8000, // Show longer for error messages
+        duration: 8000,
       })
     } finally {
       setSendingItinerary(false)
     }
   }
 
-  const refreshItineraryData = async () => {
-    if (!selectedItinerary?.id) return;
-
-    setIsRefreshing(true);
-    try {
-      const response = await fetch(`/api/itineraries/${selectedItinerary.id}`);
-      if (!response.ok) throw new Error('Failed to fetch updated itinerary');
-
-      const updatedItinerary = await response.json();
-
-      // Update the selected itinerary with fresh data
-      setSelectedItinerary(prev => ({
-        ...prev,
-        ...updatedItinerary,
-        // Force refresh of PDF URL by adding a timestamp
-        pdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl ?
-          `${updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl}${(updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl)?.includes('?') ? '&' : '?'}t=${Date.now()}`
-          : null
-      }));
-
-      // Update the itineraries list
-      setItineraries(prev =>
-        prev.map(item =>
-          item.id === updatedItinerary.id
-            ? {
-              ...item,
-              ...updatedItinerary,
-              activePdfUrl: updatedItinerary.editedPdfUrl || updatedItinerary.pdfUrl,
-              isEdited: !!(updatedItinerary.editedPdfUrl)
-            }
-            : item
-        )
-      );
-
-      toast({
-        title: "Success",
-        description: "Itinerary data refreshed",
-        variant: "default"
-      });
-    } catch (error) {
-      console.error('Error refreshing itinerary:', error);
-      toast({
-        title: "Error",
-        description: "Failed to refresh itinerary data",
-        variant: "destructive"
-      });
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && selectedItinerary?.id) {
-        refreshItineraryData();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [selectedItinerary?.id]);
-
-  const handleRegeneratePDF = async (itinerary: Itinerary) => {
-    setRegeneratingPDF(itinerary.id);
-    try {
-      const response = await fetch('/api/regenerate-pdf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          itineraryId: itinerary.id,
-          editedData: itinerary.editedData // Include any edited data
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to regenerate PDF');
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Update itineraries state with new PDF version
-        setItineraries(prevItineraries =>
-          prevItineraries.map(it =>
-            it.id === itinerary.id
-              ? {
-                ...it,
-                editedPdfUrl: data.pdfUrl, // Store as edited PDF URL
-                isEdited: true, // Mark as edited
-                activePdfUrl: data.pdfUrl, // Update active PDF
-                lastPdfRegeneratedAt: new Date().toISOString(),
-                pdfVersions: [
-                  ...(Array.isArray(it.pdfVersions) ? it.pdfVersions : []),
-                  {
-                    id: data.versionId,
-                    url: data.pdfUrl,
-                    version: data.version,
-                    isActive: true,
-                    createdAt: new Date().toISOString()
-                  }
-                ].map(v => ({
-                  ...v,
-                  isActive: v.id === data.versionId
-                })) as typeof it.pdfVersions
-              }
-              : it
-          )
-        );
-
-        toast({
-          title: "Success",
-          description: "PDF regenerated successfully",
-        });
-      }
-    } catch (error) {
-      console.error('Error regenerating PDF:', error);
-      toast({
-        title: "Error",
-        description: "Failed to regenerate PDF",
-        variant: "destructive",
-      });
-    } finally {
-      setRegeneratingPDF(null);
-    }
-  };
-
-  // FIXED: View PDF function with correct URL handling
-  const handleViewPDF = async (item: Itinerary) => {
-    // Use edited PDF if available, otherwise use original PDF
-    const pdfToView = item.editedPdfUrl || item.pdfUrl;
-
-    if (!pdfToView) {
+  // View PDF function with S3 URL handling
+  const handleViewPDF = async (pdfUrl: string) => {
+    if (!pdfUrl) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No PDF available for this itinerary",
-      });
-      return;
+        description: "No PDF URL available",
+      })
+      return
     }
 
     try {
-      // Extract the key from the S3 URL
-      const url = new URL(pdfToView);
-      const key = url.pathname.substring(1); // Remove leading slash
+      // If it's an S3 URL, generate a fresh pre-signed URL
+      if (pdfUrl.includes("amazonaws.com")) {
+        const url = new URL(pdfUrl)
+        const key = url.pathname.substring(1) // Remove leading slash
 
-      // Call an API endpoint to generate a fresh pre-signed URL
-      const response = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(key)}`);
+        const response = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(key)}`)
 
-      if (!response.ok) {
-        throw new Error('Failed to generate pre-signed URL');
+        if (!response.ok) {
+          throw new Error("Failed to generate pre-signed URL")
+        }
+
+        const { url: signedUrl } = await response.json()
+        setSelectedPDFUrl(signedUrl)
+      } else {
+        setSelectedPDFUrl(pdfUrl)
       }
 
-      const { url: signedUrl } = await response.json();
-      setSelectedPDFUrl(signedUrl);
-      setShowPDFPreview(true);
+      setShowPDFPreview(true)
     } catch (error) {
-      console.error('Error generating pre-signed URL:', error);
+      console.error("Error generating pre-signed URL:", error)
       toast({
         variant: "destructive",
         title: "Error",
         description: "Failed to load PDF. Please try again.",
-      });
+      })
     }
-  };
+  }
 
   // Download PDF function
   const handleDownloadPDF = (pdfUrl: string | null, filename: string) => {
@@ -828,7 +712,7 @@ export default function ShareCustomerDashboard(){
         })
         setShowAddNotePopup(false)
         toast({
-          variant: "success",
+          variant: "default",
           title: "Note Added Successfully!",
           description: "The note has been successfully added.",
         })
@@ -887,14 +771,6 @@ export default function ShareCustomerDashboard(){
     <div className="relative w-full h-full">
       <div className="absolute top-2 right-2 z-10 flex gap-2">
         <button
-          onClick={() => refreshItineraryData()}
-          disabled={isRefreshing}
-          className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
-          title="Refresh PDF"
-        >
-          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-        </button>
-        <button
           onClick={() => setShowPDFPreview(false)}
           className="p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition-colors"
           title="Close"
@@ -902,201 +778,424 @@ export default function ShareCustomerDashboard(){
           <X className="w-4 h-4" />
         </button>
       </div>
-      <iframe
-        key={selectedPDFUrl}
-        src={selectedPDFUrl}
-        className="w-full h-full border-0"
-        title="PDF Preview"
-      />
+      <iframe key={selectedPDFUrl} src={selectedPDFUrl} className="w-full h-full border-0" title="PDF Preview" />
     </div>
-  );
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Itinerary List */}
+          {/* Left Column - PDF Versions Table */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Itinerary Table */}
             <div className="bg-white rounded-lg shadow-sm">
               <div className="p-4 border-b">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h3 className="text-lg font-semibold">Generated Itineraries</h3>
-                    <p className="text-sm text-gray-600">Total: {itineraries.length} itineraries</p>
+                    <h3 className="text-lg font-semibold">Itinerary PDF Versions</h3>
+                    <p className="text-sm text-gray-600">
+                      {itineraryVersions.length > 0
+                        ? `Total: ${itineraryVersions.length} PDF versions available`
+                        : "No PDF versions generated yet"}
+                    </p>
                   </div>
-                  <button
-                    onClick={handleRefresh}
-                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Refresh
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const targetItineraryId =
+                          itineraryId || itineraryVersions[0]?.originalId || itineraryVersions[0]?.id
+                        if (targetItineraryId) {
+                          handleGeneratePDF(targetItineraryId, false)
+                        } else {
+                          toast({
+                            variant: "destructive",
+                            title: "Error",
+                            description: "No itinerary ID available for PDF generation",
+                          })
+                        }
+                      }}
+                      disabled={generatingPDF !== null}
+                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {generatingPDF ? (
+                        <>
+                          <LoadingSpinner size="sm" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <FileDown className="w-4 h-4" />
+                          Generate PDF
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleRefresh}
+                      className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Refresh
+                    </button>
+                  </div>
                 </div>
                 {selectedItinerary && (
-                  <p className="text-sm text-green-600 mt-1">
-                    Selected: {selectedItinerary.destinations || `Itinerary ${selectedItinerary.id}`}
-                    {selectedItinerary.activeStatus && (
-                      <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">ACTIVE</span>
-                    )}
-                    {selectedItinerary.isEdited && (
-                      <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">REGENERATED</span>
-                    )}
-                  </p>
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800 font-medium">
+                      Selected for Email: Version {selectedItinerary.versionNumber} - {selectedItinerary.displayVersion}
+                      {selectedItinerary.isLatestVersion && (
+                        <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full inline-flex items-center gap-1">
+                          <Star className="w-3 h-3" />
+                          LATEST
+                        </span>
+                      )}
+                    </p>
+                  </div>
                 )}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-green-50 border-b">
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Select & Details</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">PDF Status</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Version</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Active Status</th>
-                      <th className="text-left p-4 text-sm font-medium text-gray-700">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {itineraries.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="p-8 text-center text-gray-500">
-                          <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                          No itineraries found for this customer
-                        </td>
-                      </tr>
-                    ) : (
-                      itineraries.map((item, index) => (
-                        <tr
-                          key={item.id}
-                          className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${selectedItinerary?.id === item.id ? "ring-2 ring-green-500 bg-green-50" : ""
-                            } ${item.activeStatus ? "border-l-4 border-l-green-500" : ""
-                            } cursor-pointer hover:bg-green-50`}
-                          onClick={() => handleSelectItinerary(item)}
-                        >
-                          <td className="p-4">
-                            <div className="flex items-center">
-                              <input
-                                type="radio"
-                                name="selectedItinerary"
-                                checked={selectedItinerary?.id === item.id}
-                                onChange={() => handleSelectItinerary(item)}
-                                className="mr-2 text-green-600"
-                              />
-                              <div>
-                                <div className="text-sm font-medium">
-                                  {new Date(item.createdAt || item.dateGenerated).toLocaleString()}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {item.destinations || 'Unknown destination'}
-                                </div>
-                                {item.activeStatus && (
-                                  <div className="text-xs text-green-600 font-medium">ACTIVE</div>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex items-center gap-2">
-                              <div
-                                className={`w-6 h-8 rounded flex items-center justify-center text-white text-sm font-medium ${item.editedPdfUrl || item.pdfUrl ? "bg-green-500" : "bg-gray-400"
-                                  }`}
-                              >
-                                {item.editedPdfUrl || item.pdfUrl ? "✓" : "×"}
-                              </div>
-                              {!item.editedPdfUrl && !item.pdfUrl && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleRegeneratePDF(item)
-                                  }}
-                                  disabled={regeneratingPDF === item.id}
-                                  className="text-xs text-blue-600 hover:underline disabled:opacity-50"
-                                >
-                                  {regeneratingPDF === item.id ? "Generating..." : "Generate PDF"}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            <div className="text-xs">
-                              {item.editedPdfUrl ? (
-                                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                  REGENERATED
-                                </span>
-                              ) : item.pdfUrl ? (
-                                <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
-                                  GENERATED
-                                </span>
-                              ) : (
-                                <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full">
-                                  NOT GENERATED
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-4">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleToggleActiveStatus(item)
-                              }}
-                              className={`w-12 h-6 rounded-full p-1 transition-colors ${item.activeStatus ? "bg-green-400" : "bg-gray-300"
-                                } hover:opacity-80`}
-                            >
-                              <div
-                                className={`w-4 h-4 rounded-full bg-white transition-transform ${item.activeStatus ? "translate-x-6" : "translate-x-0"
-                                  }`}
-                              ></div>
-                            </button>
-                          </td>
-                          <td className="p-4">
-                            <div className="flex gap-2">
-                              {(item.editedPdfUrl || item.pdfUrl) && (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleViewPDF(item);  // Pass the entire item instead of just the URL
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
-                                    disabled={!item.editedPdfUrl && !item.pdfUrl}
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                    View {item.isEdited ? "Edited" : "Original"}
-                                  </button>
 
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const pdfToDownload = item.editedPdfUrl || item.pdfUrl;
-                                      if (pdfToDownload) {
-                                        handleDownloadPDF(
-                                          pdfToDownload,
-                                          `itinerary-${item.id}${item.isEdited ? '-edited' : ''}.pdf`
-                                        );
-                                      }
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
-                                    disabled={!item.editedPdfUrl && !item.pdfUrl}
+              <div className="overflow-x-auto">
+                {itineraryVersions.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                    <h4 className="text-lg font-medium text-gray-700 mb-2">No PDF Versions Available</h4>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Generate your first PDF to get started with sharing itineraries
+                    </p>
+                    <button
+                      onClick={() => {
+                        const targetItineraryId = itineraryId || customerId || enquiryId
+                        if (targetItineraryId) {
+                          handleGeneratePDF(targetItineraryId, false)
+                        }
+                      }}
+                      disabled={generatingPDF !== null}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 mx-auto disabled:opacity-50"
+                    >
+                      {generatingPDF ? (
+                        <>
+                          <LoadingSpinner size="sm" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <FileDown className="w-4 h-4" />
+                          Generate First PDF
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Latest PDF Section */}
+                    <div className="p-4 border-b bg-green-50">
+                      <h4 className="text-sm font-semibold text-green-700 mb-3 flex items-center gap-2">
+                        <Star className="w-4 h-4" />
+                        Latest PDF Version
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-green-200">
+                              <th className="text-left p-2 text-xs font-medium text-green-700 uppercase tracking-wide">
+                                Select
+                              </th>
+                              <th className="text-left p-2 text-xs font-medium text-green-700 uppercase tracking-wide">
+                                Date
+                              </th>
+                              <th className="text-left p-2 text-xs font-medium text-green-700 uppercase tracking-wide">
+                                PDF
+                              </th>
+                              <th className="text-left p-2 text-xs font-medium text-green-700 uppercase tracking-wide">
+                                Action
+                              </th>
+                              <th className="text-left p-2 text-xs font-medium text-green-700 uppercase tracking-wide">
+                                Status
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {itineraryVersions
+                              .filter((version) => version.isLatestVersion)
+                              .map((version) => (
+                                <tr
+                                  key={version.id}
+                                  className={`border-b border-green-100 hover:bg-green-25 cursor-pointer ${
+                                    selectedItinerary?.id === version.id ? "bg-green-100" : ""
+                                  }`}
+                                  onClick={() => handleSelectItinerary(version)}
+                                >
+                                  <td className="p-3">
+                                    <input
+                                      type="radio"
+                                      name="selectedPDF"
+                                      checked={selectedItinerary?.id === version.id}
+                                      onChange={() => handleSelectItinerary(version)}
+                                      className="text-green-600"
+                                    />
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="text-sm text-gray-900">
+                                      {new Date(version.createdAt || "").toLocaleDateString()}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {new Date(version.createdAt || "").toLocaleTimeString()}
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                                          version.isEdited ? "bg-blue-500" : "bg-green-500"
+                                        }`}
+                                      >
+                                        V{version.versionNumber}
+                                      </div>
+                                      <div>
+                                        <div className="text-sm font-medium text-gray-900">
+                                          {version.displayVersion}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {version.isEdited ? "Regenerated PDF" : "Original PDF"}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex gap-1">
+                                      {version.activePdfUrl && (
+                                        <>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleViewPDF(version.activePdfUrl!)
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
+                                          >
+                                            <Eye className="w-3 h-3" />
+                                            View
+                                          </button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleDownloadPDF(
+                                                version.activePdfUrl!,
+                                                `itinerary-latest-v${version.versionNumber}.pdf`,
+                                              )
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
+                                          >
+                                            <Download className="w-3 h-3" />
+                                            Download
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className={`w-2 h-2 rounded-full ${
+                                          version.activePdfUrl ? "bg-green-500" : "bg-red-500"
+                                        }`}
+                                      ></div>
+                                      <span
+                                        className={`text-xs font-medium ${
+                                          version.activePdfUrl ? "text-green-600" : "text-red-600"
+                                        }`}
+                                      >
+                                        {version.activePdfUrl ? "Available" : "Missing"}
+                                      </span>
+                                      {version.isLatestVersion && (
+                                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-flex items-center gap-1">
+                                          <Star className="w-3 h-3" />
+                                          LATEST
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Previous PDFs Section */}
+                    {itineraryVersions.filter((version) => !version.isLatestVersion).length > 0 && (
+                      <div className="p-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                          <Clock className="w-4 h-4" />
+                          Previous PDF Versions (
+                          {itineraryVersions.filter((version) => !version.isLatestVersion).length})
+                        </h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b border-gray-200">
+                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
+                                  Select
+                                </th>
+                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
+                                  Date
+                                </th>
+                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
+                                  PDF
+                                </th>
+                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
+                                  Action
+                                </th>
+                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
+                                  Status
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {itineraryVersions
+                                .filter((version) => !version.isLatestVersion)
+                                .map((version) => (
+                                  <tr
+                                    key={version.id}
+                                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
+                                      selectedItinerary?.id === version.id ? "bg-blue-50" : ""
+                                    }`}
+                                    onClick={() => handleSelectItinerary(version)}
                                   >
-                                    <Download className="w-3 h-3" />
-                                    Download
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                                    <td className="p-3">
+                                      <input
+                                        type="radio"
+                                        name="selectedPDF"
+                                        checked={selectedItinerary?.id === version.id}
+                                        onChange={() => handleSelectItinerary(version)}
+                                        className="text-green-600"
+                                      />
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="text-sm text-gray-900">
+                                        {new Date(version.createdAt || "").toLocaleDateString()}
+                                      </div>
+                                      <div className="text-xs text-gray-500">
+                                        {new Date(version.createdAt || "").toLocaleTimeString()}
+                                      </div>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex items-center gap-2">
+                                        <div
+                                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                                            version.isEdited ? "bg-blue-400" : "bg-gray-400"
+                                          }`}
+                                        >
+                                          V{version.versionNumber}
+                                        </div>
+                                        <div>
+                                          <div className="text-sm font-medium text-gray-700">
+                                            {version.displayVersion}
+                                          </div>
+                                          <div className="text-xs text-gray-500">
+                                            {version.isEdited ? "Regenerated PDF" : "Original PDF"}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex gap-1">
+                                        {version.activePdfUrl && (
+                                          <>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleViewPDF(version.activePdfUrl!)
+                                              }}
+                                              className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
+                                            >
+                                              <Eye className="w-3 h-3" />
+                                              View
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleDownloadPDF(
+                                                  version.activePdfUrl!,
+                                                  `itinerary-v${version.versionNumber}.pdf`,
+                                                )
+                                              }}
+                                              className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
+                                            >
+                                              <Download className="w-3 h-3" />
+                                              Download
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-3">
+                                      <div className="flex items-center gap-2">
+                                        <div
+                                          className={`w-2 h-2 rounded-full ${
+                                            version.activePdfUrl ? "bg-green-500" : "bg-red-500"
+                                          }`}
+                                        ></div>
+                                        <span
+                                          className={`text-xs font-medium ${
+                                            version.activePdfUrl ? "text-green-600" : "text-red-600"
+                                          }`}
+                                        >
+                                          {version.activePdfUrl ? "Available" : "Missing"}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Share To Customer Form */}
             <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-semibold mb-6">📧 Send Itinerary via Email</h3>
+              <h3 className="text-lg font-semibold mb-6">Send Selected PDF Version via Email</h3>
+
+              {/* Selected PDF Info */}
+              {selectedPDFVersion && selectedItinerary ? (
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <h4 className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    Selected PDF Version Ready to Send
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4 text-xs text-green-700">
+                    <div>
+                      <p>
+                        <strong>Version:</strong> {selectedItinerary.versionNumber}
+                      </p>
+                      <p>
+                        <strong>Type:</strong> {selectedItinerary.displayVersion}
+                      </p>
+                    </div>
+                    <div>
+                      <p>
+                        <strong>Status:</strong> {selectedItinerary.activePdfUrl ? "Available" : "Missing"}
+                      </p>
+                      <p>
+                        <strong>Latest:</strong> {selectedItinerary.isLatestVersion ? "Yes" : "No"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <h4 className="text-sm font-semibold text-yellow-800 mb-2 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    No PDF Version Selected
+                  </h4>
+                  <p className="text-xs text-yellow-700">
+                    Please select a PDF version from the table above to send via email.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Name*</label>
@@ -1123,7 +1222,7 @@ export default function ShareCustomerDashboard(){
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">WhatsApp Number*</label>
                   <input
@@ -1149,30 +1248,9 @@ export default function ShareCustomerDashboard(){
                 </div>
               </div>
 
-
-              {/* Selected Itinerary Info */}
-              {selectedItinerary && (
-                <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="text-sm font-semibold text-green-800 mb-2">Selected Itinerary:</h4>
-                  <div className="text-xs text-green-700">
-                    <p>ID: {selectedItinerary.id}</p>
-                    <p>Generated: {selectedItinerary.dateGenerated}</p>
-                    <p>Type: {selectedItinerary.isEdited ? "Edited Version" : "Original Version"}</p>
-                    <p>PDF Status: {selectedItinerary.editedPdfUrl || selectedItinerary.pdfUrl ? "✅ Available" : "❌ Not Available"}</p>
-                    <p>Active Status: {selectedItinerary.activeStatus ? "✅ Active" : "⚪ Inactive"}</p>
-                    {selectedItinerary.isEdited && selectedItinerary.editedPdfUrl && (
-                      <p className="text-blue-700 font-medium">📝 Will send edited PDF</p>
-                    )}
-                    {!selectedItinerary.isEdited && selectedItinerary.pdfUrl && (
-                      <p className="text-gray-700">📄 Will send original PDF</p>
-                    )}
-                  </div>
-                </div>
-              )}
-
               <button
                 onClick={sendItineraryViaEmail}
-                disabled={sendingItinerary || !(selectedItinerary?.editedPdfUrl || selectedItinerary?.pdfUrl)}
+                disabled={sendingItinerary || !selectedPDFVersion}
                 className="w-full py-3 bg-green-900 text-white font-medium rounded-lg hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {sendingItinerary ? (
@@ -1180,16 +1258,16 @@ export default function ShareCustomerDashboard(){
                     <LoadingSpinner size="sm" />
                     Sending Email...
                   </>
+                ) : selectedPDFVersion ? (
+                  <>Send Selected PDF Version via Email</>
                 ) : (
-                  <>
-                    📧 Send {selectedItinerary?.isEdited ? 'Edited' : 'Original'} Itinerary via Email
-                  </>
+                  <>Select a PDF Version First</>
                 )}
               </button>
 
-              {!(selectedItinerary?.editedPdfUrl || selectedItinerary?.pdfUrl) && (
+              {!selectedPDFVersion && (
                 <p className="text-center text-sm text-red-600 mt-2">
-                  Please select an itinerary with PDF to send email
+                  ⚠️ Please select a PDF version from the table above to enable email sending
                 </p>
               )}
             </div>
@@ -1221,7 +1299,9 @@ export default function ShareCustomerDashboard(){
                   <div className="text-center text-gray-500 py-8">
                     <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                     <p>No feedback or notes yet</p>
-                    <p className="text-xs">Click &quot;Add Note&quot; to get started</p>
+                    <p className="text-xs">
+                      Click {'"'}Add Note{'"'} to get started
+                    </p>
                   </div>
                 ) : (
                   customerFeedbacks.map((feedback) => (
@@ -1237,7 +1317,7 @@ export default function ShareCustomerDashboard(){
                           {feedback.documentUrl && (
                             <div className="mt-2">
                               <button className="text-xs text-blue-600 hover:underline">
-                                📎 View Document: {feedback.documentName}
+                                View Document: {feedback.documentName}
                               </button>
                             </div>
                           )}
@@ -1254,7 +1334,7 @@ export default function ShareCustomerDashboard(){
         {/* Sent Itineraries Table */}
         <div className="bg-white rounded-lg shadow-sm mt-6">
           <div className="p-4 border-b">
-            <h3 className="text-lg font-semibold">📧 Email History - Sent Itineraries</h3>
+            <h3 className="text-lg font-semibold">Email History - Sent Itineraries</h3>
             <p className="text-sm text-gray-600">Total: {sentItineraries.length} sent via email</p>
           </div>
           <div className="overflow-x-auto">
@@ -1264,7 +1344,7 @@ export default function ShareCustomerDashboard(){
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Email Sent On</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Customer Name</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Email</th>
-                  <th className="text-left p-4 text-sm font-medium text-gray-700">WhatsApp Number</th>
+                  <th className="text-left p-4 text-sm font-medium text-gray-700">PDF Version</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Notes</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Status</th>
                 </tr>
@@ -1283,13 +1363,23 @@ export default function ShareCustomerDashboard(){
                       <td className="p-4 text-sm text-gray-600">{item.date}</td>
                       <td className="p-4 text-sm text-gray-900">{item.customerName}</td>
                       <td className="p-4 text-sm text-gray-600">{item.email}</td>
-                      <td className="p-4 text-sm text-gray-600">{item.whatsappNumber}</td>
+                      <td className="p-4 text-sm text-gray-600">
+                        {item.isEdited ? (
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                            REGENERATED V{item.pdfVersion || "2"}
+                          </span>
+                        ) : (
+                          <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                            GENERATED V{item.pdfVersion || "1"}
+                          </span>
+                        )}
+                      </td>
                       <td className="p-4 text-sm text-gray-600 max-w-xs truncate" title={item.notes || undefined}>
                         {item.notes || "No notes"}
                       </td>
                       <td className="p-4">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          ✅ {item.status}
+                          {item.status}
                         </span>
                       </td>
                     </tr>
@@ -1392,13 +1482,9 @@ export default function ShareCustomerDashboard(){
       {/* PDF Preview Modal */}
       {showPDFPreview && selectedPDFUrl && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-4 w-full max-w-4xl mx-4 h-5/6">
-            {renderPDFViewer()}
-          </div>
+          <div className="bg-white rounded-lg p-4 w-full max-w-4xl mx-4 h-5/6">{renderPDFViewer()}</div>
         </div>
       )}
     </div>
   )
 }
-
-

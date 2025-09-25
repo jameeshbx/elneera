@@ -374,35 +374,36 @@ function ItineraryViewContent(): React.ReactElement {
     });
 
     if (typeof window !== "undefined") {
-      window.location.href = `/agency/dashboard/Itenary-form?${queryParams.toString()}`;
+      window.location.href = `/agency-admin/dashboard/Itenary-form?${queryParams.toString()}`;
     }
   };
 
 
   const handleShareToCustomer = () => {
-    if (!itineraryData) {
-      console.error("No enquiry data available to generate itinerary.");
-      alert("Please select an enquiry first.");
-      return;
-    }
+  if (!itineraryData) {
+    console.error("No enquiry data available to generate itinerary.");
+    alert("Please select an enquiry first.");
+    return;
+  }
 
-    const searchParams = new URLSearchParams(window.location.search);
-    const enquiryId =
-      searchParams.get("enquiryId") || itineraryData?.enquiryId || "";
-    const itineraryId =
-      searchParams.get("itineraryId") || itineraryData?.id || "";
-    const customerId = searchParams.get("customerId") || "";
+  const searchParams = new URLSearchParams(window.location.search);
+  const enquiryId =
+    searchParams.get("enquiryId") || itineraryData?.enquiryId || "";
+  const itineraryId =
+    searchParams.get("itineraryId") || itineraryData?.id || "";
+  const customerId = searchParams.get("customerId") || "";
 
-    const queryParams = new URLSearchParams({
-      enquiryId,
-      itineraryId,
-      customerId,
-    });
+  const queryParams = new URLSearchParams({
+    enquiryId,
+    itineraryId,
+    customerId,
+    pdfType: 'generated' // Indicate this is the original generated PDF
+  });
 
-    if (typeof window !== "undefined") {
-      window.location.href = `/agency/dashboard/share-customer?${queryParams.toString()}`;
-    }
-  };
+  if (typeof window !== "undefined") {
+    window.location.href = `/agency-admin/dashboard/share-customer?${queryParams.toString()}`;
+  }
+};
 
   const handleEditDailyItinerary = (dayNumber?: number) => {
     console.log("handleEditDailyItinerary called with dayNumber:", dayNumber);
@@ -504,75 +505,76 @@ function ItineraryViewContent(): React.ReactElement {
   };
 
   const handleSaveRichText = async () => {
-    try {
-      // Get current content
-      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement;
-      const currentContent = editorElement ? editorElement.innerHTML : richTextContent;
-      
-      if (!currentContent?.trim()) {
-        toast({
-          title: "Error",
-          description: "Cannot save empty content",
-          variant: "destructive",
-        });
-        return;
-      }
+  try {
+    // Get current content
+    const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement;
+    const currentContent = editorElement ? editorElement.innerHTML : richTextContent;
+    
+    if (!currentContent?.trim()) {
+      toast({
+        title: "Error",
+        description: "Cannot save empty content",
+        variant: "destructive",
+      });
+      return;
+    }
 
       // First update the itinerary
-      const updateResponse = await fetch("/api/update-itinerary", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: currentItineraryId,
-          editedContent: currentContent.trim()
-        }),
-      });
+     const updateResponse = await fetch("/api/update-itinerary", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: currentItineraryId,
+        editedContent: currentContent.trim()
+      }),
+    });
 
-      if (!updateResponse.ok) {
-        throw new Error("Failed to save changes");
-      }
+    if (!updateResponse.ok) {
+      throw new Error("Failed to save changes");
+    }
 
       // Generate PDF
       const pdfResponse = await fetch("/api/regenerate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          itineraryId: currentItineraryId,
-          enquiryId: currentEnquiryId,
-          formData: {
-            customerName: fallbackData?.enquiry?.name || "Guest",
-            customerEmail: fallbackData?.enquiry?.email || "",
-            customerPhone: fallbackData?.enquiry?.phone || "",
-            startDate: fallbackData?.startDate || new Date().toISOString(),
-            endDate: fallbackData?.endDate || new Date().toISOString(),
-            destinations: fallbackData?.destinations?.split(', ') || [],
-            travelType: fallbackData?.travelType || "Standard",
-            budget: fallbackData?.budget || 0,
-            currency: fallbackData?.currency || "INR",
-            adults: fallbackData?.adults || 1,
-            children: fallbackData?.children || 0,
-          },
-          editedContent: currentContent.trim(),
-          isEditedVersion: true
-        }),
-      });
-  
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itineraryId: currentItineraryId,
+        enquiryId: currentEnquiryId,
+        formData: {
+          customerName: fallbackData?.enquiry?.name || "Guest",
+          customerEmail: fallbackData?.enquiry?.email || "",
+          customerPhone: fallbackData?.enquiry?.phone || "",
+          startDate: fallbackData?.startDate || new Date().toISOString(),
+          endDate: fallbackData?.endDate || new Date().toISOString(),
+          destinations: fallbackData?.destinations?.split(', ') || [],
+          travelType: fallbackData?.travelType || "Standard",
+          budget: fallbackData?.budget || 0,
+          currency: fallbackData?.currency || "INR",
+          adults: fallbackData?.adults || 1,
+          children: fallbackData?.children || 0,
+        },
+        editedContent: currentContent.trim(),
+        isEditedVersion: true
+      }),
+    });
 
-      const pdfResult = await pdfResponse.json();
-      if (!pdfResponse.ok) {
-        console.error('PDF Generation Error:', {
-          status: pdfResponse.status,
-          statusText: pdfResponse.statusText,
-          error: pdfResult
-        });
-        throw new Error(pdfResult.error || pdfResult.message || "Failed to generate PDF");
-      }
+    const pdfResult = await pdfResponse.json();
+    if (!pdfResponse.ok) {
+      console.error('PDF Generation Error:', {
+        status: pdfResponse.status,
+        statusText: pdfResponse.statusText,
+        error: pdfResult
+      });
+      throw new Error(pdfResult.error || pdfResult.message || "Failed to generate PDF");
+    }
+
 
       // Update UI state
-      setCustomDailyItineraryHtml(currentContent);
-      setShowRichTextEditor(false);
-      setEditingDay(null);
-      setRichTextContent("");
+    setCustomDailyItineraryHtml(currentContent);
+    setShowRichTextEditor(false);
+    setEditingDay(null);
+    setRichTextContent("");
+
 
       // Update itinerary data
       const updatedItinerary = {
@@ -635,20 +637,33 @@ function ItineraryViewContent(): React.ReactElement {
       setItineraryData(updatedItinerary);
       localStorage.setItem('itineraryData_' + (updatedItinerary.id || currentItineraryId), JSON.stringify(updatedItinerary));
 
-      toast({
-        title: "Success!",
-        description: "Changes saved and PDF generated successfully",
-        variant: "default",
-      });
-    } catch (error) {
-      console.error('Error in handleSaveRichText:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
-      });
+       toast({
+      title: "Success!",
+      description: "Changes saved and PDF generated successfully",
+      variant: "default",
+    });
+
+   // Redirect to share-customer section with updated PDF
+    const redirectParams = new URLSearchParams({
+      enquiryId: currentEnquiryId,
+      itineraryId: currentItineraryId,
+      pdfGenerated: 'true', // Flag to indicate new PDF was generated
+      pdfType: 'regenerated' // Indicate this is a regenerated PDF
+    });
+
+    if (typeof window !== "undefined") {
+      window.location.href = `/agency-admin/dashboard/share-customer?${redirectParams.toString()}`;
     }
-  };
+
+  } catch (error) {
+    console.error('Error in handleSaveRichText:', error);
+    toast({
+      variant: "destructive",
+      title: "Error",
+      description: error instanceof Error ? error.message : "An unknown error occurred",
+    });
+  }
+};
 
   const handleGenerateOtherPlan = async () => {
     if (!itineraryData) return;

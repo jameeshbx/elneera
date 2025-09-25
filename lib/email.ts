@@ -2,7 +2,7 @@
 import nodemailer from "nodemailer";
 import fs from "fs";
 
-interface EmailAttachment {
+export interface EmailAttachment {
   filename: string;
   path: string;
   contentType?: string;
