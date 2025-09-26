@@ -18,6 +18,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { agencyFormSchemaBase, type AgencyFormValues } from "@/lib/agency";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { useColorIntegration } from '@/hooks/useColorIntegration'
+
 
 // Add type for agency type options
 type AgencyType =
@@ -30,6 +32,12 @@ type PanType = "INDIVIDUAL" | "COMPANY" | "TRUST" | "OTHER";
 
 export default function AgencyForm() {
     const router = useRouter();
+    const {  updateColor } = useColorIntegration({
+        onColorChange: (color) => {
+            // This will be called when color is updated
+            console.log('Color updated in agency form:', color)
+        }
+    })
     const [color, setColor] = useState("#4ECDC4");
     const [tempColor, setTempColor] = useState("#4ECDC4");
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -93,6 +101,8 @@ export default function AgencyForm() {
         }
     };
 
+
+
     const handleLicenseUpload = async (e: ChangeEvent<HTMLInputElement>) => {
         e.preventDefault();
         e.stopPropagation();
@@ -116,6 +126,7 @@ export default function AgencyForm() {
     };
 
     const onSubmit: SubmitHandler<AgencyFormValues> = async (data) => {
+
         console.log('Form submission started');
         console.log('Form data:', data);
         console.log('Form errors:', errors);
@@ -160,6 +171,7 @@ export default function AgencyForm() {
                     }
                 }
             });
+            await updateColor(data.landingPageColor || "#4ECDC4");
 
             // Add files explicitly
             formData.append('logo', logoFile);

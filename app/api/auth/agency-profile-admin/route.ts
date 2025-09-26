@@ -24,6 +24,24 @@ interface TeamMemberResponse {
   avatarColor: string
 }
 
+// Helper function to normalize logo URL
+function normalizeLogoUrl(logoPath: string | null | undefined): string | null {
+  if (!logoPath) return null;
+  
+  // If it's already a full URL, return as is
+  if (logoPath.startsWith('http')) {
+    return logoPath;
+  }
+  
+  // If it starts with /, it's already a proper path from public
+  if (logoPath.startsWith('/')) {
+    return logoPath;
+  }
+  
+  // Otherwise, ensure it has the /uploads/ prefix
+  return logoPath.startsWith('uploads/') ? `/${logoPath}` : `/uploads/${logoPath}`;
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
@@ -131,10 +149,6 @@ export async function GET() {
         where: {
           createdBy: user.id,
         },
-        include: {
-          logo: true,
-          businessLicense: true,
-        },
         orderBy: {
           createdAt: "desc",
         },
@@ -144,7 +158,7 @@ export async function GET() {
       // Continue without agency form data if table doesn't exist
     }
 
-    // Build company information with fallbacks
+    // Build company information with fallbacks and proper logo URL handling
     const companyInformation = {
       name: agencyForm?.contactPerson || user.companyName || user.name || "N/A",
       contactPerson: agencyForm?.contactPerson || user.name || "N/A",
@@ -163,7 +177,7 @@ export async function GET() {
         : user.phone || "N/A",
       email: agencyForm?.email || user.email,
       website: agencyForm?.website || "N/A",
-      logo: agencyForm?.logo?.url || null,
+      logo: normalizeLogoUrl(agencyForm?.logoPath),
       country: agencyForm?.country || "INDIA",
       yearOfRegistration: agencyForm?.yearOfRegistration || "N/A",
       panNo: agencyForm?.panNumber || "N/A",
@@ -171,7 +185,7 @@ export async function GET() {
       headquarters: agencyForm?.headquarters || "N/A",
       yearsOfOperation: agencyForm?.yearsOfOperation || "N/A",
       landingPageColor: agencyForm?.landingPageColor || "#0F9D58",
-      businessLicense: agencyForm?.businessLicense?.url || null,
+      businessLicense: normalizeLogoUrl(agencyForm?.businessLicensePath),
     }
 
     const response = {
@@ -185,7 +199,7 @@ export async function GET() {
       },
       accountData: {
         username: user.email,
-        password: "",
+        password: "••••••••", // Always masked for security
         role: user.role,
         location: "N/A",
         status: user.isOnline ? "Active" : "Inactive",

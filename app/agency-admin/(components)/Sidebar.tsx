@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import { signOut, useSession } from "next-auth/react"
-import api, { type AgencyData } from "@/lib/api"
 
 type MenuItem = {
   title: string
@@ -25,14 +24,22 @@ type SidebarProps = {
   setExpanded?: (value: boolean) => void
 }
 
+interface CompanyInformation {
+  name: string
+  logoUrl: string | null
+  landingPageColor: string
+}
+
 const Sidebar = ({ expanded }: SidebarProps) => {
   const pathname = usePathname()
   const [reportsOpen, setReportsOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(false)
   const { data: session } = useSession()
-  const [agencyData, setAgencyData] = useState<AgencyData | null>(null)
+  const [companyData, setCompanyData] = useState<CompanyInformation | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [logoKey, setLogoKey] = useState(Date.now()) // For forcing re-render
+  const [themeColor, setThemeColor] = useState("#4ECDC4") // Default theme color
 
   useEffect(() => {
     const handleResize = () => {
@@ -44,24 +51,106 @@ const Sidebar = ({ expanded }: SidebarProps) => {
   }, [])
 
   useEffect(() => {
-    const fetchAgencyData = async () => {
+    const fetchCompanyData = async () => {
       try {
-        const data = await api.getAgency();
-        console.log('Agency Data:', data);
-        console.log('Logo URL:', data?.logoUrl);
-        console.log('Is logo URL valid:', Boolean(data?.logoUrl));
-        setAgencyData(data);
+        const response = await fetch("/api/auth/agency-profile-admin", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const data = await response.json()
+        console.log('Company Data:', data)
+        console.log('Logo URL:', data?.companyInformation?.logo)
+        console.log('Landing Page Color:', data?.companyInformation?.landingPageColor)
+        
+        const companyInfo = {
+          name: data?.companyInformation?.name || 'Agency',
+          logoUrl: data?.companyInformation?.logo || null,
+          landingPageColor: data?.companyInformation?.landingPageColor || "#4ECDC4"
+        }
+        
+        setCompanyData(companyInfo)
+        setThemeColor(companyInfo.landingPageColor)
+
+        // Apply theme color to CSS custom property for global use
+        document.documentElement.style.setProperty('--theme-color', companyInfo.landingPageColor)
+        document.documentElement.style.setProperty('--theme-color-light', companyInfo.landingPageColor + '20') // 20% opacity
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(companyInfo.landingPageColor, -20))
+        
       } catch (error) {
-        console.error('Failed to fetch agency data:', error);
+        console.error('Failed to fetch company data:', error)
+        // Set fallback data
+        setCompanyData({
+          name: 'Agency',
+          logoUrl: null,
+          landingPageColor: "#4ECDC4"
+        })
+        setThemeColor("#4ECDC4")
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
-    };
+    }
   
     if (session) {
-      fetchAgencyData();
+      fetchCompanyData()
     }
-  }, [session]);
+  }, [session, logoKey]) // Added logoKey as dependency
+
+  // Listen for logo updates from profile page AND agency form
+  useEffect(() => {
+    const handleLogoUpdate = (event: CustomEvent) => {
+      console.log('Logo updated event received:', event.detail)
+      if (event.detail?.logoUrl) {
+        setCompanyData(prev => prev ? {
+          ...prev,
+          logoUrl: event.detail.logoUrl
+        } : null)
+        setLogoKey(Date.now()) // Force re-render
+      }
+    }
+
+    const handleThemeUpdate = (event: CustomEvent) => {
+      console.log('Theme updated event received:', event.detail)
+      if (event.detail?.color) {
+        setThemeColor(event.detail.color)
+        setCompanyData(prev => prev ? {
+          ...prev,
+          landingPageColor: event.detail.color
+        } : null)
+        
+        // Update CSS custom properties
+        document.documentElement.style.setProperty('--theme-color', event.detail.color)
+        document.documentElement.style.setProperty('--theme-color-light', event.detail.color + '20')
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(event.detail.color, -20))
+      }
+    }
+
+    // Listen for both logo and theme updates
+    window.addEventListener('logoUpdated', handleLogoUpdate as EventListener)
+    window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
+    
+    return () => {
+      window.removeEventListener('logoUpdated', handleLogoUpdate as EventListener)
+      window.removeEventListener('themeUpdated', handleThemeUpdate as EventListener)
+    }
+  }, [])
+
+  // Helper function to adjust color brightness
+  const adjustBrightness = (hex: string, percent: number): string => {
+    const num = parseInt(hex.replace("#", ""), 16)
+    const amt = Math.round(2.55 * percent)
+    const R = (num >> 16) + amt
+    const G = (num >> 8 & 0x00FF) + amt
+    const B = (num & 0x0000FF) + amt
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+      (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+      (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1)
+  }
 
   const toggleReports = () => {
     setReportsOpen(!reportsOpen)
@@ -80,12 +169,12 @@ const Sidebar = ({ expanded }: SidebarProps) => {
     },
     {
       title: "Flights",
-      href: "/agency-admin/dashboard/flights", // Changed to direct route
+      href: "/agency-admin/dashboard/flights",
       icon: <Image src="/flight.png" alt="Flights" width={20} height={20} className="min-w-[20px]" />,
     },
     {
       title: "Accommodation",
-      href: "/agency-admin/dashboard/accomadation", // Changed to direct route
+      href: "/agency-admin/dashboard/accomadation",
       icon: <Image src="/sleep.png" alt="Accommodation" width={20} height={20} className="min-w-[20px]" />,
     },
     {
@@ -151,18 +240,18 @@ const Sidebar = ({ expanded }: SidebarProps) => {
 
   const accountItems = [
     {
-          title: "Lisa Ray",
-          href: "/agency-admin/dashboard/profile",
-          icon: (
-            <Image
-              src= "/avatar/Image (3).png"
-              alt="Profile"
-              width={20}
-              height={20}
-              className="min-w-[20px]"
-            />
-          ),
-        },
+      title: "Lisa Ray",
+      href: "/agency-admin/dashboard/profile",
+      icon: (
+        <Image
+          src="/avatar/Image (3).png"
+          alt="Profile"
+          width={20}
+          height={20}
+          className="min-w-[20px]"
+        />
+      ),
+    },
     {
       title: "Settings",
       href: "/agency-admin/dashboard/settings",
@@ -197,6 +286,24 @@ const Sidebar = ({ expanded }: SidebarProps) => {
 
   const isCollapsed = isMobile ? true : !expanded
 
+  // Helper function to get full logo URL (same as profile page)
+  const getLogoUrl = (logoPath: string | null | undefined) => {
+    if (!logoPath) return null
+    
+    // If it's already a full URL, return as is
+    if (logoPath.startsWith('http')) {
+      return logoPath
+    }
+    
+    // If it starts with /, it's a relative path from public
+    if (logoPath.startsWith('/')) {
+      return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${logoPath}`
+    }
+    
+    // Otherwise, assume it's a path that needs /uploads/ prefix
+    return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${logoPath}`
+  }
+
   return (
     <aside
       className={`fixed inset-y-0 left-0 z-40 h-full bg-white shadow-lg transition-all duration-300 ${
@@ -206,41 +313,50 @@ const Sidebar = ({ expanded }: SidebarProps) => {
     >
       <div className="flex flex-col h-full p-2 md:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {/* Logo Section */}
-        <div className="flex items-center justify-center p-2 mb-6">
-          <Link href="/" data-cy="sidebar-logo-link" className="flex items-center">
+        <div className="flex items-center p-2 mb-6">
+          <Link href="/" data-cy="sidebar-logo-link" className="flex items-center w-full">
             {isLoading ? (
-              <div className="h-10 w-10 animate-pulse rounded-full bg-gray-200"></div>
+              <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
             ) : (
-              <div className="relative h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden">
-                {agencyData?.logoUrl ? (
-                  <Image
-                    src={agencyData.logoUrl.startsWith('http') 
-                      ? agencyData.logoUrl 
-                      : `${process.env.NEXT_PUBLIC_BASE_URL || ''}${agencyData.logoUrl}`}
-                    alt="Agency Logo"
-                    fill
-                    className="object-cover"
-                    sizes="40px"
-                    priority
-                    onError={(e) => {
-                      console.error('Error loading logo:', agencyData.logoUrl);
-                      e.currentTarget.style.display = 'none';
-                      const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback');
-                      if (fallback) fallback.classList.remove('hidden');
-                    }}
-                  />
-                ) : null}
-                <div className="logo-fallback absolute inset-0 flex items-center justify-center bg-gray-200 hidden">
-                  <span className="text-xs font-medium text-gray-500">
-                    {agencyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+              <>
+                {companyData?.logoUrl ? (
+                  <div className="flex items-center w-full">
+                    <Image
+                      key={`${logoKey}-${companyData.logoUrl}`}
+                      src={getLogoUrl(companyData.logoUrl) || '/placeholder.svg?height=32&width=120'}
+                      alt="Company Logo"
+                      width={isCollapsed ? 32 : 120}
+                      height={isCollapsed ? 32 : 32}
+                      className="object-contain max-w-full h-8"
+                      priority
+                      onError={(e) => {
+                        console.error('Error loading logo:', companyData.logoUrl)
+                        e.currentTarget.style.display = 'none'
+                        const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback')
+                        if (fallback) fallback.classList.remove('hidden')
+                      }}
+                    />
+                    <div className="logo-fallback hidden">
+                      <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
+                        <span className="text-xs font-medium text-gray-500">
+                          {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
+                    <span className="text-xs font-medium text-gray-500">
+                      {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                    </span>
+                  </div>
+                )}
+                {!isCollapsed && !companyData?.logoUrl && (
+                  <span className="ml-2 text-lg font-semibold">
+                    {companyData?.name || 'Agency'}
                   </span>
-                </div>
-              </div>
-            )}
-            {!isCollapsed && (
-              <span className="ml-2 text-lg font-semibold">
-                {agencyData?.name || 'Agency'}
-              </span>
+                )}
+              </>
             )}
           </Link>
         </div>
@@ -256,9 +372,12 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     onMouseLeave={() => setHoveredItem(null)}
                     className={`flex items-center w-full ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors ${
                       pathname.startsWith("/agency/dashboard/reports")
-                        ? "bg-blue-100 text-blue-600"
+                        ? "text-white"
                         : "text-gray-700 hover:bg-gray-100"
                     }`}
+                    style={{
+                      backgroundColor: pathname.startsWith("/agency/dashboard/reports") ? themeColor : 'transparent'
+                    }}
                     data-cy={`sidebar-item-${item.title.toLowerCase().replace(/\s+/g, "-")} `}
                   >
                     <span className={isCollapsed ? "" : "mr-3"}>{item.icon}</span>
@@ -284,9 +403,12 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                           href={dropdownItem.href}
                           className={`flex items-center px-3 py-2 text-sm rounded-lg ${
                             pathname === dropdownItem.href
-                              ? "bg-blue-100 text-blue-600"
+                              ? "text-white"
                               : "text-gray-600 hover:bg-gray-100"
                           }`}
+                          style={{
+                            backgroundColor: pathname === dropdownItem.href ? themeColor : 'transparent'
+                          }}
                           data-cy={`sidebar-dropdown-item-${dropdownItem.name.toLowerCase().replace(/\s+/g, "-")}`}
                         >
                           {dropdownItem.logo}
@@ -302,8 +424,11 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                   onMouseEnter={() => setHoveredItem(item.title)}
                   onMouseLeave={() => setHoveredItem(null)}
                   className={`flex items-center ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors relative ${
-                    pathname === item.href ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"
+                    pathname === item.href ? "text-white" : "text-gray-700 hover:bg-gray-100"
                   }`}
+                  style={{
+                    backgroundColor: pathname === item.href ? themeColor : 'transparent'
+                  }}
                   data-cy={`sidebar-item-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
                 >
                   <span className={isCollapsed ? "" : "mr-3"}>{item.icon}</span>
@@ -330,8 +455,8 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     onClick={item.onClick}
                     onMouseEnter={() => setHoveredItem(item.title)}
                     onMouseLeave={() => setHoveredItem(null)}
-                    className={`flex items-center w-full ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors text-gray-700 hover:bg-gray-100 relative}
-                    data-cy={sidebar-account-item-${item.title.toLowerCase()}`}
+                    className={`flex items-center w-full ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors text-gray-700 hover:bg-gray-100 relative`}
+                    data-cy={`sidebar-account-item-${item.title.toLowerCase()}`}
                   >
                     <span className={isCollapsed ? "" : "mr-3"}>{item.icon}</span>
                     {!isCollapsed && <span className="text-sm md:text-base font-medium">{item.title}</span>}
@@ -347,9 +472,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     href={item.href}
                     onMouseEnter={() => setHoveredItem(item.title)}
                     onMouseLeave={() => setHoveredItem(null)}
-                    className={`flex items-center ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors relative ${
-                      pathname === item.href ? "bg-blue-100 text-blue-600" : "text-gray-700 hover:bg-gray-100"
-                    }`}
+                    className={`flex items-center ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors text-gray-700 hover:bg-gray-100 relative`}
                     data-cy={`sidebar-account-item-${item.title.toLowerCase()}`}
                   >
                     <span className={isCollapsed ? "" : "mr-3"}>{item.icon}</span>
@@ -389,7 +512,10 @@ const Sidebar = ({ expanded }: SidebarProps) => {
               <p className="mb-1 md:mb-2 text-[11px] md:text-[13px] text-white font-poppins">
                 Please check our docs
               </p>
-              <button className="w-full px-2 py-1 md:px-3 md:py-2 text-xs md:text-[13px] text-center text-black font-poppins bg-white rounded-md hover:bg-gray-100">
+              <button 
+                className="w-full px-2 py-1 md:px-3 md:py-2 text-xs md:text-[13px] text-center text-white font-poppins rounded-md transition-colors"
+                style={{ backgroundColor: themeColor }}
+              >
                 DOCUMENTATION
               </button>
             </div>
@@ -397,7 +523,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
         )}
       </div>
     </aside>
-  );
-};
+  )
+}
 
-export default Sidebar;
+export default Sidebar

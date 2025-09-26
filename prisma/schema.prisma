@@ -55,6 +55,8 @@ model User {
   dmc              DMC?           @relation(fields: [dmcId], references: [id])
   profileImage     File?          @relation("UserProfileImage", fields: [profileImgId], references: [id])
   comments         Comment[]      @relation("CommentAuthor")
+  createdEnquiries  enquiries[]  @relation("UserEnquiries")
+
   agencyForms      AgencyForm[]   @relation("AgencyFormCreator")
 
   @@index([email])
@@ -348,8 +350,10 @@ model enquiries {
   customerId         String?
   companyName        String?
   agencyId           String?             @db.Uuid
+  userId             String?
   agency             Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
   customer           customers?          @relation(fields: [customerId], references: [id])
+  user               User?   @relation("UserEnquiries", fields: [userId], references: [id])
   itineraries        itineraries[]
   sharedCustomerPdfs SharedCustomerPdf[]
   feedback           Feedback?
@@ -357,8 +361,11 @@ model enquiries {
   dmcPayments        DmcPayment[]
   sharedDMCs         SharedDMC[]         @relation("EnquirySharedDMCs")
 
+
+
   @@index([status])
   @@index([enquiryDate])
+  @@index([userId])
   @@index([customerId])
   @@index([email])
   @@index([agencyId])
