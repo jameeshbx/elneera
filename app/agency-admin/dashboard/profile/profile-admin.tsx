@@ -1,5 +1,5 @@
 "use client"
-import { PlusCircle } from "lucide-react"
+import { PlusCircle, Edit } from "lucide-react"
 import type React from "react"
 
 import { useEffect, useState } from "react"
@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react"
 import { AgencyBankDetailsModal } from "./add-bank-details"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Camera } from "lucide-react"
+import { toast } from "sonner"
 
 interface ProfileData {
   name: string
@@ -83,9 +84,14 @@ export default function ProfilePage() {
   const [showPassword, setShowPassword] = useState(false)
   const [commentText, setCommentText] = useState("")
   const [color, setColor] = useState("#0F9D58")
-  const [, setTempColor] = useState("#0F9D58") // Added tempColor state
+  const [, setTempColor] = useState("#0F9D58")
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showBankDetailsModal, setShowBankDetailsModal] = useState(false)
+
+  // Logo editing states
+  const [isLogoUploading, setIsLogoUploading] = useState(false)
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null)
+  const [logoUploadSuccess, setLogoUploadSuccess] = useState<string | null>(null)
 
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -144,6 +150,72 @@ export default function ProfilePage() {
       setUploadError(error instanceof Error ? error.message : "Failed to upload image. Please try again.")
     } finally {
       setIsUploading(false)
+      // Clear the file input
+      event.target.value = ""
+    }
+  }
+
+  // Handle company logo upload
+  const handleCompanyLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Clear previous messages
+    setLogoUploadError(null)
+    setLogoUploadSuccess(null)
+
+    // Validate file type and size
+    const validImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]
+    if (!validImageTypes.includes(file.type)) {
+      setLogoUploadError("Please select a valid image file (JPEG, PNG, GIF, WEBP, SVG)")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      // 5MB limit
+      setLogoUploadError("Image size must be less than 5MB")
+      return
+    }
+
+    setIsLogoUploading(true)
+
+    try {
+      const formData = new FormData()
+      formData.append("companyLogo", file)
+
+      const response = await fetch("/api/upload-company-logo", {
+        method: "POST",
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to upload logo")
+      }
+
+      // Update the company information with the new logo URL
+      setCompanyInformation((prev) => ({
+        ...prev,
+        logo: data.logoUrl,
+      }))
+
+      setLogoUploadSuccess("Company logo updated successfully!")
+      toast.success("Logo updated successfully!")
+
+      // Clear success message after 3 seconds
+      setTimeout(() => setLogoUploadSuccess(null), 3000)
+
+      // Trigger a page refresh or emit an event to update sidebar
+      window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: data.logoUrl } }))
+
+    } catch (error) {
+      console.error("Error uploading company logo:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to upload logo. Please try again."
+      setLogoUploadError(errorMessage)
+      toast.error(errorMessage)
+    } finally {
+      setIsLogoUploading(false)
       // Clear the file input
       event.target.value = ""
     }
@@ -278,17 +350,47 @@ export default function ProfilePage() {
     }
   }, [session, status])
 
-  const handleDownloadBusinessLicense = () => {
-    if (companyInformation.businessLicense) {
-      // Create a temporary link to download the file
+  const handleDownloadBusinessLicense = async () => {
+    if (!companyInformation.businessLicense) {
+      toast.error("No business license available for download")
+      return
+    }
+
+    try {
+      // Fetch the file
+      const response = await fetch(companyInformation.businessLicense)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch business license')
+      }
+
+      // Get the blob data
+      const blob = await response.blob()
+      
+      // Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(blob)
+      
+      // Create a temporary link element
       const link = document.createElement("a")
-      link.href = companyInformation.businessLicense
-      link.download = "business-license.pdf"
+      link.href = url
+      
+      // Extract filename from URL or use default
+      const urlParts = companyInformation.businessLicense.split('/')
+      const filename = urlParts[urlParts.length - 1] || 'business-license'
+      link.download = filename
+      
+      // Append to body, click, and remove
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-    } else {
-      console.log("No business license available for download")
+      
+      // Clean up the temporary URL
+      window.URL.revokeObjectURL(url)
+      
+      toast.success("Business license downloaded successfully!")
+    } catch (error) {
+      console.error("Error downloading business license:", error)
+      toast.error("Failed to download business license")
     }
   }
 
@@ -627,10 +729,11 @@ export default function ProfilePage() {
                 <span className="text-sm text-gray-600">{companyInformation.website}</span>
               </div>
 
+              {/* Updated Logo section with edit functionality */}
               <div className="grid grid-cols-2 gap-2">
                 <span className="text-sm font-medium">Logo:</span>
-                <div className="flex items-center">
-                  <div className="h-8 w-34 mr-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-34 mr-2 relative group">
                     <Image
                       src={companyInformation.logo || "/placeholder.svg?height=32&width=120&query=company logo"}
                       alt={`${companyInformation.name} Logo`}
@@ -638,8 +741,43 @@ export default function ProfilePage() {
                       height={58}
                       className="object-contain"
                     />
+                    
+                    {/* Edit overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                      <label htmlFor="company-logo-upload" className="cursor-pointer">
+                        <Edit className="w-4 h-4 text-white" />
+                      </label>
+                      <input
+                        id="company-logo-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleCompanyLogoUpload}
+                        disabled={isLogoUploading}
+                      />
+                    </div>
+                    
+                    {/* Uploading indicator */}
+                    {isLogoUploading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      </div>
+                    )}
                   </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs px-2 py-1 h-6"
+                    onClick={() => document.getElementById('company-logo-upload')?.click()}
+                    disabled={isLogoUploading}
+                  >
+                    {isLogoUploading ? "Uploading..." : "Edit"}
+                  </Button>
                 </div>
+                
+                {logoUploadError && <p className="text-red-500 text-xs mt-1 col-span-2 ml-auto">{logoUploadError}</p>}
+                {logoUploadSuccess && <p className="text-green-500 text-xs mt-1 col-span-2 ml-auto">{logoUploadSuccess}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -664,9 +802,10 @@ export default function ProfilePage() {
               <div className="grid grid-cols-2 gap-2">
                 <span className="text-sm font-medium">Business license / Registration certificate:</span>
                 <button
-                  className="text-[#0F3F2F]"
+                  className="text-[#0F3F2F] hover:text-[#0F3F2F]/80 transition-colors"
                   onClick={handleDownloadBusinessLicense}
                   disabled={!companyInformation.businessLicense}
+                  title={companyInformation.businessLicense ? "Download business license" : "No business license available"}
                 >
                   <div className="w-5 h-5">
                     <Image
@@ -674,7 +813,7 @@ export default function ProfilePage() {
                       alt="Download business license"
                       width={20}
                       height={20}
-                      className="w-full h-full object-contain"
+                      className={`w-full h-full object-contain ${!companyInformation.businessLicense ? 'opacity-50' : ''}`}
                     />
                   </div>
                 </button>

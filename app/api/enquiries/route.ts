@@ -17,13 +17,15 @@ export async function POST(req: NextRequest) {
     
     console.log("Creating enquiry:", enquiryData);
 
-    // Get agencyId from session user (assuming agencyId is stored on user)
+    // Get userId and agencyId from session
+    const userId = session.user.id;
     const agencyId = session.user.agencyId;
-    if (!agencyId) {
-      return NextResponse.json({ error: "No agencyId found for user" }, { status: 403 });
+    
+    if (!userId) {
+      return NextResponse.json({ error: "No userId found for user" }, { status: 403 });
     }
 
-    // Create the enquiry with agencyId
+    // Create the enquiry with both userId and agencyId
     const enquiry = await prisma.enquiries.create({
       data: {
         name: enquiryData.name,
@@ -48,16 +50,16 @@ export async function POST(req: NextRequest) {
         mustSeeSpots: enquiryData.mustSeeSpots,
         status: enquiryData.status || "enquiry",
         enquiryDate: enquiryData.enquiryDate,
+        userId: userId, // Added userId
         agencyId: agencyId,
       }
     });
 
-    // If staff is assigned, send notification email
+    // Email notification logic remains the same...
     if (enquiryData.assignedStaff && enquiryData.assignedStaff !== "no-staff") {
       try {
         console.log("Looking for assigned staff:", enquiryData.assignedStaff);
         
-        // Find the assigned staff member by ID
         const assignedStaff = await prisma.userForm.findFirst({
           where: {
             id: enquiryData.assignedStaff,
@@ -65,14 +67,9 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        console.log("Found assigned staff:", assignedStaff);
-
         if (assignedStaff && assignedStaff.email) {
-          console.log("Sending notification to assigned staff:", assignedStaff.email);
-          
-          // Check if email configuration is available - Updated to use SMTP_PASSWORD
           if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
-            const emailResult = await sendEmail({
+            await sendEmail({
               to: assignedStaff.email,
               subject: "New Enquiry Assigned - Travel Agency",
               html: `
@@ -92,66 +89,16 @@ export async function POST(req: NextRequest) {
                       <p><strong>Phone:</strong> ${enquiryData.phone}</p>
                       <p><strong>Location:</strong> ${enquiryData.locations || 'Not specified'}</p>
                       <p><strong>Tour Type:</strong> ${enquiryData.tourType || 'Not specified'}</p>
-                      <p><strong>Estimated Dates:</strong> ${enquiryData.estimatedDates || 'Not specified'}</p>
                       <p><strong>Budget:</strong> ${enquiryData.currency || '$'}${enquiryData.budget || 'Not specified'}</p>
-                      <p><strong>Number of Travellers:</strong> ${enquiryData.numberOfTravellers || 'Not specified'}</p>
-                      <p><strong>Number of Kids:</strong> ${enquiryData.numberOfKids || 'Not specified'}</p>
-                    </div>
-                    
-                    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                      <h3 style="color: #92400e; margin-top: 0;">📝 Notes</h3>
-                      <p>${enquiryData.notes || 'No additional notes provided.'}</p>
-                    </div>
-                    
-                    <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                      <h3 style="color: #065f46; margin-top: 0;">🚀 Next Steps</h3>
-                      <p>Please review this enquiry and take appropriate action:</p>
-                      <ul style="margin: 10px 0; padding-left: 20px;">
-                        <li>Contact the customer to discuss their requirements</li>
-                        <li>Create an itinerary based on their preferences</li>
-                        <li>Update the enquiry status in the dashboard</li>
-                      </ul>
-                    </div>
-                    
-                    <div style="text-align: center; margin-top: 30px;">
-                      <p style="color: #6b7280; font-size: 14px;">Please log into your dashboard to manage this enquiry.</p>
-                      <p style="color: #6b7280; font-size: 14px;">Best regards,<br><strong>Travel Agency Team</strong></p>
                     </div>
                   </div>
                 </div>
               `
             });
-
-            console.log("Email send result:", emailResult);
-
-            if (emailResult.success) {
-              console.log("Staff notification email sent successfully to:", assignedStaff.email);
-            } else {
-              console.log("Failed to send staff notification email:", emailResult.error);
-            }
-          } else {
-            console.log("Email configuration not available. Missing environment variables:");
-            console.log("SMTP_HOST:", !!process.env.SMTP_HOST);
-            console.log("SMTP_USER:", !!process.env.SMTP_USER);
-            console.log("SMTP_PASSWORD:", !!process.env.SMTP_PASSWORD);
           }
-        } else {
-          console.log("Assigned staff not found or missing email:", {
-            staffFound: !!assignedStaff,
-            hasEmail: assignedStaff?.email ? true : false,
-            searchedFor: enquiryData.assignedStaff
-          });
-          
-          // Debug: Let's see what staff members exist
-          const allStaff = await prisma.userForm.findMany({
-            where: { status: "ACTIVE" },
-            select: { name: true, email: true, status: true }
-          });
-          console.log("Available active staff:", allStaff);
         }
       } catch (emailError) {
         console.error("Error in email notification process:", emailError);
-        // Don't fail the enquiry creation if email fails
       }
     }
 
@@ -172,7 +119,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Enhanced GET method with support for both single enquiry and all enquiries
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -183,27 +129,28 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const enquiryId = searchParams.get("id");
 
-    // Get agencyId from session user (assuming agencyId is stored on user)
-    // If not, adjust according to your session structure
-    const agencyId = session.user.agencyId;
-    if (!agencyId) {
-      return NextResponse.json({ error: "No agencyId found for user" }, { status: 403 });
+    // Get userId from session
+    const userId = session.user.id;
+    if (!userId) {
+      return NextResponse.json({ error: "No userId found for user" }, { status: 403 });
     }
 
-    // If enquiryId is provided, fetch single enquiry (but only if it belongs to this agency)
+    // If enquiryId is provided, fetch single enquiry for this user
     if (enquiryId) {
-      console.log("Fetching single enquiry with ID:", enquiryId);
+      console.log("Fetching single enquiry with ID:", enquiryId, "for userId:", userId);
       try {
-        const enquiry = await prisma.enquiries.findUnique({
-          where: { id: enquiryId },
+        const enquiry = await prisma.enquiries.findFirst({
+          where: { 
+            id: enquiryId,
+            userId: userId // Only fetch if belongs to this user
+          },
         });
+        
         if (!enquiry) {
-          console.log("Enquiry not found:", enquiryId);
-          return NextResponse.json({ error: "Enquiry not found" }, { status: 404 });
+          console.log("Enquiry not found or not authorized:", enquiryId);
+          return NextResponse.json({ error: "Enquiry not found or not authorized" }, { status: 404 });
         }
-        if (enquiry.agencyId !== agencyId) {
-          return NextResponse.json({ error: "Forbidden: Not your agency's enquiry" }, { status: 403 });
-        }
+        
         return NextResponse.json(enquiry);
       } catch (dbError) {
         console.error("Database error while fetching enquiry:", dbError);
@@ -214,16 +161,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If no enquiryId, fetch all enquiries for this agency only
-    console.log(`Fetching all enquiries for agencyId: ${agencyId}`);
+    // Fetch all enquiries for this user only
+    console.log(`Fetching all enquiries for userId: ${userId}`);
     try {
       const enquiries = await prisma.enquiries.findMany({
-        where: { agencyId },
+        where: { userId }, // Only fetch enquiries for this user
         orderBy: {
           createdAt: 'desc'
         }
       });
-      console.log(`Found ${enquiries.length} enquiries for agencyId: ${agencyId}`);
+      
+      console.log(`Found ${enquiries.length} enquiries for userId: ${userId}`);
       return NextResponse.json(enquiries);
     } catch (dbError) {
       console.error("Database error while fetching enquiries:", dbError);
@@ -259,15 +207,21 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Enquiry ID is required" }, { status: 400 })
     }
 
-    console.log("Updating enquiry with ID:", id, "Data:", updateData);
+    // Get userId from session
+    const userId = session.user.id;
 
-    // Check if enquiry exists first
-    const existingEnquiry = await prisma.enquiries.findUnique({
-      where: { id }
+    console.log("Updating enquiry with ID:", id, "for userId:", userId);
+
+    // Check if enquiry exists and belongs to this user
+    const existingEnquiry = await prisma.enquiries.findFirst({
+      where: { 
+        id,
+        userId: userId // Only allow update if belongs to this user
+      }
     });
 
     if (!existingEnquiry) {
-      return NextResponse.json({ error: "Enquiry not found" }, { status: 404 });
+      return NextResponse.json({ error: "Enquiry not found or not authorized" }, { status: 404 });
     }
 
     const updatedEnquiry = await prisma.enquiries.update({
@@ -305,15 +259,21 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Enquiry ID is required" }, { status: 400 })
     }
 
-    console.log("Deleting enquiry with ID:", id);
+    // Get userId from session
+    const userId = session.user.id;
 
-    // Check if enquiry exists first
-    const existingEnquiry = await prisma.enquiries.findUnique({
-      where: { id }
+    console.log("Deleting enquiry with ID:", id, "for userId:", userId);
+
+    // Check if enquiry exists and belongs to this user
+    const existingEnquiry = await prisma.enquiries.findFirst({
+      where: { 
+        id,
+        userId: userId // Only allow delete if belongs to this user
+      }
     });
 
     if (!existingEnquiry) {
-      return NextResponse.json({ error: "Enquiry not found" }, { status: 404 });
+      return NextResponse.json({ error: "Enquiry not found or not authorized" }, { status: 404 });
     }
 
     await prisma.enquiries.delete({

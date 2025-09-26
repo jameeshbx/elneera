@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { Search, ChevronDown, Plus, CalendarIcon, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -189,25 +188,14 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
   const fetchEnquiries = async () => {
     try {
       setLoading(true)
-      const response = await fetch("/api/enquiries", { cache: "no-store" })
+      const response = await fetch("/api/enquiries")
       const result = await response.json()
 
       if (!response.ok) {
-        console.error("API error result:", result)
-        toast.error(result.error || "Failed to fetch enquiries")
-        setColumns(initialColumns.map((col) => ({ ...col, enquiries: [] })))
-        return;
+        throw new Error(result.error || "Failed to fetch enquiries")
       }
 
-      if (!Array.isArray(result)) {
-        console.error("API did not return an array:", result)
-        toast.error("Unexpected API response for enquiries")
-        setColumns(initialColumns.map((col) => ({ ...col, enquiries: [] })))
-        return;
-      }
-
-      const enquiries = result;
-      console.log("Fetched enquiries:", enquiries);
+      const enquiries = Array.isArray(result) ? result : []
 
       const cols = initialColumns.map((col) => ({
         ...col,
