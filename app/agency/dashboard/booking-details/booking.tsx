@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {  Calendar,  X, Loader2, Plus, Save, Edit2, MapPin, Users, Phone, User } from "lucide-react";
-import { Itinerary } from '@/lib/types';
+import { Itinerary } from '@/lib/types'; 
 
 
 // Type definitions
@@ -148,7 +148,7 @@ const transformDMCData = (dmc: DMCData) => ({
   name: dmc.name
 });
 
-const BookingProgressDashboard = () => {
+const BookingProgressDashboard = () => { 
   // Get enquiry ID from URL params or use default
   const [itineraryId] = useState(() => {
     if (typeof window !== 'undefined') {

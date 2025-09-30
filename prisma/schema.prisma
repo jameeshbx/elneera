@@ -55,9 +55,9 @@ model User {
   dmc              DMC?           @relation(fields: [dmcId], references: [id])
   profileImage     File?          @relation("UserProfileImage", fields: [profileImgId], references: [id])
   comments         Comment[]      @relation("CommentAuthor")
-  createdEnquiries  enquiries[]  @relation("UserEnquiries")
+  createdEnquiries enquiries[]    @relation("UserEnquiries")
 
-  agencyForms      AgencyForm[]   @relation("AgencyFormCreator")
+  agencyForms AgencyForm[] @relation("AgencyFormCreator")
 
   @@index([email])
   @@index([role])
@@ -84,6 +84,7 @@ model Agency {
 
   @@index([name])
   @@index([createdBy])
+  @@index([logoId])
 }
 
 model DMC {
@@ -116,6 +117,7 @@ model quotes {
   dmc       DMC?     @relation("DMCQuotes", fields: [dmcId], references: [id])
 
   @@index([dmcId])
+  @@index([enquiryId])
 }
 
 model PasswordReset {
@@ -216,6 +218,7 @@ model AgencyForm {
   @@index([businessLicenseId])
   @@index([logoId])
   @@index([agencyFormLogoId])
+  @@index([agencyId])
 }
 
 model DMCForm {
@@ -274,6 +277,8 @@ model Manager {
   comments  Comment[] @relation("ManagerComments")
 
   @@index([profileId])
+  @@index([email])
+  @@index([username])
 }
 
 model UserForm {
@@ -296,6 +301,8 @@ model UserForm {
 
   @@index([profileImageId])
   @@index([createdBy])
+  @@index([email])
+  @@index([username])
   @@map("user_form")
 }
 
@@ -319,6 +326,7 @@ model PaymentMethod {
   @@index([dmcId])
   @@index([type])
   @@index([qrCodeId])
+  @@index([isActive])
 }
 
 model enquiries {
@@ -353,15 +361,13 @@ model enquiries {
   userId             String?
   agency             Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
   customer           customers?          @relation(fields: [customerId], references: [id])
-  user               User?   @relation("UserEnquiries", fields: [userId], references: [id])
+  user               User?               @relation("UserEnquiries", fields: [userId], references: [id])
   itineraries        itineraries[]
   sharedCustomerPdfs SharedCustomerPdf[]
   feedback           Feedback?
   commissions        Commission[]
   dmcPayments        DmcPayment[]
   sharedDMCs         SharedDMC[]         @relation("EnquirySharedDMCs")
-
-
 
   @@index([status])
   @@index([enquiryDate])

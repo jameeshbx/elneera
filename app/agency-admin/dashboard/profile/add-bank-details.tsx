@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { QrCode } from "lucide-react"
 
-interface AgencyBankDetailsModalProps {
+interface AgencyBankDetailsModalProps { 
   isOpen: boolean
   onClose: () => void
   agencyId?: string | null
@@ -134,46 +134,66 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
 
   const updateBank = (idx: number, key: keyof Bank, value: string) => {
     const next = [...banks]
-    next[idx][key] = value
+    next[idx] = { ...next[idx], [key]: value }
     setBanks(next)
   }
 
   const handleSaveOrUpdate = async () => {
-    if (!agencyId) {
+    console.log('Save/Update button clicked');
+    console.log('Current agencyId:', agencyId);
+    
+    // Check for agencyId and ensure it's a string
+    const currentAgencyId = agencyId || '';
+    if (!currentAgencyId) {
+      console.error('No agencyId provided');
       toast({
-        title: "Error",
-        description: "Agency ID is required",
+        title: "Session Error",
+        description: "Unable to verify your session. Please refresh the page and try again.",
         variant: "destructive",
-      })
-      return
+        duration: 5000,
+      });
+      return;
     }
 
-    setSaving(true)
+    console.log('Starting save/update with agencyId:', agencyId);
+    setSaving(true);
+    
+    // Add a small delay to ensure the loading state is visible
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     try {
       // Filter out empty bank accounts
-      const banksToSave = banks.filter(bank => 
-        bank.accountHolderName.trim() || 
-        bank.bankName.trim() || 
-        bank.accountNumber.trim()
-      )
+      const banksToSave = banks
+        .map(bank => ({
+          ...bank,
+          accountHolderName: bank.accountHolderName?.trim() || '',
+          bankName: bank.bankName?.trim() || '',
+          accountNumber: bank.accountNumber?.trim() || '',
+        }))
+        .filter(bank => bank.accountHolderName || bank.bankName || bank.accountNumber);
+      
+      console.log('Banks to save:', banksToSave);
 
       // Validate at least one payment method is provided
-      const hasBankDetails = banksToSave.length > 0
-      const hasUpiDetails = upiId.trim() !== ""
-      const hasPaymentLink = paymentLink.trim() !== ""
-      const hasQrCode = qrFile || existingQrCodeUrl
-
+      const hasBankDetails = banksToSave.length > 0;
+      const hasUpiDetails = upiId?.trim() !== "";
+      const hasPaymentLink = paymentLink?.trim() !== "";
+      const hasQrCode = qrFile || existingQrCodeUrl;
+      
       if (!hasBankDetails && !hasUpiDetails && !hasPaymentLink && !hasQrCode) {
         toast({
-          title: "Error",
+          title: "No Payment Method",
           description: "Please add at least one payment method (bank, UPI, payment link, or QR code)",
           variant: "destructive",
-        })
-        return
+          duration: 5000,
+        });
+        setSaving(false);
+        return;
       }
 
       const formData = new FormData()
-      formData.append("agencyId", agencyId)
+      formData.append("agencyId", currentAgencyId)
+      console.log('Created FormData with agencyId:', currentAgencyId);
       
       // Only include bank details if they exist
       if (hasBankDetails) {
@@ -181,13 +201,13 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
       }
       
       // Only include UPI details if they exist
-      if (hasUpiDetails) {
+      if (hasUpiDetails && upiId) {
         formData.append("upiProvider", selectedUpiProvider)
         formData.append("upiId", upiId)
       }
       
       // Only include payment link if it exists
-      if (hasPaymentLink) {
+      if (hasPaymentLink && paymentLink) {
         formData.append("paymentLink", paymentLink)
       }
       
@@ -205,64 +225,112 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
         isUpdate: isUpdating
       })
 
-      const res = await fetch("/api/auth/add-bank-details", {
-        method: isUpdating ? "PUT" : "POST",
-        body: formData,
-      })
-
-      // Handle response
-      let data
       try {
-        data = await res.json()
-        console.log("API response:", data)
-      } catch (jsonError) {
-        console.error("Failed to parse JSON response:", jsonError)
-        throw new Error("Invalid response from server")
+        console.log('Sending request to /api/auth/add-bank-details', {
+          method: isUpdating ? 'PUT' : 'POST',
+          body: Array.from(formData.entries()).map(([key, value]) => ({
+            key,
+            value: value instanceof File ? `[File: ${value.name}]` : value
+          }))
+        });
+        
+        const res = await fetch("/api/auth/add-bank-details", {
+          method: isUpdating ? "PUT" : "POST",
+          body: formData,
+          // Don't set Content-Type header - let the browser set it with the correct boundary
+        });
+        
+        console.log('Received response status:', res.status);
+
+        // Define response type
+        type ApiResponse = {
+          success: boolean;
+          data?: {
+            id: string;
+            accountHolderName: string;
+            bankName: string;
+            accountNumber: string;
+            ifscCode?: string;
+            branchName?: string;
+            bankCountry?: string;
+            currency?: string;
+            notes?: string;
+          };
+          error?: string;
+          message?: string;
+        };
+        
+        // Handle response
+        let data: ApiResponse
+        try {
+          data = await res.json() as ApiResponse;
+          console.log("API response:", data);
+        } catch (jsonError) {
+          console.error("Failed to parse JSON response:", jsonError);
+          throw new Error("Invalid response from server");
+        }
+
+        if (!res.ok) {
+          const errorMsg = data?.error || data?.message || `HTTP ${res.status}: Failed to ${isUpdating ? 'update' : 'save'} payment methods`
+          throw new Error(errorMsg)
+        }
+
+        // Show success message
+        toast({
+          title: "Success",
+          description: isUpdating 
+            ? "Payment methods updated successfully" 
+            : "Payment methods saved successfully",
+        })
+
+        // Set updating to true for future updates
+        setIsUpdating(true)
+        
+        // If we have a new QR code, update the existing URL
+        if (qrFile) {
+          setExistingQrCodeUrl(URL.createObjectURL(qrFile))
+        }
+
+        // Trigger refresh in other components
+        window.dispatchEvent(new CustomEvent('bankDetailsUpdated'))
+        
+        // Close the modal after a short delay
+        setTimeout(() => {
+          onClose()
+        }, 1500)
+        
+      } catch (error) {
+        console.error("API request failed:", error)
+        throw error // Re-throw to be caught by the outer catch block
       }
-
-      if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}: Failed to ${isUpdating ? 'update' : 'save'} payment methods`)
-      }
-
-      // Show success message
-      toast({
-        title: "Success",
-        description: isUpdating 
-          ? "Payment methods updated successfully" 
-          : "Payment methods saved successfully",
-      })
-
-      // Set updating to true for future updates
-      setIsUpdating(true)
-      
-      // If we have a new QR code, update the existing URL
-      if (qrFile) {
-        setExistingQrCodeUrl(URL.createObjectURL(qrFile))
-      }
-
-      // Trigger refresh in other components
-      window.dispatchEvent(new CustomEvent('bankDetailsUpdated'))
-      
-      // Close the modal after a short delay
-      setTimeout(() => {
-        onClose()
-      }, 1500)
       
     } catch (error) {
       console.error("Error in handleSaveOrUpdate:", error)
       
       let errorMessage = isUpdating 
-        ? "Failed to update payment methods" 
-        : "Failed to save payment methods"
-        
+        ? "Failed to update payment methods. " 
+        : "Failed to save payment methods. "
+      
       if (error instanceof Error) {
-        errorMessage = error.message || errorMessage
+        // Handle specific error messages
+        if (error.message.includes('network') || error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
+          errorMessage += "Please check your internet connection and try again."
+        } else if (error.message.includes('401') || error.message.includes('403')) {
+          errorMessage += "You don't have permission to perform this action. Please log in again."
+        } else if (error.message.includes('500')) {
+          errorMessage += "Server error. Please try again later."
+        } else {
+          errorMessage += error.message
+        }
+      } else {
+        errorMessage += "An unexpected error occurred. Please try again."
       }
-
+      
       toast({
         title: "Error",
         description: errorMessage,
         variant: "destructive",
+        duration: 5000, // Show for 5 seconds to allow reading longer messages
       })
     } finally {
       setSaving(false)
