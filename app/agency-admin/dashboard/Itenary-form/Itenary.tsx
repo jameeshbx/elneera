@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
-import LoadingComponent from "@/app/agency/dashboard/Itenary-form/loading"
+import LoadingComponent from "@/app/agency-admin/dashboard/Itenary-form/loading"
 
 // Define types for the itinerary data (matching ItineraryView)
 interface Activity {
@@ -616,7 +616,7 @@ function ItineraryFormContent() {
   
           // Still redirect to share customer page
           router.push(
-            `/agency/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+            `/agency-admin/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
           )
         }
       } catch (pdfError) {
@@ -625,7 +625,7 @@ function ItineraryFormContent() {
   
         // Still redirect
         router.push(
-          `/agency/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+          `/agency-admin/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
         )
       }
     } catch (error) {

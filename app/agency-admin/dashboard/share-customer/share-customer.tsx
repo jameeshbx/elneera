@@ -21,7 +21,6 @@ import { useToast } from "@/hooks/use-toast"
 
 import type { CustomerFeedback, SentItinerary, FormData, NewNote, CustomerDashboardData } from "@/types/customer"
 
-
 // Extended PDF Version interface
 interface PDFVersion {
   id: string
@@ -187,7 +186,10 @@ export default function ShareCustomerDashboard() {
       setLoading(true)
       setError(null)
 
-      // Clear existing data if force refresh
+      // Preserve current selection so it doesn't "move" on refresh
+      const prevSelectedId = selectedItinerary?.id
+      const prevSelectedUrl = selectedPDFVersion
+
       if (forceRefresh) {
         setSelectedItinerary(null)
         setItineraryVersions([])
@@ -225,22 +227,69 @@ export default function ShareCustomerDashboard() {
         }))
       }
 
+      // Helper: ensure a usable URL for a PDF version (handles s3Key and raw S3 URLs)
+      const ensureUrlForVersion = async (version: PDFVersion): Promise<string | null> => {
+        try {
+          // If there is a URL, check if it needs presigning
+          if (version.url) {
+            try {
+              const u = new URL(version.url)
+              const isS3 = u.hostname.includes("amazonaws.com")
+              const isAlreadySigned =
+                u.searchParams.has("X-Amz-Signature") ||
+                u.searchParams.has("X-Amz-Credential") ||
+                u.searchParams.has("X-Amz-Algorithm")
+
+              // For S3 URLs that aren't signed, request a signed URL from our API
+              if (isS3 && !isAlreadySigned) {
+                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(version.url)}`)
+                if (!resp.ok) return version.url // fall back to original URL so it's still selectable
+                const { url: signedUrl } = await resp.json()
+                return signedUrl || version.url
+              }
+            } catch {
+              // if URL parsing fails, just return as-is
+              return version.url
+            }
+            return version.url
+          }
+
+          // If no URL, try with stored S3 key
+          const s3Key = version.metadata?.s3Key
+          if (s3Key) {
+            const signed = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(s3Key)}`)
+            if (!signed.ok) return null
+            const { url: signedUrl } = await signed.json()
+            return signedUrl || null
+          }
+
+          return null
+        } catch {
+          return null
+        }
+      }
+
       // Process itineraries and create separate rows for each PDF version
       const allVersions: ExtendedItinerary[] = []
 
       if (data.itineraries && data.itineraries.length > 0) {
-        data.itineraries.forEach((itinerary) => {
-          // Get all PDF versions for this itinerary
+        for (const itinerary of data.itineraries) {
           const pdfVersions = Array.isArray(itinerary.pdfVersions) ? itinerary.pdfVersions : []
 
           if (pdfVersions.length > 0) {
-            // Create a row for each PDF version
-            pdfVersions.forEach((version) => {
+            const versionsWithResolvedUrls = await Promise.all(
+              pdfVersions.map(async (v) => {
+                const resolvedUrl = await ensureUrlForVersion(v)
+                return { ...v, url: resolvedUrl ?? v.url ?? null }
+              }),
+            )
+
+            versionsWithResolvedUrls.forEach((version) => {
               const versionItinerary: ExtendedItinerary = {
                 ...itinerary,
                 id: `${itinerary.id}-v${version.version}`, // Unique ID for each version row
                 originalId: itinerary.id, // Keep reference to original itinerary
-                activePdfUrl: version.url,
+                activePdfUrl: version.url || null, // now resolved if s3Key existed
                 displayVersion: version.metadata?.isEdited
                   ? `REGENERATED (V${version.version})`
                   : `GENERATED (V${version.version})`,
@@ -267,7 +316,7 @@ export default function ShareCustomerDashboard() {
 
             const legacyItinerary: ExtendedItinerary = {
               ...itinerary,
-              activePdfUrl,
+              activePdfUrl: activePdfUrl || null,
               displayVersion,
               versionNumber,
               isLatestVersion: true,
@@ -276,7 +325,7 @@ export default function ShareCustomerDashboard() {
             }
             allVersions.push(legacyItinerary)
           }
-        })
+        }
       }
 
       // Sort versions by creation date (newest first)
@@ -288,12 +337,23 @@ export default function ShareCustomerDashboard() {
 
       setItineraryVersions(sortedVersions)
 
-      // Select the latest version by default
-      const latestVersion = sortedVersions.find((version) => version.activePdfUrl)
-      if (latestVersion && latestVersion.activePdfUrl) {
-        setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
-        setSelectedItinerary(latestVersion)
-        setSelectedPDFVersion(latestVersion.activePdfUrl)
+      // Preserve previous selection if still present; otherwise select latest available
+      const stillExists = prevSelectedId && sortedVersions.find((v) => v.id === prevSelectedId && v.activePdfUrl)
+      if (stillExists) {
+        const v = stillExists
+        setSelectedItinerary(v)
+        setSelectedPDFVersion(prevSelectedUrl || v.activePdfUrl || null)
+      } else {
+        const latestVersion = sortedVersions.find((version) => version.activePdfUrl)
+        if (latestVersion && latestVersion.activePdfUrl) {
+          setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
+          setSelectedItinerary(latestVersion)
+          setSelectedPDFVersion(latestVersion.activePdfUrl)
+        } else {
+          // Clear selection if nothing available
+          setSelectedItinerary(null)
+          setSelectedPDFVersion(null)
+        }
       }
 
       setCustomerFeedbacks(data.feedbacks || [])
@@ -863,9 +923,16 @@ export default function ShareCustomerDashboard() {
                     </p>
                     <button
                       onClick={() => {
-                        const targetItineraryId = itineraryId || customerId || enquiryId
+                        const targetItineraryId =
+                          itineraryId || itineraryVersions[0]?.originalId || itineraryVersions[0]?.id
                         if (targetItineraryId) {
                           handleGeneratePDF(targetItineraryId, false)
+                        } else {
+                          toast({
+                            variant: "destructive",
+                            title: "Error",
+                            description: "No itinerary ID available for PDF generation",
+                          })
                         }
                       }}
                       disabled={generatingPDF !== null}
