@@ -1,5 +1,11 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 // Validate required environment variables
 function validateS3Config() {
@@ -15,8 +21,8 @@ function validateS3Config() {
 
   if (missingVars.length > 0) {
     throw new Error(
-      `Missing required S3 environment variables: ${missingVars.join(', ')}. ` +
-      'Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME in your environment.'
+      `Missing required S3 environment variables: ${missingVars.join(", ")}. ` +
+        "Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME in your environment.",
     )
   }
 
@@ -24,7 +30,7 @@ function validateS3Config() {
     accessKeyId: requiredEnvVars.AWS_ACCESS_KEY_ID!,
     secretAccessKey: requiredEnvVars.AWS_SECRET_ACCESS_KEY!,
     bucketName: requiredEnvVars.AWS_S3_BUCKET_NAME!,
-    region: process.env.AWS_REGION || 'us-east-1',
+    region: process.env.AWS_REGION || "us-east-1",
   }
 }
 
@@ -42,19 +48,19 @@ try {
     },
   })
 } catch (error) {
-  console.error('S3 configuration error:', error)
+  console.error("S3 configuration error:", error)
   // Set default values to prevent runtime errors
   s3Config = {
-    accessKeyId: '',
-    secretAccessKey: '',
-    bucketName: '',
-    region: 'us-east-1',
+    accessKeyId: "",
+    secretAccessKey: "",
+    bucketName: "",
+    region: "us-east-1",
   }
   s3Client = new S3Client({
-    region: 'us-east-1',
+    region: "us-east-1",
     credentials: {
-      accessKeyId: '',
-      secretAccessKey: '',
+      accessKeyId: "",
+      secretAccessKey: "",
     },
   })
 }
@@ -68,7 +74,7 @@ export interface S3FileInfo {
 }
 
 // Helper function to create signed URLs with proper error handling
-async function createSignedUrl(bucket: string, key: string, expiresIn: number = 3600): Promise<string> {
+async function createSignedUrl(bucket: string, key: string, expiresIn = 3600): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -79,8 +85,8 @@ async function createSignedUrl(bucket: string, key: string, expiresIn: number = 
     const client = s3Client as unknown as Parameters<typeof getSignedUrl>[0]
     return await getSignedUrl(client, command, { expiresIn })
   } catch (error) {
-    console.error('Error generating signed URL:', error)
-    throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    console.error("Error generating signed URL:", error)
+    throw new Error(`Failed to generate signed URL: ${error instanceof Error ? error.message : "Unknown error"}`)
   }
 }
 
@@ -103,18 +109,18 @@ export class S3Service {
   static async uploadFile(
     fileBuffer: Buffer,
     fileName: string,
-    contentType: string = 'application/pdf',
-    folder: string = 'itinerary-pdfs'
+    contentType = "application/pdf",
+    folder = "itinerary-pdfs",
   ): Promise<S3FileInfo> {
     if (!this.isConfigured()) {
       throw new Error(
-        'S3 is not properly configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME environment variables.'
+        "S3 is not properly configured. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_S3_BUCKET_NAME environment variables.",
       )
     }
 
     try {
       const key = `${folder}/${fileName}`
-      
+
       const command = new PutObjectCommand({
         Bucket: s3Config.bucketName,
         Key: key,
@@ -126,27 +132,27 @@ export class S3Service {
       })
 
       await s3Client.send(command)
-      
+
       // Generate a presigned URL for the uploaded file
       const url = await this.getSignedUrl(key)
-      
+
       return {
         key,
         url,
         contentType,
       }
     } catch (error) {
-      console.error('Error uploading file to S3:', error)
-      throw new Error(`Failed to upload file to S3: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Error uploading file to S3:", error)
+      throw new Error(`Failed to upload file to S3: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   /**
    * Get a presigned URL for a file
    */
-  static async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+  static async getSignedUrl(key: string, expiresIn = 3600): Promise<string> {
     if (!this.isConfigured()) {
-      throw new Error('S3 is not properly configured')
+      throw new Error("S3 is not properly configured")
     }
 
     return createSignedUrl(s3Config.bucketName, key, expiresIn)
@@ -157,7 +163,7 @@ export class S3Service {
    */
   static async deleteFile(key: string): Promise<boolean> {
     if (!this.isConfigured()) {
-      throw new Error('S3 is not properly configured')
+      throw new Error("S3 is not properly configured")
     }
 
     try {
@@ -169,17 +175,17 @@ export class S3Service {
       await s3Client.send(command)
       return true
     } catch (error) {
-      console.error('Error deleting file from S3:', error)
-      throw new Error(`Failed to delete file from S3: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Error deleting file from S3:", error)
+      throw new Error(`Failed to delete file from S3: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   /**
    * List files in a folder
    */
-  static async listFiles(folder: string = 'itinerary-pdfs', maxKeys: number = 100): Promise<S3FileInfo[]> {
+  static async listFiles(folder = "itinerary-pdfs", maxKeys = 100): Promise<S3FileInfo[]> {
     if (!this.isConfigured()) {
-      throw new Error('S3 is not properly configured')
+      throw new Error("S3 is not properly configured")
     }
 
     try {
@@ -190,13 +196,13 @@ export class S3Service {
       })
 
       const response = await s3Client.send(command)
-      
+
       if (!response.Contents) {
         return []
       }
 
       const files: S3FileInfo[] = []
-      
+
       for (const object of response.Contents) {
         if (object.Key) {
           const url = await this.getSignedUrl(object.Key)
@@ -211,8 +217,8 @@ export class S3Service {
 
       return files
     } catch (error) {
-      console.error('Error listing files from S3:', error)
-      throw new Error(`Failed to list files from S3: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error("Error listing files from S3:", error)
+      throw new Error(`Failed to list files from S3: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
@@ -221,7 +227,7 @@ export class S3Service {
    */
   static async getFileInfo(key: string): Promise<S3FileInfo | null> {
     if (!this.isConfigured()) {
-      throw new Error('S3 is not properly configured')
+      throw new Error("S3 is not properly configured")
     }
 
     try {
@@ -231,13 +237,13 @@ export class S3Service {
       })
 
       const response = await s3Client.send(command)
-      
+
       if (!response) {
         return null
       }
 
       const url = await this.getSignedUrl(key)
-      
+
       return {
         key,
         url,
@@ -246,7 +252,7 @@ export class S3Service {
         contentType: response.ContentType,
       }
     } catch (error) {
-      console.error('Error getting file info from S3:', error)
+      console.error("Error getting file info from S3:", error)
       return null
     }
   }

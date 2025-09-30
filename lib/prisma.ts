@@ -1,28 +1,25 @@
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient } from '@prisma/client'
 
+// This prevents multiple instances of Prisma Client in development
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+  prisma: PrismaClient | undefined
+}
 
-
+// Initialize Prisma Client with logging in development
 const prisma = globalForPrisma.prisma || new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL,
-    },
-  },
+  log: process.env.NODE_ENV === 'development' 
+    ? ['query', 'error', 'warn'] 
+    : ['error']
 })
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma
+// In development, store the Prisma Client in the global object to avoid hot-reloading issues
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma
+}
 
-// Ensure the prisma client is properly terminated when the Node.js process ends
-process.on('beforeExit', async () => {
-  await prisma.$disconnect()
-})
-
+// Add a type for the global prisma variable
 declare global {
   var prisma: PrismaClient | undefined
 }
 
 export default prisma
-

@@ -699,7 +699,7 @@ const DMCAdminInterface = () => {
       enquiryId: enquiryId || "",
       customerId: customerId || "",
     });
-    router.push(`/agency/dashboard/dmc-payment?${queryParams.toString()}`)
+    router.push(`/agency-admin/dashboard/dmc-payment?${queryParams.toString()}`)
   }
 
   const handleRefresh = () => {
