@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { Search, ChevronDown, Plus, CalendarIcon, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -363,11 +362,11 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
     if (typeof window !== "undefined") {
       localStorage.setItem("currentEnquiry", JSON.stringify(enquiry))
     }
-    router.push(`/agency/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
+    router.push(`/agency-admin/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
   }
 
   const handleViewLeads = () => {
-    router.push("/agency/dashboard/enquiry/view-leads")
+    router.push("/agency-admin/dashboard/enquiry/view-leads")
   }
 
   const renderTagSpecificFields = () => {

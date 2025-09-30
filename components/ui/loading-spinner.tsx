@@ -1,24 +1,39 @@
 import { cn } from "@/lib/utils"
 
-interface LoadingSpinnerProps {
-  size?: "sm" | "md" | "lg"
-  className?: string
+type SpinnerSize = "sm" | "md" | "lg"
+
+const sizeMap: Record<SpinnerSize, string> = {
+  sm: "h-4 w-4",
+  md: "h-6 w-6",
+  lg: "h-8 w-8",
 }
 
-export function LoadingSpinner({ size = "md", className }: LoadingSpinnerProps) {
-  const sizeClasses = {
-    sm: "w-4 h-4",
-    md: "w-6 h-6",
-    lg: "w-8 h-8",
-  }
-
+export function LoadingSpinner({
+  size = "md",
+  className,
+  "aria-label": ariaLabel = "Loading",
+}: {
+  size?: SpinnerSize
+  className?: string
+  "aria-label"?: string
+}) {
   return (
-    <div
-      className={cn(
-        "animate-spin rounded-full border-2 border-gray-300 border-t-gray-900",
-        sizeClasses[size],
-        className,
-      )}
-    />
+    <span
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={ariaLabel}
+      className={cn("inline-flex items-center justify-center", className)}
+    >
+      <span
+        className={cn(
+          "animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground",
+          sizeMap[size],
+        )}
+      />
+      <span className="sr-only">{ariaLabel}</span>
+    </span>
   )
 }
+
+export default LoadingSpinner

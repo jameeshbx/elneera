@@ -87,6 +87,7 @@ export default function AddUsers() {
   const itemsPerPage = 3
   const totalPages = Math.ceil(users.length / itemsPerPage)
 
+
   const validateForm = (): boolean => {
     // Simple validation - just check if required fields are not empty
     const requiredFields = ['name', 'phone', 'email', 'password'];
@@ -146,7 +147,7 @@ export default function AddUsers() {
     if (formData.password.length < 8) {
       toast({
         title: "Validation Error",
-        description: "Password must be at least 8 characters",
+        description: "Password must be at least 8 characters", 
         variant: "destructive",
       });
       return false;
@@ -470,7 +471,7 @@ export default function AddUsers() {
       const response = await fetch(`/api/auth/agency-add-user`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json', 
         },
         body: JSON.stringify({ 
           id: userId,

@@ -6,7 +6,22 @@ import nodemailer from "nodemailer"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 import { existsSync } from "fs"
-import { AgencyType, PanType } from "@prisma/client"
+import { agencyApprovalEmailTemplate } from "@/lib/email-templates"
+
+// Define enum values as string literals (fallback if Prisma enums don't exist)
+const AGENCY_TYPES = [
+  'PRIVATE_LIMITED', 'PROPRIETORSHIP', 'PARTNERSHIP', 'PUBLIC_LIMITED', 'LLP',
+  'TOUR_OPERATOR', 'TRAVEL_AGENT', 'DMC', 'OTHER', 'ONLINE_TRAVEL_AGENCY',
+  'CORPORATE_TRAVEL', 'ADVENTURE_TRAVEL', 'LUXURY_TRAVEL', 'BUDGET_TRAVEL', 'SPECIALIZED_TRAVEL'
+] as const;
+
+type AgencyType = typeof AGENCY_TYPES[number];
+
+const PAN_TYPES = [
+  'INDIVIDUAL', 'COMPANY', 'TRUST', 'OTHER', 'ASSOCIATION', 'HUF', 'GOVERNMENT'
+] as const;
+
+type PanType = typeof PAN_TYPES[number];
 
 // Email configuration
 const transporter = nodemailer.createTransport({
@@ -38,254 +53,306 @@ async function saveFile(file: File, directory: string): Promise<string> {
   return `/uploads/${directory}/${fileName}`
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions)
+// Helper function to validate enum values
+function isValidAgencyType(value: string): value is AgencyType {
+  return AGENCY_TYPES.includes(value as AgencyType)
+}
 
+function isValidPanType(value: string): value is PanType {
+  return PAN_TYPES.includes(value as PanType)
+}
+
+// GET: Check if agency form exists for the current user
+export async function GET() {
+  try {
+    const session = await getServerSession(authOptions);
     if (!session || !session.user?.email) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Find user by email
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-    })
+    });
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const isAuthorized = user.userType === "AGENCY" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+    // Find agency form for this user
+    const agencyForm = await prisma.agencyForm.findFirst({
+      where: { 
+        OR: [
+          { createdBy: user.id },  // Check createdBy
+          { agencyId: user.id }    // Check agencyId
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        contactPerson: true,
+        email: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-    if (!isAuthorized) {
-      return NextResponse.json(
-        { error: `Access denied. User type: ${user.userType}, Role: ${user.role}` },
-        { status: 403 }
-      )
+    return NextResponse.json({ 
+      exists: !!agencyForm,
+      form: agencyForm 
+    });
+  } catch (error) {
+    console.error("Error checking agency form:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// PUT: Update agency status
+export async function PUT(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse form data
-    const formData = await request.formData()
+    const { status } = await request.json();
+
+    if (!status || !['PENDING', 'ACTIVE', 'REJECTED'].includes(status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Update agency form status
+    const updatedForm = await prisma.agencyForm.updateMany({
+      where: { 
+        OR: [
+          { createdBy: user.id },
+          { agencyId: user.id }
+        ]
+      },
+      data: { status },
+    });
+
+    return NextResponse.json({ 
+      success: true,
+      message: "Agency status updated successfully",
+      updated: updatedForm.count
+    });
+  } catch (error) {
+    console.error("Error updating agency status:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// POST: Create or update agency form
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const formData = await request.formData();
     
-    // Extract and validate required fields
-    const contactPerson = formData.get("contactPerson")?.toString()
-    const agencyTypeString = formData.get("agencyType")?.toString()
-    const designation = formData.get("designation")?.toString()
-    const phoneCountryCode = formData.get("phoneCountryCode")?.toString() || "+91"
-    const phoneNumber = formData.get("phoneNumber")?.toString()
-    const ownerName = formData.get("ownerName")?.toString()
-    const email = formData.get("email")?.toString()
-    const companyPhoneCode = formData.get("companyPhoneCode")?.toString() || "+91"
-    const companyPhone = formData.get("companyPhone")?.toString()
-    const website = formData.get("website")?.toString()
-    const landingPageColor = formData.get("landingPageColor")?.toString() || "#4ECDC4"
-    const gstRegistered = formData.get("gstRegistered") === "true"
-    const gstNumber = formData.get("gstNumber")?.toString()
-    const yearOfRegistration = formData.get("yearOfRegistration")?.toString()
-    const panNumber = formData.get("panNumber")?.toString()
-    const panTypeString = formData.get("panType")?.toString()
-    const headquarters = formData.get("headquarters")?.toString()
-    const country = formData.get("country")?.toString() || "INDIA"
-    const yearsOfOperation = formData.get("yearsOfOperation")?.toString()
+    // Extract form fields
+    const name = formData.get("name") as string;
+    const contactPerson = formData.get("contactPerson") as string;
+    const email = formData.get("email") as string;
+    const phone = formData.get("phone") as string;
+    const address = formData.get("address") as string;
+    const city = formData.get("city") as string;
+    const state = formData.get("state") as string;
+    const pincode = formData.get("pincode") as string;
+    const country = formData.get("country") as string;
+    const agencyType = formData.get("agencyType") as string;
+    const panNumber = formData.get("panNumber") as string;
+    const panType = formData.get("panType") as string;
+    const gstNumber = formData.get("gstNumber") as string;
+    const businessLicense = formData.get("businessLicense") as File;
+    const logo = formData.get("logo") as File;
 
-    // Validate and convert enum values
-    const agencyType = agencyTypeString as AgencyType
-    const panType = panTypeString as PanType
+    // Validate required fields
+    if (!name || !contactPerson || !email || !phone || !address || !city || !state || !pincode || !country) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
 
     // Validate enum values
-    if (!Object.values(AgencyType).includes(agencyType)) {
-      return NextResponse.json(
-        { error: "Invalid agency type" },
-        { status: 400 }
-      )
+    if (agencyType && !isValidAgencyType(agencyType)) {
+      return NextResponse.json({ error: "Invalid agency type" }, { status: 400 });
     }
 
-    if (!Object.values(PanType).includes(panType)) {
-      return NextResponse.json(
-        { error: "Invalid PAN type" },
-        { status: 400 }
-      )
+    if (panType && !isValidPanType(panType)) {
+      return NextResponse.json({ error: "Invalid PAN type" }, { status: 400 });
     }
 
     // Handle file uploads
-    const logoFile = formData.get("logo") as File
-    const businessLicenseFile = formData.get("businessLicense") as File
+    let businessLicensePath = null;
+    let logoPath = null;
 
-    if (!contactPerson || !agencyType || !designation || !phoneNumber || 
-        !ownerName || !email || !companyPhone || !website || 
-        !yearOfRegistration || !panNumber || !panType || !headquarters || 
-        !yearsOfOperation || !logoFile || !businessLicenseFile) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      )
+    if (businessLicense && businessLicense.size > 0) {
+      businessLicensePath = await saveFile(businessLicense, "licenses");
     }
 
-    let logoPath = ""
-    let businessLicensePath = ""
-
-    try {
-      // Save files directly to paths instead of creating File records
-      logoPath = await saveFile(logoFile, "logos")
-      businessLicensePath = await saveFile(businessLicenseFile, "licenses")
-
-    } catch (uploadError) {
-      console.error("File upload error:", uploadError)
-      return NextResponse.json(
-        { error: "Failed to upload files" },
-        { status: 500 }
-      )
+    if (logo && logo.size > 0) {
+      logoPath = await saveFile(logo, "logos");
     }
 
-    // Check if agency form already exists for this user
+    // Check if agency form already exists
     const existingForm = await prisma.agencyForm.findFirst({
       where: { createdBy: user.id }
-    })
+    });
 
-    let agencyForm
+    let agencyForm;
     if (existingForm) {
       // Update existing form
+      const updateData: {
+        name: string;
+        contactPerson: string;
+        email: string;
+        phone: string;
+        address: string;
+        city: string;
+        state: string;
+        pincode: string;
+        country: string;
+        agencyType: AgencyType;
+        panNumber: string;
+        panType: PanType;
+        gstNumber: string;
+        status: string;
+        businessLicensePath?: string;
+        logoPath?: string;
+      } = {
+        name,
+        contactPerson,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+        country,
+        agencyType: agencyType as AgencyType,
+        panNumber,
+        panType: panType as PanType,
+        gstNumber,
+        status: "PENDING",
+      };
+
+      // Only update file paths if new files are provided
+      if (businessLicensePath) {
+        updateData.businessLicensePath = businessLicensePath;
+      }
+      if (logoPath) {
+        updateData.logoPath = logoPath;
+      }
+
       agencyForm = await prisma.agencyForm.update({
         where: { id: existingForm.id },
-        data: {
-          name: ownerName,
-          contactPerson,
-          agencyType,
-          designation,
-          phoneCountryCode,
-          phoneNumber,
-          ownerName,
-          email,
-          companyPhoneCode,
-          companyPhone,
-          website,
-          landingPageColor,
-          gstRegistered,
-          gstNumber: gstRegistered ? gstNumber : null,
-          yearOfRegistration,
-          panNumber,
-          panType,
-          headquarters,
-          country,
-          yearsOfOperation,
-          logoPath, // Use logoPath instead of logoId
-          businessLicensePath, // Use businessLicensePath instead of businessLicenseId
-          updatedAt: new Date(),
-        }
-      })
+        data: updateData,
+      });
     } else {
       // Create new form
+      const createData: {
+        name: string;
+        contactPerson: string;
+        email: string;
+        phone: string;
+        address: string;
+        city: string;
+        state: string;
+        pincode: string;
+        country: string;
+        agencyType: AgencyType;
+        panNumber: string;
+        panType: PanType;
+        gstNumber: string;
+        createdBy: string;
+        status: string;
+        businessLicensePath?: string;
+        logoPath?: string;
+      } = {
+        name,
+        contactPerson,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+        country,
+        agencyType: agencyType as AgencyType,
+        panNumber,
+        panType: panType as PanType,
+        gstNumber,
+        createdBy: user.id,
+        status: "PENDING",
+      };
+
+      // Add file paths if provided
+      if (businessLicensePath) {
+        createData.businessLicensePath = businessLicensePath;
+      }
+      if (logoPath) {
+        createData.logoPath = logoPath;
+      }
+
       agencyForm = await prisma.agencyForm.create({
-        data: {
-          name: ownerName,
-          contactPerson,
-          agencyType,
-          designation,
-          phoneCountryCode,
-          phoneNumber,
-          ownerName,
-          email,
-          companyPhoneCode,
-          companyPhone,
-          website,
-          landingPageColor,
-          gstRegistered,
-          gstNumber: gstRegistered ? gstNumber : null,
-          yearOfRegistration,
-          panNumber,
-          panType,
-          headquarters,
-          country,
-          yearsOfOperation,
-          logoPath, // Use logoPath instead of logoId
-          businessLicensePath, // Use businessLicensePath instead of businessLicenseId
-          createdBy: user.id,
-        }
-      })
+        data: createData,
+      });
     }
 
-    // Send email notification to admin
+    // Send approval email to admin
     try {
-      const emailHTML = `
-        <h2>New Agency Registration</h2>
-        <p><strong>User:</strong> ${user.name || user.email}</p>
-        <p><strong>Contact Person:</strong> ${contactPerson}</p>
-        <p><strong>Company:</strong> ${ownerName}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Phone:</strong> ${companyPhoneCode} ${companyPhone}</p>
-        <p><strong>Agency Type:</strong> ${agencyType}</p>
-        <p><strong>Website:</strong> ${website}</p>
-        <p><strong>GST Registered:</strong> ${gstRegistered ? "Yes" : "No"}</p>
-        ${gstRegistered && gstNumber ? `<p><strong>GST Number:</strong> ${gstNumber}</p>` : ""}
-        <p><strong>PAN Number:</strong> ${panNumber}</p>
-        <p><strong>Headquarters:</strong> ${headquarters}</p>
-        <p><strong>Years of Operation:</strong> ${yearsOfOperation}</p>
-        <p><strong>Registration Time:</strong> ${new Date().toLocaleString()}</p>
-      `
-
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@trekkingmiles.com";
+      
       await transporter.sendMail({
         from: process.env.SMTP_USER,
-        to: "amrutha@buyexchange.in",
-        subject: `New Agency Registration - ${ownerName}`,
-        html: emailHTML,
-      })
+        to: adminEmail,
+        subject: "New Agency Form Submission",
+        html: agencyApprovalEmailTemplate({
+          agencyId: agencyForm.id,
+          agencyName: name,
+          contactPerson,
+          email,
+          phoneNumber: phone,
+          agencyType: agencyType || "OTHER",
+          panNumber: panNumber || "",
+          headquarters: address,
+          registrationDate: new Date().toISOString(),
+          status: "PENDING",
+        }),
+      });
     } catch (emailError) {
-      console.error("Email sending error:", emailError)
+      console.error("Error sending approval email:", emailError);
       // Don't fail the request if email fails
     }
 
-    // Send email notification to anusree@buyexchange.in
-    const emailHtml = `
-      <h2>New Agency Form Submission</h2>
-      <p>A new agency form has been submitted with the following details:</p>
-      <ul>
-        <li><strong>Agency Name:</strong> ${agencyForm.name}</li>
-        <li><strong>Contact Person:</strong> ${agencyForm.contactPerson}</li>
-        <li><strong>Email:</strong> ${agencyForm.email}</li>
-        <li><strong>Phone:</strong> ${agencyForm.phoneCountryCode} ${agencyForm.phoneNumber}</li>
-        <li><strong>Agency Type:</strong> ${agencyForm.agencyType}</li>
-        <li><strong>Website:</strong> ${agencyForm.website}</li>
-        <li><strong>Submitted On:</strong> ${new Date().toLocaleString()}</li>
-      </ul>
-      <p>Please review the submission in the admin panel.</p>
-    `;
-
-    try {
-      await transporter.sendMail({
-        from: process.env.SMTP_USER,
-        to: 'anusree@buyexchange.in',
-        subject: `New Agency Submission: ${agencyForm.name}`,
-        html: emailHtml
-      });
-      console.log('Notification email sent to anusree@buyexchange.in');
-    } catch (emailError) {
-      console.error('Failed to send notification email:', emailError);
-      // Don't fail the request if email sending fails
-    }
-
-    // Return success response
-    return NextResponse.json({
+    return NextResponse.json({ 
       success: true,
       message: "Agency form submitted successfully",
-      data: {
-        id: agencyForm.id,
-        name: agencyForm.name,
-        contactPerson: agencyForm.contactPerson,
-        agencyType: agencyForm.agencyType,
-        email: agencyForm.email,
-        logoUrl: agencyForm.logoPath,
-        businessLicenseUrl: agencyForm.businessLicensePath,
-      }
-    })
-
+      form: agencyForm 
+    });
   } catch (error) {
-    console.error("Agency form submission error:", error)
-    return NextResponse.json(
-      { 
-        error: "Internal server error",
-        details: error instanceof Error ? error.message : "Unknown error"
-      },
-      { status: 500 }
-    )
+    console.error("Error creating/updating agency form:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -23,6 +23,28 @@ type Enquiry = {
   tripName?: string
 }
 
+interface DMC {
+  id: string;
+  name: string;
+  primaryContact: string;
+  phoneNumber: string;
+  designation: string;
+  email: string;
+  status: string;
+  primaryCountry: string;
+  destinationsCovered: string;
+  cities: string;
+}
+
+interface DMCItem {
+  id: string;
+  dmcId: string;
+  status: string;
+  dmc: DMC;
+  lastUpdated: string;
+  notes: string;
+}
+
 
 // Utility to get formatted currency value
 const formatNumber = (v: string) => v.replace(/[^\d.]/g, "")
@@ -64,34 +86,38 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
           const res = await fetch(`/api/enquiries?public=1&id=${encodeURIComponent(enquiryId)}`)
           if (res.ok) {
             const data = await res.json()
-            if (!cancelled) {
-              setEnquiry({
-                id: enquiryId,
-                name: data.name,
-                email: data.email,
-                phone: data.phone,
-                locations: data.locations,
-                estimatedDates: data.estimatedDates,
-                travellers: data.travellers || data.travelerCount,
-                tripName: data.tripName,
-              })
+            const newEnquiry = {
+              id: enquiryId,
+              name: data.name,
+              email: data.email,
+              phone: data.phone,
+              locations: data.locations,
+              estimatedDates: data.estimatedDates,
+              travellers: data.numberOfTravellers || data.travelerCount,
+              tripName: data.locations,
             }
+            if (!cancelled) {
+              setEnquiry(newEnquiry)
+            }
+            console.log("Enquiry data:", newEnquiry)
           }
         }
-
-        // 2) Try to fetch an existing shared itinerary (to get pdfUrl for Download button)
-        
-      } catch {
+      } catch (error) {
+        console.error("Error loading enquiry:", error)
         if (!cancelled) setError("Failed to load itinerary info")
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
-    load()
+    
+    if (enquiryId && dmcId) {
+      load()
+    }
+    
     return () => {
       cancelled = true
     }
-  }, [enquiryId])
+  }, [enquiryId, dmcId])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +130,7 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
       const quoteData = {
         enquiryId,
         dmcId,
-        amount: parseFloat(price),
+        amount: price, // Will be parsed in the API
         currency,
         comments,
         status: "PENDING", // Default status for new quotes
@@ -122,14 +148,51 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
         throw new Error(errorData.error || "Failed to create quote");
       }
   
-      // 2. Then, update the shared_dmcs status to QUOTATION_RECEIVED
+      // 2. First, get the shared DMC item ID
+      const getItemResponse = await fetch(`/api/share-dmc?enquiryId=${enquiryId}&dmcId=${dmcId}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      if (!getItemResponse.ok) {
+        const errorData = await getItemResponse.json();
+        throw new Error(errorData.error || "Failed to fetch shared DMC item");
+      }
+
+      const sharedDMCData = await getItemResponse.json();
+      
+      // Find the DMC item that matches the dmcId in any of the selectedDMCs arrays
+      let selectedDMC = null;
+      
+      // Loop through all items in the data array
+      if (sharedDMCData.data && Array.isArray(sharedDMCData.data)) {
+        for (const item of sharedDMCData.data) {
+          // Check if this item has selectedDMCs
+          if (item.selectedDMCs && Array.isArray(item.selectedDMCs)) {
+            // Try to find a matching DMC in this item's selectedDMCs
+            const match = item.selectedDMCs.find((dmc: DMCItem) => dmc.dmcId === dmcId);
+            if (match) {
+              selectedDMC = match;
+              break; // Found a match, no need to continue searching
+            }
+          }
+        }
+      }
+
+      if (!selectedDMC) {
+        console.error('Could not find matching DMC in any of the items:', sharedDMCData);
+        throw new Error(`Could not find DMC with ID: ${dmcId} in any of the shared items`);
+      }
+
+      const itemId = selectedDMC.id;
+
+      // 3. Then, update the shared_dmcs status to QUOTATION_RECEIVED
       const updateResponse = await fetch("/api/share-dmc", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "updateDMCStatus",
-          enquiryId,
-          dmcId,
+          itemId: itemId,  // Include the itemId here
           status: "QUOTATION_RECEIVED"
         }),
       });
@@ -205,7 +268,7 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
           {/* Logo */}
           <div className="flex justify-center mb-6">
             <Image
-              src="/elneera-logo.png"
+              src="/logo/elneeraf.png"
               alt="elneera"
               width={176}
               height={64}

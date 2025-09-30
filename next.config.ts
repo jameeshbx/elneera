@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
       'flagcdn.com'
     ],
   },
+  
    // Experimental features
    experimental: {
     serverActions: {

@@ -15,6 +15,7 @@ declare module "next-auth" {
       agencyId?: string | null;
       agencyFormSubmitted?: boolean;
       isActive?: boolean;
+      profileCompleted?: boolean;
     } & DefaultSession["user"];
   }
 
@@ -27,8 +28,10 @@ declare module "next-auth" {
     agencyId?: string | null;
     agencyFormSubmitted?: boolean;
     isActive?: boolean;
+    profileCompleted?: boolean;
   }
 }
+
 declare module "next-auth/jwt" {
   interface JWT {
     id: string;
@@ -39,5 +42,6 @@ declare module "next-auth/jwt" {
     agencyId?: string | null;
     agencyFormSubmitted?: boolean;
     isActive?: boolean;
+    profileCompleted?: boolean;
   }
 }

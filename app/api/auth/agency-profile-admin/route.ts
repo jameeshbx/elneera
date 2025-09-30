@@ -3,6 +3,45 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
 
+interface TeamMemberProfileImage {
+  url: string;
+}
+
+interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  profileImage: TeamMemberProfileImage | null;
+  updatedAt: Date;
+}
+
+interface TeamMemberResponse {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  lastLoggedIn: string
+  avatarColor: string
+}
+
+// Helper function to normalize logo URL
+function normalizeLogoUrl(logoPath: string | null | undefined): string | null {
+  if (!logoPath) return null;
+  
+  // If it's already a full URL, return as is
+  if (logoPath.startsWith('http')) {
+    return logoPath;
+  }
+  
+  // If it starts with /, it's already a proper path from public
+  if (logoPath.startsWith('/')) {
+    return logoPath;
+  }
+  
+  // Otherwise, ensure it has the /uploads/ prefix
+  return logoPath.startsWith('uploads/') ? `/${logoPath}` : `/uploads/${logoPath}`;
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
@@ -24,7 +63,7 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const isAuthorized = user.userType === "AGENCY" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+    const isAuthorized = user.userType === "AGENCY_ADMIN" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
 
     if (!isAuthorized) {
       return NextResponse.json(
@@ -50,14 +89,7 @@ export async function GET() {
     }
 
     // Fetch team members only if user_form table exists
-    let teamMembers: {
-      id: string
-      name: string
-      email: string
-      avatarUrl: string | null
-      lastLoggedIn: string
-      avatarColor: string
-    }[] = []
+    let teamMembers: TeamMemberResponse[] = []
 
     try {
       const tableExists = await ensureUserFormTableExists()
@@ -90,7 +122,7 @@ export async function GET() {
           return colors[Math.abs(hash) % colors.length]
         }
 
-        teamMembers = userFormRecords.map((member) => ({
+        teamMembers = userFormRecords.map((member: TeamMember) => ({
           id: member.id,
           name: member.name,
           email: member.email,
@@ -117,10 +149,6 @@ export async function GET() {
         where: {
           createdBy: user.id,
         },
-        include: {
-          logo: true,
-          businessLicense: true,
-        },
         orderBy: {
           createdAt: "desc",
         },
@@ -130,7 +158,7 @@ export async function GET() {
       // Continue without agency form data if table doesn't exist
     }
 
-    // Build company information with fallbacks
+    // Build company information with fallbacks and proper logo URL handling
     const companyInformation = {
       name: agencyForm?.contactPerson || user.companyName || user.name || "N/A",
       contactPerson: agencyForm?.contactPerson || user.name || "N/A",
@@ -149,7 +177,7 @@ export async function GET() {
         : user.phone || "N/A",
       email: agencyForm?.email || user.email,
       website: agencyForm?.website || "N/A",
-      logo: agencyForm?.logo?.url || null,
+      logo: normalizeLogoUrl(agencyForm?.logoPath),
       country: agencyForm?.country || "INDIA",
       yearOfRegistration: agencyForm?.yearOfRegistration || "N/A",
       panNo: agencyForm?.panNumber || "N/A",
@@ -157,7 +185,7 @@ export async function GET() {
       headquarters: agencyForm?.headquarters || "N/A",
       yearsOfOperation: agencyForm?.yearsOfOperation || "N/A",
       landingPageColor: agencyForm?.landingPageColor || "#0F9D58",
-      businessLicense: agencyForm?.businessLicense?.url || null,
+      businessLicense: normalizeLogoUrl(agencyForm?.businessLicensePath),
     }
 
     const response = {
@@ -171,7 +199,7 @@ export async function GET() {
       },
       accountData: {
         username: user.email,
-        password: "",
+        password: "••••••••", // Always masked for security
         role: user.role,
         location: "N/A",
         status: user.isOnline ? "Active" : "Inactive",

@@ -8,7 +8,8 @@ import { useRouter } from "next/navigation"
 import { z } from "zod"
 import { toast } from "sonner"
 
-const userTypes = ["USER", "AGENCY_ADMIN", "TEAM_LEAD"] as const
+
+const userTypes = ["USER", "AGENCY_ADMIN", "TEAM_LEAD", "ADMIN", "SUPER_ADMIN"] as const
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -71,21 +72,26 @@ export default function SignupForm() {
         throw new Error(error.message || "Something went wrong")
       }
 
-      toast.success("Account created successfully!")
+      const result = await response.json();
       
-       // Redirect all users to login page after successful signup
-        router.push("/login")
+      if (!result.success) {
+        throw new Error(result.message || "Failed to create account");
+      }
 
-
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          toast.error(error.issues[0].message)
-        } else if (error instanceof Error) {
-          toast.error(error.message)
-        } else {
-          toast.error("Something went wrong")
-        }
-      } finally {
+      toast.success("Account created successfully! Please login to continue.");
+      
+      // Redirect to login page after successful signup
+      router.push('/login');
+      return;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast.error(error.issues[0].message)
+      } else if (error instanceof Error) {
+        toast.error(error.message)
+      } else {
+        toast.error("Something went wrong")
+      }
+    } finally {
       setIsLoading(false)
     }
   }
@@ -146,13 +152,13 @@ export default function SignupForm() {
 
               <div className="relative z-10">
                 <div className="flex items-center justify-center md:justify-start">
-                  <Image
-                                     src="/elneera-white.png"
-                                     alt="Trekking Miles Logo"
-                                     width={200}
-                                     height={80}
-                                     className="object-contain mt-[-125px] w-[360px] "
-                                   />
+                <Image
+  src="/logo/elneeraw.png"
+  alt="Trekking Miles Logo"
+  width={50}
+  height={20}
+  className="object-contain mt-[56px] w-[137px] ml-[126px]"
+/>
                                  </div>
                 
 
@@ -420,4 +426,3 @@ export default function SignupForm() {
     </div>
   )
 }
-       
