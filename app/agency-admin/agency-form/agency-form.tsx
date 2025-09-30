@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent, useEffect } from "react";
 import Image from "next/image";
 import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 import { useForm, SubmitHandler, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { agencyFormSchemaBase, type AgencyFormValues } from "@/lib/agency";
+import type { z } from "zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useColorIntegration } from '@/hooks/useColorIntegration'
@@ -27,17 +28,15 @@ type AgencyType =
     | "PROPRIETORSHIP"
     | "PARTNERSHIP";
 
-// Add type for PAN type options
-type PanType = "INDIVIDUAL" | "COMPANY" | "TRUST" | "OTHER";
+// Extract PanType from the schema
+type PanType = z.infer<typeof agencyFormSchemaBase>["panType"];
 
 export default function AgencyForm() {
+    // All hooks must be called at the top level
     const router = useRouter();
-    const {  updateColor } = useColorIntegration({
-        onColorChange: (color) => {
-            // This will be called when color is updated
-            console.log('Color updated in agency form:', color)
-        }
-    })
+    
+    // State hooks
+    const [isLoading, setIsLoading] = useState(true);
     const [color, setColor] = useState("#4ECDC4");
     const [tempColor, setTempColor] = useState("#4ECDC4");
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -49,13 +48,14 @@ export default function AgencyForm() {
     const [licenseUploaded, setLicenseUploaded] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Form hook
     const {
         register,
         handleSubmit,
         setValue,
         watch,
         trigger,
-        formState: { errors,  },
+        formState: { errors },
     } = useForm<AgencyFormValues>({
         resolver: zodResolver(agencyFormSchemaBase) as unknown as Resolver<AgencyFormValues, object>,
         mode: "onChange",
@@ -69,7 +69,46 @@ export default function AgencyForm() {
         },
     });
 
+    // Watch form values
     const gstRegistered = watch("gstRegistered");
+
+    // Other hooks
+    const { updateColor } = useColorIntegration({
+        onColorChange: (color) => {
+            console.log('Color updated in agency form:', color);
+        }
+    });
+
+    // Check if the user has already submitted the form
+    useEffect(() => {
+        const checkExistingForm = async () => {
+            try {
+                const response = await fetch('/api/agencyform');
+                const result = await response.json();
+                
+                if (result.data) {
+                    // If form exists, redirect to profile
+                    router.push('/agency-admin/dashboard/profile');
+                } else {
+                    setIsLoading(false);
+                }
+            } catch (error) {
+                console.error('Error checking existing form:', error);
+                setIsLoading(false);
+            }
+        };
+
+        checkExistingForm();
+    }, [router]);
+
+    // Show loading state while checking
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900"></div>
+            </div>
+        );
+    }
 
     const validateFile = (file: File, maxSize: number = 3 * 1024 * 1024): boolean => {
         if (file.size > maxSize) {

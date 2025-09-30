@@ -6,6 +6,7 @@ import nodemailer from "nodemailer"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 import { existsSync } from "fs"
+import { agencyApprovalEmailTemplate } from "@/lib/email-templates"
 // Define enum values as string literals (fallback if Prisma enums don't exist)
 const AGENCY_TYPES = [
   'PRIVATE_LIMITED', 'PROPRIETORSHIP', 'PARTNERSHIP', 'PUBLIC_LIMITED', 'LLP',
@@ -61,6 +62,124 @@ function isValidAgencyType(value: string): value is AgencyType {
 function isValidPanType(value: string): value is PanType {
   return PAN_TYPES.includes(value as PanType)
 }
+
+export async function GET() {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Find agency form for this user
+    const agencyForm = await prisma.agencyForm.findFirst({
+      where: { 
+        OR: [
+          { createdBy: user.id },  // Check createdBy
+          { agencyId: user.id }    // Check agencyId
+        ]
+      },
+      select: {
+        id: true,
+        name: true,
+        contactPerson: true,
+        email: true,
+        status: true,
+        // Add other fields you need
+      },
+    });
+
+    if (!agencyForm) {
+      return NextResponse.json({ data: null }, { status: 200 });
+    }
+
+    return NextResponse.json({ data: agencyForm }, { status: 200 });
+  } catch (error) {
+    console.error("Error fetching agency form:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch agency form" },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT endpoint for updating agency status
+// This is the old endpoint at /api/agencyform
+// Keeping it for backward compatibility
+export async function PUT(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session || !session.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Only allow admin users to update status
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+    });
+
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { id, status } = await request.json();
+
+    if (!id || !['ACTIVE', 'INACTIVE'].includes(status)) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
+    }
+
+    const updatedAgency = await prisma.agencyForm.update({
+      where: { id },
+      data: { status },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        status: true,
+      },
+    });
+
+    // If status is ACTIVE, create an Agency record if it doesn't exist
+    if (status === 'ACTIVE') {
+      const agency = await prisma.agency.findFirst({
+        where: { name: updatedAgency.name }
+      });
+
+      if (!agency) {
+        await prisma.agency.create({
+          data: {
+            name: updatedAgency.name,
+            config: {},
+            createdBy: user.id,
+          },
+        });
+      }
+    }
+
+    return NextResponse.json({ success: true, data: updatedAgency });
+  } catch (error) {
+    console.error("Error updating agency status:", error);
+    return NextResponse.json(
+      { error: "Failed to update agency status" },
+      { status: 500 }
+    );
+  }
+}
+
+
 
 export async function POST(request: NextRequest) {
   try {
@@ -192,6 +311,7 @@ export async function POST(request: NextRequest) {
           yearsOfOperation,
           logoPath,
           businessLicensePath,
+          agencyId: user.id,
           updatedAt: new Date(),
         }
       })
@@ -221,68 +341,49 @@ export async function POST(request: NextRequest) {
           yearsOfOperation,
           logoPath,
           businessLicensePath,
+          agencyId: user.id,
           createdBy: user.id,
         }
       })
     }
 
-    // Send email notification to admin
-    try {
-      const emailHTML = `
-        <h2>New Agency Registration</h2>
-        <p><strong>User:</strong> ${user.name || user.email}</p>
-        <p><strong>Contact Person:</strong> ${contactPerson}</p>
-        <p><strong>Company:</strong> ${ownerName}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Phone:</strong> ${companyPhoneCode} ${companyPhone}</p>
-        <p><strong>Agency Type:</strong> ${agencyType}</p>
-        <p><strong>Website:</strong> ${website}</p>
-        <p><strong>GST Registered:</strong> ${gstRegistered ? "Yes" : "No"}</p>
-        ${gstRegistered && gstNumber ? `<p><strong>GST Number:</strong> ${gstNumber}</p>` : ""}
-        <p><strong>PAN Number:</strong> ${panNumber}</p>
-        <p><strong>Headquarters:</strong> ${headquarters}</p>
-        <p><strong>Years of Operation:</strong> ${yearsOfOperation}</p>
-        <p><strong>Registration Time:</strong> ${new Date().toLocaleString()}</p>
-      `
+    // Generate email HTML using the template with all agency details
+    const emailHTML = agencyApprovalEmailTemplate({
+      agencyId: agencyForm.id,
+      agencyName: ownerName,
+      contactPerson: contactPerson,
+      email: email,
+      phoneNumber: `${companyPhoneCode} ${companyPhone}`,
+      agencyType: agencyType,
+      website: website,
+      gstNumber: gstRegistered ? gstNumber : undefined,
+      panNumber: panNumber || 'Not provided',
+      headquarters: headquarters,
+      registrationDate: new Date().toISOString(),
+      status: 'PENDING'
+    });
 
-      await transporter.sendMail({
-        from: process.env.SMTP_USER,
-        to: "amrutha@buyexchange.in",
-        subject: `New Agency Registration - ${ownerName}`,
-        html: emailHTML,
-      })
+    // Send email notification to admin and other recipients
+    try {
+      // Array of email recipients
+      const recipients = [
+        process.env.ADMIN_EMAIL,
+        'anand@buyexchange.in',
+        'amrutha@buyexchange.in'
+      ];
+
+      // Send email to each recipient
+      await Promise.all(recipients.map(recipient => 
+        transporter.sendMail({
+          from: process.env.SMTP_FROM || process.env.SMTP_USER,
+          to: recipient,
+          subject: `New Agency Registration - ${ownerName}`,
+          html: emailHTML,
+        })
+      ));
     } catch (emailError) {
       console.error("Email sending error:", emailError)
       // Don't fail the request if email fails
-    }
-
-    // Send email notification to anusree@buyexchange.in
-    const emailHtml = `
-      <h2>New Agency Form Submission</h2>
-      <p>A new agency form has been submitted with the following details:</p>
-      <ul>
-        <li><strong>Agency Name:</strong> ${agencyForm.name}</li>
-        <li><strong>Contact Person:</strong> ${agencyForm.contactPerson}</li>
-        <li><strong>Email:</strong> ${agencyForm.email}</li>
-        <li><strong>Phone:</strong> ${agencyForm.phoneCountryCode} ${agencyForm.phoneNumber}</li>
-        <li><strong>Agency Type:</strong> ${agencyForm.agencyType}</li>
-        <li><strong>Website:</strong> ${agencyForm.website}</li>
-        <li><strong>Submitted On:</strong> ${new Date().toLocaleString()}</li>
-      </ul>
-      <p>Please review the submission in the admin panel.</p>
-    `;
-
-    try {
-      await transporter.sendMail({
-        from: process.env.SMTP_USER,
-        to: 'anusree@buyexchange.in',
-        subject: `New Agency Submission: ${agencyForm.name}`,
-        html: emailHtml
-      });
-      console.log('Notification email sent to anusree@buyexchange.in');
-    } catch (emailError) {
-      console.error('Failed to send notification email:', emailError);
-      // Don't fail the request if email sending fails
     }
 
     // Return success response
