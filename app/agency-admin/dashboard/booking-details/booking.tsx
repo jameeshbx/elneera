@@ -1,6 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {  Calendar,  X, Loader2, Plus, Save, Edit2, MapPin, Users, Phone, User } from "lucide-react";
-import { Itinerary } from '@/lib/types';
+import { Calendar, X, Loader2, Plus, Save, Edit2, MapPin, Users, Phone, User } from "lucide-react";
+
+// Define Itinerary type based on usage
+interface Itinerary {
+  activeStatus?: boolean;
+  enquiryId?: string | null;
+  customerId?: string | null;
+  selectedDMCs?: Array<{
+    status: string;
+    dmc?: { name?: string };
+    dmcName?: string;
+  }>;
+}
 
 
 // Type definitions
@@ -20,13 +31,7 @@ interface Feedback {
   createdAt: string;
 }
 
-interface Reminder {
-  id: string;
-  date: string;
-  note: string;
-  isCompleted?: boolean;
-  createdAt?: string;
-}
+// Reminder interface is not used in the component
 
 interface Service {
   time: string;
@@ -72,7 +77,10 @@ interface NewFeedback {
 
 interface NewReminder {
   date: string;
-  note: string;
+  time: string;
+  message: string;
+  status: 'pending' | 'completed' | 'dismissed';
+  note: string; // Made required since it's used in required fields
 }
 
 // Define interfaces for mock data structure
@@ -143,11 +151,6 @@ interface NewRow {
 
 const statusOptions = ["PENDING", "CONFIRMED", "CANCELLED", "NOT_INCLUDED", "IN_PROGRESS", "COMPLETED"];
 
-// Helper function to transform DMC data
-const transformDMCData = (dmc: DMCData) => ({
-  name: dmc.name
-});
-
 const BookingProgressDashboard = () => {
   // Get enquiry ID from URL params or use default
   const [itineraryId] = useState(() => {
@@ -184,21 +187,29 @@ const BookingProgressDashboard = () => {
   // Store edited values separately to avoid losing focus
   const [editingValues, setEditingValues] = useState<{ [key: string]: ProgressData }>({});
 
-  // Feedback state
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [showAddNoteModal, setShowAddNoteModal] = useState<boolean>(false);
   const [newFeedback, setNewFeedback] = useState<NewFeedback>({ note: "" });
 
   // Reminder state
-  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [showReminderModal, setShowReminderModal] = useState<boolean>(false);
-  const [newReminder, setNewReminder] = useState<NewReminder>({ date: "", note: "" });
+  const [newReminder, setNewReminder] = useState<NewReminder>({
+    date: '',
+    time: '',
+    message: '',
+    status: 'pending',
+    note: '' // Initialize with empty string as required by the interface
+  });
+  const [reminders, setReminders] = useState<BookingItem[]>([] as BookingItem[]);
+
   // Context persistence and overview extras
   const [assignedStaffName, setAssignedStaffName] = useState<string>("");
   const [selectedDmcName, setSelectedDmcName] = useState<string>("");
   const [csvItineraryId, setCsvItineraryId] = useState<string>("");
   const [, setFilteredServices] = useState<Service[]>([]);
-
+  // Error and retry state
+  const [, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
 
   const getCsvFilenameForLocation = (loc: string): string => {
     const normalized = (loc || '').toLowerCase();
@@ -344,26 +355,131 @@ const BookingProgressDashboard = () => {
 
   // Load booking progress from API - filtered by customer
   const loadProgressData = useCallback(async () => {
+    let response: Response | null = null;
+    
     try {
+      setError(null);
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
       
       const itineraryIdToUse = csvItineraryId || itineraryId;
-      const response = await fetch(`/api/booking-progress/${itineraryIdToUse}?${params.toString()}`);
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success && result.data) {
-          const formattedData = result.data.map((item: ProgressData) => ({
-            ...item,
-            date: new Date(item.date).toISOString().split('T')[0]
-          }));
-          setProgressData(formattedData);
-        }
+      if (!itineraryIdToUse) {
+        console.warn('No itinerary ID available to fetch progress data');
+        return;
       }
+
+      setLoading(true);
+      console.log(`[${new Date().toISOString()}] Fetching booking progress for:`, { 
+        itineraryId: itineraryIdToUse, 
+        enquiryId,
+        retryCount 
+      });
+      
+      // Clear previous data while loading
+      setProgressData([]);
+      
+      response = await fetch(`/api/booking-progress/${itineraryIdToUse}?${params.toString()}`, {
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store' // Prevent caching issues
+      });
+      
+      console.log(`[${new Date().toISOString()}] Received response status:`, response.status);
+      
+      // Handle non-OK responses first
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json().catch(() => ({}));
+        } catch {
+          const text = await response.text();
+          throw new Error(`HTTP ${response.status} - ${text || 'No error details'}`);
+        }
+        
+        console.error('API Error Response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        });
+        
+        const errorMessage = errorData?.error || 
+                           errorData?.message || 
+                           `Server returned ${response.status} ${response.statusText}`;
+        
+        throw new Error(errorMessage);
+      }
+      
+      // Parse successful response
+      const result = await response.json().catch(() => {
+        throw new Error('Failed to parse server response');
+      });
+      
+      console.log('API Response:', result);
+      
+      // Validate response structure
+      if (!result || typeof result !== 'object') {
+        throw new Error('Invalid response format from server');
+      }
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Request failed');
+      }
+      
+      // Process data
+      const items = Array.isArray(result.data) ? result.data : [];
+      console.log(`Processing ${items.length} progress items`);
+      
+      const formattedData = items.map((item: ProgressData) => {
+        try {
+          return {
+            id: item.id || `temp-${Math.random().toString(36).substr(2, 9)}`,
+            date: item.date ? (typeof item.date === 'string' 
+              ? item.date.split('T')[0] // Extract just the date part
+              : new Date(item.date).toISOString().split('T')[0]) : '',
+            service: String(item.service || 'Unnamed Service').trim(),
+            status: item.status || 'PENDING',
+            dmcNotes: item.dmcNotes || null,
+            createdAt: item.createdAt || new Date().toISOString(),
+            updatedAt: item.updatedAt || new Date().toISOString()
+          };
+        } catch (error) {
+          console.error('Error formatting progress item:', error, 'Item:', item);
+          return null;
+        }
+      }).filter((item: ProgressData | null): item is ProgressData => item !== null);
+      
+      console.log(`Successfully processed ${formattedData.length} items`);
+      setProgressData(formattedData);
+      
     } catch (error) {
-      console.error('Error loading progress data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load booking progress';
+      console.error('Error in loadProgressData:', {
+        error: errorMessage,
+        url: response?.url,
+        status: response?.status,
+        retryCount
+      });
+      
+      setError(errorMessage);
+      setProgressData([]);
+      
+      // Auto-retry after 5 seconds (max 3 retries)
+      if (retryCount < 3) {
+        const nextRetry = retryCount + 1;
+        console.log(`Will retry in 5 seconds... (${nextRetry}/3)`);
+        
+        const retryTimer = setTimeout(() => {
+          console.log(`Retrying... Attempt ${nextRetry}/3`);
+          setRetryCount(nextRetry);
+        }, 5000);
+        
+        return () => clearTimeout(retryTimer);
+      } else {
+        console.error('Max retries reached, giving up');
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [itineraryId, enquiryId, csvItineraryId]);
+  }, [itineraryId, enquiryId, csvItineraryId, retryCount, setError, setLoading, setProgressData]);
 
   // Load feedback data from API - filtered by customer
   const loadFeedbackData = useCallback(async () => {
@@ -442,35 +558,9 @@ const BookingProgressDashboard = () => {
     }
   }, [itineraryServices]);
 
-  // Load data on component mount with better persistence
-  // Fetch data based on enquiry ID
-useEffect(() => {
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/booking-details?enquiryId=${enquiryId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setProgressData(data.progressData);
-        setItineraryData(data.itineraryData);
-        setItineraryServices(data.itineraryServices);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (enquiryId) {
-    fetchData();
-  }
-}, [enquiryId]);
-
-
+  // Load data on component mount and when dependencies change
   useEffect(() => {
-    const fetchBookingDetails = async () => {
-      setLoading(true);
+    const fetchData = async () => {
 
       try {
         // Enhanced context persistence - restore from localStorage if URL lacks params
@@ -577,7 +667,7 @@ useEffect(() => {
       setLoading(false);
     };
 
-    fetchBookingDetails();
+    fetchData();
   }, [enquiryId, itineraryId, locationParam, loadItineraryFromMockData, loadProgressData, loadFeedbackData, loadReminderData]);
 
   // Add refresh functionality
@@ -612,24 +702,24 @@ useEffect(() => {
             
             // Find the active itinerary for this specific customer/enquiry
             const customerItinerary = list.find((it: Itinerary) => 
-  it.activeStatus && 
-  (it.enquiryId === enquiryId || it.customerId === enquiryId)
-) || list.find((it: Itinerary) => 
-  it.enquiryId === enquiryId || it.customerId === enquiryId
-);
+              it.activeStatus && 
+              (it.enquiryId === enquiryId || it.customerId === enquiryId)
+            ) || list.find((it: Itinerary) => 
+              it.enquiryId === enquiryId || it.customerId === enquiryId
+            );
 
-if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.selectedDMCs.length > 0) {
-  // Find the DMC with the highest status or first active one
-  const activeDmc = customerItinerary.selectedDMCs.find((dmc: { status: string }) => 
-    dmc.status === 'QUOTATION_RECEIVED' || dmc.status === 'CONFIRMED'
-  ) || customerItinerary.selectedDMCs[0];
-  
-  if (activeDmc) {
-    const name = activeDmc?.dmc?.name || activeDmc?.dmcName || 'Selected DMC';
-    setSelectedDmcName(name);
-    console.log('Selected DMC for customer:', name);
-  }
-} else {
+            if (customerItinerary?.selectedDMCs?.length) {
+              // Find the DMC with the highest status or first active one
+              const activeDmc = customerItinerary.selectedDMCs.find((dmc: { status: string }) => 
+                dmc.status === 'QUOTATION_RECEIVED' || dmc.status === 'CONFIRMED'
+              ) || customerItinerary.selectedDMCs[0];
+              
+              if (activeDmc) {
+                const name = activeDmc?.dmc?.name || activeDmc?.dmcName || 'Selected DMC';
+                setSelectedDmcName(name);
+                console.log('Selected DMC for customer:', name);
+              }
+            } else {
   setSelectedDmcName('No DMC Selected');
 }
           }
@@ -666,44 +756,119 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
 
   // Add new progress row
   const handleAddProgress = async () => {
-    if (!newRow.date || !newRow.service) return;
+    if (!newRow.date) {
+      setError('Date is required');
+      return;
+    }
+    
+    const serviceName = newRow.service === 'custom' ? (newRow.customService || '') : newRow.service;
+    if (!serviceName || !serviceName.trim()) {
+      setError('Service is required');
+      return;
+    }
 
     setSaving(true);
+    setError(null);
+    
     try {
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
       
       const itineraryIdToUse = csvItineraryId || itineraryId;
+      if (!itineraryIdToUse) {
+        throw new Error('No valid itinerary ID found');
+      }
+
+      console.log('Adding new progress:', {
+        date: newRow.date,
+        service: serviceName,
+        status: newRow.status,
+        itineraryId: itineraryIdToUse,
+        enquiryId
+      });
+
       const response = await fetch(`/api/booking-progress/${itineraryIdToUse}?${params.toString()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
         body: JSON.stringify({
           date: newRow.date,
-          service: newRow.service === 'custom' ? (newRow.customService || '') : newRow.service,
-          status: newRow.status,
-          dmc: newRow.dmc ? transformDMCData(newRow.dmc as DMCData) : null,
+          service: serviceName,
+          status: newRow.status || 'PENDING',
+          dmcNotes: newRow.dmcNotes || null,
         })
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          const formattedData = {
-            ...result.data,
-            date: new Date(result.data.date).toISOString().split('T')[0]
-          };
-          setProgressData(prev => [...prev, formattedData]);
-          setNewRow({ date: "", service: "", status: "PENDING", dmcNotes: "", customService: "" });
-          setShowAddProgressModal(false);
+      console.log('Add progress response status:', response.status);
+      
+      // Handle non-OK responses
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          const text = await response.text();
+          throw new Error(`Server error: ${response.status} - ${text || 'No details'}`);
         }
-      } else {
-        console.error('Failed to add progress');
+        
+        const errorMessage = errorData?.error || 
+                           errorData?.message || 
+                           `Failed to add progress (${response.status})`;
+        
+        throw new Error(errorMessage);
       }
 
+      // Parse successful response
+      const result = await response.json().catch(() => {
+        throw new Error('Failed to parse server response');
+      });
+
+      console.log('Add progress result:', result);
+      
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Failed to add progress');
+      }
+
+      // Format the new progress item
+      const newProgress = {
+        id: result.data?.id || `temp-${Date.now()}`,
+        date: result.data?.date || newRow.date,
+        service: serviceName,
+        status: result.data?.status || newRow.status || 'PENDING',
+        dmcNotes: result.data?.dmcNotes || newRow.dmcNotes || null,
+        createdAt: result.data?.createdAt || new Date().toISOString(),
+        updatedAt: result.data?.updatedAt || new Date().toISOString()
+      };
+      
+      // Update the UI
+      setProgressData(prev => [...prev, newProgress]);
+      
+      // Reset the form
+      setNewRow({ 
+        date: "", 
+        service: "", 
+        status: "PENDING", 
+        dmcNotes: "", 
+        customService: "" 
+      });
+      
+      // Close the modal
+      setShowAddProgressModal(false);
+      
     } catch (error) {
-      console.error('Error adding progress:', error);
+      console.error('Error in handleAddProgress:', error);
+      setError(error instanceof Error ? error.message : 'Failed to add progress');
+      
+      // Auto-retry after 3 seconds
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
+      
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   // Start editing - create a copy of the item to edit
@@ -806,7 +971,6 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
       } else {
         console.error('Failed to add feedback');
       }
-
     } catch (error) {
       console.error('Error adding feedback:', error);
     }
@@ -815,7 +979,7 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
 
   // Add new reminder
   const handleAddReminder = async () => {
-    if (!newReminder.date || !newReminder.note.trim()) return;
+    if (!newReminder.date || !(newReminder.note || '').trim()) return;
 
     setSaving(true);
     try {
@@ -828,7 +992,10 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: newReminder.date,
-          note: newReminder.note
+          time: newReminder.time || '',
+          message: newReminder.message || '',
+          status: newReminder.status || 'pending',
+          note: newReminder.note || ''
         })
       });
 
@@ -840,14 +1007,18 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
             date: new Date(result.data.date).toISOString().split('T')[0]
           };
           setReminders(prev => [...prev, formattedData]);
-          setNewReminder({ date: "", note: "" });
+          setNewReminder({
+            date: "",
+            time: "",
+            message: "",
+            status: 'pending',
+            note: ""
+          });
           setShowReminderModal(false);
         }
       } else {
         console.error('Failed to add reminder');
       }
-
-    
     } catch (error) {
       console.error('Error adding reminder:', error);
     }
@@ -1007,7 +1178,14 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
               type="date"
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               value={newReminder.date}
-              onChange={e => setNewReminder(prev => ({ ...prev, date: e.target.value }))}
+              onChange={e => setNewReminder(prev => ({
+                ...prev,
+                date: e.target.value,
+                // Ensure required fields are preserved
+                time: prev.time || '',
+                message: prev.message || '',
+                status: prev.status || 'pending'
+              }))}
               disabled={saving}
             />
           </div>
@@ -1017,7 +1195,14 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
               className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-green-500 focus:border-transparent resize-vertical"
               placeholder="Enter reminder details..."
               value={newReminder.note || ''}
-              onChange={e => setNewReminder(prev => ({ ...prev, note: e.target.value }))}
+              onChange={e => setNewReminder(prev => ({
+                ...prev,
+                note: e.target.value,
+                // Ensure required fields are preserved
+                time: prev.time || '',
+                message: prev.message || '',
+                status: prev.status || 'pending'
+              }))}
               disabled={saving}
             />
           </div>
@@ -1026,7 +1211,7 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
           <button
             onClick={handleAddReminder}
             className="w-full bg-green-800 text-white py-3 rounded-lg font-medium hover:bg-green-900 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            disabled={!newReminder.date || !newReminder.note.trim() || saving}
+            disabled={!newReminder.date || !(newReminder.note || '').trim() || saving}
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {saving ? 'Setting...' : 'Set Reminder'}
@@ -1114,6 +1299,7 @@ if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.sel
                       </tr>
                     ) : (
                       progressData.map((item) => {
+              
                         const isEditing = editingRow === item.id;
                         const editedItem = editingValues[item.id] || item;
 

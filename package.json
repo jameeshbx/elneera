@@ -12,7 +12,7 @@
     "prepare": "husky install"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.887.0",
+    "@aws-sdk/client-s3": "^3.893.0",
     "@aws-sdk/s3-request-presigner": "^3.887.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.0.1",
@@ -49,6 +49,7 @@
     "date-fns": "^4.1.0",
     "formidable": "^3.5.4",
     "husky": "^9.1.7",
+    "install": "^0.13.0",
     "lucide-react": "^0.525.0",
     "mapbox-gl": "^3.14.0",
     "next": "15.2.3",

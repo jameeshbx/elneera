@@ -856,18 +856,21 @@ export async function PUT(request: NextRequest) {
       console.log("Customer email - Selected itinerary:", selectedItinerary)
       
       if (selectedItinerary?.pdfUrl) {
+        // Ensure pdfUrl is a string
+        const pdfUrl = String(selectedItinerary.pdfUrl);
         // Try multiple possible PDF paths
         const possiblePaths = [
-          path.join(process.cwd(), 'public', selectedItinerary.pdfUrl),
-          path.join(process.cwd(), selectedItinerary.pdfUrl),
-          selectedItinerary.pdfUrl.startsWith('/') ? 
-            path.join(process.cwd(), 'public', selectedItinerary.pdfUrl.substring(1)) : 
-            path.join(process.cwd(), 'public', selectedItinerary.pdfUrl)
+          path.join(process.cwd(), 'public', pdfUrl),
+          path.join(process.cwd(), pdfUrl),
+          pdfUrl.startsWith('/') ? 
+            path.join(process.cwd(), 'public', pdfUrl.substring(1)) : 
+            path.join(process.cwd(), 'public', pdfUrl)
         ]
         
         let pdfFound = false
         for (const pdfPath of possiblePaths) {
           console.log("Customer email - Checking PDF path:", pdfPath)
+          
           if (fs.existsSync(pdfPath)) {
             console.log("Customer email - PDF found at:", pdfPath)
             emailAttachments.push({

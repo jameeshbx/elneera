@@ -19,7 +19,8 @@ model File {
   // Agency Form relations (one-to-one)
   agencyBusinessLicense AgencyForm? @relation("AgencyFormBusinessLicense")
   agencyLogo            AgencyForm? @relation("AgencyFormLogo")
-
+  // Opposite relation for Agency.logo
+  agencyLogoAgency      Agency?     @relation("AgencyLogo")
   // Other existing relations
   dmcPaymentReceipt   DmcPayment?    @relation("DmcPaymentReceipt")
   managerProfile      Manager?       @relation("ManagerProfile")
@@ -27,6 +28,7 @@ model File {
   userProfileImage    User?          @relation("UserProfileImage")
   paymentMethodQRCode PaymentMethod? @relation("PaymentMethodQRCode")
   adminProfile        Admin?         @relation("AdminProfile")
+
 
   // QR Code relation
   agencyPaymentMethodQRCode AgencyPaymentMethod? @relation("AgencyPaymentMethodQRCode")
@@ -44,6 +46,7 @@ model User {
   emailVerified DateTime?
   status      UserStatus @default(ACTIVE)
   profileCompleted Boolean @default(false)
+
   businessType   BusinessType
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -68,17 +71,22 @@ model User {
 }
 
 model Agency {
-  id             String                @id @default(uuid())
-  name           String
-  config         Json
-  createdBy      String
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  subscriptions  Subscription[]
-  users          User[]
-  paymentMethods AgencyPaymentMethod[]
+  id                String                @id @default(uuid())
+  name              String
+  config            Json
+  createdBy         String
+  logoId            String?               @unique
+  logo              File?                 @relation("AgencyLogo", fields: [logoId], references: [id])
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  subscriptions     Subscription[]
+  users             User[]
+  paymentMethods    AgencyPaymentMethod[]
+  customerPayments  CustomerPayment[]
+  forms             AgencyForm[]
 
-  customerPayments CustomerPayment[]
+  // Opposite relation for enquiries.agency
+  enquiries         enquiries[]
 
   @@index([name])
 }
@@ -191,6 +199,8 @@ model Subscription {
 }
 
 model AgencyForm {
+  agencyId            String?
+  agency              Agency?        @relation(fields: [agencyId], references: [id])
   id                  String      @id @default(uuid())
   name                String
   config              Json        @default("{}")
@@ -348,10 +358,11 @@ model PaymentMethod {
 model enquiries {
   id                 String              @id @default(uuid())
   name               String
-  agencyId           String? 
   phone              String
   email              String
   companyName        String?
+  agencyId           String?             @db.Uuid
+  agency             Agency?             @relation(fields: [agencyId], references: [id], onDelete: SetNull)
   locations          String?
   tourType           String?
   estimatedDates     String?
@@ -441,7 +452,7 @@ model itineraries {
   updatedAt                  DateTime                  @updatedAt
   mustSeeSpots               String?
   accommodation              Json?
-  dailyItinerary             Json?
+  dailyItinerary             Json?                     // This will store the rich content for each day
   customerId                 String?
   activeStatus               Boolean?                  @default(true)
   budgetEstimation           Json?
@@ -453,7 +464,7 @@ model itineraries {
   cancellationPolicyType     CancellationPolicyType?   @default(DEFAULT)
   customCancellationDeadline Int?
   customCancellationTerms    String?
-  pdfUrl                     String?                   @map("pdf_url")
+  pdfUrl                     Json?                    @map("pdf_url") @db.JsonB
   customer                   customers?                @relation(fields: [customerId], references: [id])
   enquiry                    enquiries                 @relation(fields: [enquiryId], references: [id])
   feedbacks                  customer_feedbacks[]
@@ -462,14 +473,19 @@ model itineraries {
   sharedCustomerPdfs         SharedCustomerPdf[]
   customerPayment            CustomerPayment[]
   originalPdfUrl             String?                  @map("original_pdf_url")
-  editedPdfUrl               String?                  @map("edited_pdf_url")
+  editedPdfUrl               Json?                    @map("edited_pdf_url") @db.JsonB
   isEdited                   Boolean?                 @default(false) @map("is_edited")
   editedAt                   DateTime?                @map("edited_at")
+  editedContent              String?
+  activePdfVersion    String?
+  lastPdfRegeneratedAt DateTime?
+  editedData          Json?
+ 
+  pdfVersions        PDFVersion[]
   richContent                String?                 @db.Text          // New field for rich text content
-
-  BookingProgress BookingProgress[]
-  BookingFeedback BookingFeedback[]
-  BookingReminder booking_reminder[]
+  BookingProgress            BookingProgress[]
+  BookingFeedback            BookingFeedback[]
+  BookingReminder            booking_reminder[]
 
   @@index([enquiryId])
   @@index([customerId])
@@ -572,9 +588,10 @@ model EmailLog {
   @@index([recipientEmail])
   @@index([status])
   @@index([emailType])
-  @@index([sharedCustomerPdfId], map: "EmailLog_sharedCustomerPdfId_idx")
+  @@index([sharedCustomerPdfId], map: "EmailLog_sharedCustomerPdfId_idx") 
   @@map("email_logs")
 }
+
 
 model customers {
   id                 String               @id @default(cuid())
@@ -613,6 +630,7 @@ model customer_feedbacks {
   @@map("customer_feedbacks")
 }
 
+
 model sent_itineraries {
   id             String  @id @default(cuid())
   enquiryId      String?
@@ -620,19 +638,18 @@ model sent_itineraries {
   email          String
   whatsappNumber String?
   notes          String?
-
-  status       String       @default("sent")
-  sentDate     DateTime     @default(now())
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  customerId   String
-  itineraryId  String?
-  emailSent    Boolean      @default(false)
-  whatsappSent Boolean      @default(false)
-  pdfUrl       String?   @map("pdf_url")
-  isEdited     Boolean   @default(false)
-  customer     customers    @relation(fields: [customerId], references: [id])
-  itinerary    itineraries? @relation(fields: [itineraryId], references: [id])
+  status         String    @default("sent")
+  sentDate       DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  customerId     String
+  itineraryId    String?
+  emailSent      Boolean   @default(false)
+  whatsappSent   Boolean   @default(false)
+  pdfUrl         String?   @map("pdf_url")
+  isEdited       Boolean   @default(false)
+  customer       customers    @relation(fields: [customerId], references: [id])
+  itinerary      itineraries? @relation(fields: [itineraryId], references: [id])
 
   @@index([customerId])
   @@index([itineraryId])
@@ -958,6 +975,21 @@ model PaymentHistory {
 
   @@index([customerPaymentId])
   @@map("payment_histories")
+}
+
+
+model PDFVersion {
+  id        String   @id @default(cuid())
+  itineraryId String
+  url       String
+  version   Int
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  metadata  Json?    
+
+  itinerary   itineraries @relation(fields: [itineraryId], references: [id])
+
+  @@index([itineraryId])
 }
 
 enum CustomerPaymentstatus {
