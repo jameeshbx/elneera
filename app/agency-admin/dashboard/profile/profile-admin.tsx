@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import { Eye, Facebook, Twitter, Instagram } from "lucide-react"
+import { Eye} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useSession } from "next-auth/react"
 import { AgencyBankDetailsModal } from "./add-bank-details"
@@ -511,33 +511,20 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-3 gap-2">
                 <span className="text-sm font-medium">Mobile:</span>
-                <span className="text-sm text-gray-600 col-span-2">{profileData.mobile || "N/A"}</span>
+                <span className="text-sm text-gray-600 col-span-2">{companyInformation.mobile}</span>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <span className="text-sm font-medium">Email:</span>
                 <span className="text-sm text-gray-600 col-span-2">{profileData.email}</span>
               </div>
-
+             
               <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Location:</span>
-                <span className="text-sm text-gray-600 col-span-2">{profileData.location || "N/A"}</span>
+                <span className="text-sm font-medium">Country:</span>
+                <span className="text-sm text-gray-600 col-span-2">{companyInformation.country}</span>
               </div>
+              
 
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Social Media:</span>
-                <div className="flex gap-2 col-span-2">
-                  <button className="text-teal-500 hover:text-teal-600">
-                    <Facebook size={16} />
-                  </button>
-                  <button className="text-teal-500 hover:text-teal-600">
-                    <Twitter size={16} />
-                  </button>
-                  <button className="text-teal-500 hover:text-teal-600">
-                    <Instagram size={16} />
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
 

@@ -148,10 +148,10 @@ export const agencyApprovalEmailTemplate = ({
     <div style="margin: 30px 0 20px; text-align: center;">
       <h3 style="color: #2c3e50; margin-bottom: 15px;">Action Required</h3>
       <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/approve?agencyId=${agencyId}" class="btn btn-approve" style="min-width: 120px; text-decoration: none;">
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/approve?agencyId=${agencyId}" class="btn btn-approve text-white" style="min-width: 120px; text-decoration: none;">
           Approve
         </a>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/reject?agencyId=${agencyId}" class="btn btn-reject" style="min-width: 120px; text-decoration: none;">
+        <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/reject?agencyId=${agencyId}" class="btn btn-reject text-white" style="min-width: 120px; text-decoration: none;">
           Reject
         </a>
       </div>

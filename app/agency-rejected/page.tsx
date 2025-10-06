@@ -14,7 +14,7 @@ export default function AgencyRejectedPage() {
         </p>
         <div className="pt-4">
           <Link
-            href="/admin/agencies"
+            href="/admin/dashboard"
             className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             Back to Agencies

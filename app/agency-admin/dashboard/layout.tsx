@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/app/agency-admin/(components)/Sidebar';
-import { AccessDeniedModal } from '@/components/AccessDeniedModal';
+import AccessDeniedModal from '@/components/AccessDeniedModal';
 import { Loader2 } from 'lucide-react';
 
 export default function ClientLayout({
@@ -16,41 +16,68 @@ export default function ClientLayout({
 
   const router = useRouter();
 
-  useEffect(() => {
-    const checkAccess = async () => {
-      if (status === 'loading') return;
+  const checkAccess = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/agencyform`, {
+        cache: 'no-store', // Prevent caching to always get fresh data
+      });
+      const result = await response.json();
       
-     
-
-      try {
-        const response = await fetch(`/api/agencyform`);
-        const result = await response.json();
-        
-        if (response.ok) {
-          if (result.data) {
-            const agency = result.data;
-            if (agency.status === 'ACTIVE') {
-              setAccessStatus('GRANTED');
-            } else if (agency.status === 'PENDING') {
-              setAccessStatus('PENDING');
-            } else if (agency.status === 'REJECTED') {
-              setAccessStatus('REJECTED');
-            }
-          } else {
-            // No agency found, redirect to form
-            router.push('/agency-admin/agency-form');
+      if (response.ok) {
+        if (result.data) {
+          const agency = result.data;
+          console.log('Agency status:', agency.status); // Debug log
+          
+          if (agency.status === 'ACTIVE') {
+            setAccessStatus('GRANTED');
+          } else if (agency.status === 'PENDING') {
+            setAccessStatus('PENDING');
+          } else if (agency.status === 'REJECTED') {
+            setAccessStatus('REJECTED');
           }
         } else {
-          router.push('/login');
+          // No agency found, redirect to form
+          router.push('/agency-admin/agency-form');
         }
-      } catch (error) {
-        console.error('Error checking access:', error);
-        router.push('/error');
+      } else {
+        router.push('/login');
+      }
+    } catch (error) {
+      console.error('Error checking access:', error);
+      router.push('/error');
+    }
+  }, [router]);
+
+  useEffect(() => {
+    checkAccess();
+
+    // Poll for status changes every 30 seconds when status is PENDING
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (accessStatus === 'PENDING') {
+      interval = setInterval(() => {
+        console.log('Polling for status update...');
+        checkAccess();
+      }, 30000); // Check every 30 seconds
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
       }
     };
+  }, [checkAccess, accessStatus]);
 
-    checkAccess();
-  }, [ status, router]);
+  // Listen for custom refresh event (can be triggered manually)
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('Manual refresh triggered');
+      checkAccess();
+    };
+
+    window.addEventListener('refreshAgencyStatus', handleRefresh);
+    return () => window.removeEventListener('refreshAgencyStatus', handleRefresh);
+  }, [checkAccess]);
 
   if (accessStatus === 'LOADING') {
     return (
@@ -75,6 +102,7 @@ export default function ClientLayout({
         <AccessDeniedModal 
           isOpen={accessStatus === 'PENDING' || accessStatus === 'REJECTED'}
           status={accessStatus as 'PENDING' | 'REJECTED'}
+          onRetry={checkAccess} // Add retry button to modal
         />
       )}
     </div>
