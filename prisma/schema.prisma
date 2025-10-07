@@ -212,6 +212,8 @@ model AgencyForm {
   subscriptions       Subscription[]
   creator             User           @relation("AgencyFormCreator", fields: [createdBy], references: [id])
 
+
+
   @@index([name])
   @@index([createdBy])
   @@index([email])
@@ -1028,6 +1030,8 @@ enum Role {
   EXECUTIVE
   CUSTOMER
   TEKKING_MYLES
+  AGENCY_ADMIN
+  TEAM_LEAD
 }
 
 enum UserType {
