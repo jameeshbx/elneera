@@ -1,10 +1,8 @@
-// api/share-dmc/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import { Commission, PrismaClient, SharedDMC } from "@prisma/client"
 import { sendEmail } from "@/lib/email"
 import fs from "fs"
 import path from "path"
-
 
 const prisma = new PrismaClient()
 
@@ -43,21 +41,13 @@ interface SharedDMCItemWithDMC {
 function findPdfFile(pdfUrl: string, enquiryId: string): string | null {
   console.log("🔍 Finding PDF file for URL:", pdfUrl)
   
-  // List of possible paths to check
   const possiblePaths = [
-    // Direct path from pdfUrl
     path.join(process.cwd(), 'public', pdfUrl.replace(/^\//, '')),
-    
-    // Alternative formats
     path.join(process.cwd(), pdfUrl.replace(/^\//, '')),
     path.join(process.cwd(), 'public', pdfUrl),
-    
-    // Common upload directories
     path.join(process.cwd(), 'public', 'uploads', 'pdfs', `itinerary-${enquiryId}.pdf`),
     path.join(process.cwd(), 'public', 'generated-pdfs', `itinerary-${enquiryId}.pdf`),
     path.join(process.cwd(), 'public', 'uploads', `itinerary-${enquiryId}.pdf`),
-    
-    // Check if pdfUrl already contains full path
     pdfUrl,
   ]
   
@@ -139,8 +129,9 @@ export async function GET(request: NextRequest) {
           name: "asc"
         }
       })
+      console.log(`✅ Found ${dmcs.length} DMCs`)
     } catch (error) {
-      console.error("Error fetching DMCForm records:", error)
+      console.error("❌ Error fetching DMCForm records:", error)
       dmcs = []
     }
 
@@ -149,6 +140,8 @@ export async function GET(request: NextRequest) {
       const whereClause: Record<string, unknown> = {}
       if (enquiryId) whereClause.enquiryId = enquiryId
       if (customerId) whereClause.customerId = customerId
+
+      console.log("Fetching shared DMCs with where clause:", whereClause)
 
       sharedDMCs = await prisma.sharedDMC.findMany({
         where: whereClause,
@@ -160,8 +153,11 @@ export async function GET(request: NextRequest) {
           },
         },
       }) as (SharedDMC & { sharedDMCItems: SharedDMCItemWithDMC[] })[]
+      
+      console.log(`✅ Found ${sharedDMCs.length} shared DMCs`)
     } catch (error) {
-      console.error("Error fetching SharedDMC records:", error)
+      console.error("❌ Error fetching SharedDMC records:", error)
+      console.error("Error details:", error instanceof Error ? error.message : "Unknown error")
       sharedDMCs = []
     }
 
@@ -171,9 +167,10 @@ export async function GET(request: NextRequest) {
         commissions = await prisma.commission.findMany({
           where: { enquiryId },
         })
+        console.log(`✅ Found ${commissions.length} commissions`)
       }
     } catch (error) {
-      console.error("Error fetching Commission records:", error)
+      console.error("❌ Error fetching Commission records:", error)
       commissions = []
     }
 
@@ -192,42 +189,59 @@ export async function GET(request: NextRequest) {
       updatedAt: dmc.updatedAt?.toISOString() || "",
     }))
 
-    const transformedSharedDMCs = sharedDMCs.map((shared) => ({
-      id: shared.id,
-      dateGenerated: shared.dateGenerated.toLocaleDateString("en-GB"),
-      pdf: shared.pdfUrl ? "D" : "B",
-      pdfUrl: shared.pdfUrl,
-      activeStatus: shared.isActive,
-      enquiryId: shared.enquiryId || enquiryId || "default-enquiry",
-      customerId: shared.customerId || customerId,
-      assignedStaffId: shared.assignedStaffId,
-      selectedDMCs: shared.sharedDMCItems.map((item) => {
-        const commission = commissions.find(c => c.dmcId === item.dmcId && c.enquiryId === (shared.enquiryId || enquiryId))
+    const transformedSharedDMCs = sharedDMCs.map((shared) => {
+      try {
         return {
-          id: item.id,
-          dmcId: item.dmcId,
-          status: item.status as DMCStatus,
-          dmc: {
-            id: item.dmc.id,
-            name: item.dmc.name,
-            primaryContact: item.dmc.contactPerson || "",
-            phoneNumber: item.dmc.phoneNumber || "",
-            designation: item.dmc.designation || "",
-            email: item.dmc.email || "",
-            status: item.dmc.status === "ACTIVE" ? "Active" : "Inactive",
-            primaryCountry: item.dmc.primaryCountry || "",
-            destinationsCovered: item.dmc.destinationsCovered || "",
-            cities: item.dmc.cities || "",
-          },
-          lastUpdated: item.updatedAt.toISOString(),
-          quotationAmount: commission?.quotationAmount,
-          markupPrice: commission?.markupPrice,
-          commissionAmount: commission?.commissionAmount,
-          commissionType: commission?.commissionType,
-          notes: commission?.comments || item.notes || "",
+          id: shared.id,
+          dateGenerated: shared.dateGenerated ? shared.dateGenerated.toLocaleDateString("en-GB") : new Date().toLocaleDateString("en-GB"),
+          pdf: shared.pdfUrl ? "D" : "B",
+          pdfUrl: shared.pdfUrl,
+          activeStatus: shared.isActive,
+          enquiryId: shared.enquiryId || enquiryId || "default-enquiry",
+          customerId: shared.customerId || customerId,
+          assignedStaffId: shared.assignedStaffId,
+          selectedDMCs: (shared.sharedDMCItems || []).map((item) => {
+            const commission = commissions.find(c => c.dmcId === item.dmcId && c.enquiryId === (shared.enquiryId || enquiryId))
+            return {
+              id: item.id,
+              dmcId: item.dmcId,
+              status: item.status as DMCStatus,
+              dmc: {
+                id: item.dmc.id,
+                name: item.dmc.name,
+                primaryContact: item.dmc.contactPerson || "",
+                phoneNumber: item.dmc.phoneNumber || "",
+                designation: item.dmc.designation || "",
+                email: item.dmc.email || "",
+                status: item.dmc.status === "ACTIVE" ? "Active" : "Inactive",
+                primaryCountry: item.dmc.primaryCountry || "",
+                destinationsCovered: item.dmc.destinationsCovered || "",
+                cities: item.dmc.cities || "",
+              },
+              lastUpdated: item.updatedAt ? item.updatedAt.toISOString() : new Date().toISOString(),
+              quotationAmount: commission?.quotationAmount,
+              markupPrice: commission?.markupPrice,
+              commissionAmount: commission?.commissionAmount,
+              commissionType: commission?.commissionType,
+              notes: commission?.comments || item.notes || "",
+            }
+          }),
         }
-      }),
-    }))
+      } catch (error) {
+        console.error("Error transforming shared DMC:", shared.id, error)
+        return {
+          id: shared.id,
+          dateGenerated: new Date().toLocaleDateString("en-GB"),
+          pdf: "B",
+          pdfUrl: shared.pdfUrl,
+          activeStatus: shared.isActive,
+          enquiryId: shared.enquiryId || enquiryId || "default-enquiry",
+          customerId: shared.customerId || customerId,
+          assignedStaffId: shared.assignedStaffId,
+          selectedDMCs: [],
+        }
+      }
+    })
 
     const mockSharedItineraries = transformedSharedDMCs.length > 0 ? transformedSharedDMCs : [
       {
@@ -248,19 +262,33 @@ export async function GET(request: NextRequest) {
       data: mockSharedItineraries,
       availableDMCs: transformedDMCs,
     }
+
+    console.log("=== Response Summary ===")
+    console.log(`Shared DMCs: ${mockSharedItineraries.length}`)
+    console.log(`Available DMCs: ${transformedDMCs.length}`)
     
     return NextResponse.json(response)
   } catch (error) {
     console.error("=== Shared DMC API Error ===", error)
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
+    console.error("Error name:", error instanceof Error ? error.name : "Unknown")
+    console.error("Error message:", error instanceof Error ? error.message : "Unknown error")
     
     return NextResponse.json({ 
       error: "Failed to fetch shared DMCs", 
       details: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
       success: false 
     }, { status: 500 })
   } finally {
+    console.log("=== Shared DMC API Request Completed ===")
     if (prismaConnected) {
-      await prisma.$disconnect()
+      try {
+        await prisma.$disconnect()
+        console.log("✅ Database disconnected")
+      } catch (disconnectError) {
+        console.error("Error disconnecting from database:", disconnectError)
+      }
     }
   }
 }
@@ -278,18 +306,23 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { selectedDMCs: selectedDMCIds, enquiryId, customerId, pdfPath, selectedItinerary, dateGenerated, assignedStaffId } = body
 
-    console.log("POST request body:", { 
+    console.log("📥 POST request body:", { 
       selectedDMCIds, 
       enquiryId, 
       customerId, 
       pdfPath, 
-      selectedItinerary: selectedItinerary ? 'present' : 'missing',
+      selectedItinerary: selectedItinerary ? {
+        id: selectedItinerary.id,
+        pdfUrl: selectedItinerary.pdfUrl,
+        activePdfUrl: selectedItinerary.activePdfUrl
+      } : 'missing',
       dateGenerated, 
       assignedStaffId 
     })
 
     // Validate required fields
     if (!selectedDMCIds || selectedDMCIds.length === 0) {
+      console.error("❌ No DMCs selected")
       return NextResponse.json({ 
         error: "At least one DMC must be selected",
         success: false 
@@ -297,6 +330,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!enquiryId) {
+      console.error("❌ No enquiry ID provided")
       return NextResponse.json({ 
         error: "Enquiry ID is required",
         success: false 
@@ -304,6 +338,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch the selected DMCs from database
+    console.log("🔍 Fetching DMCs from database...")
     const selectedDMCs = await prisma.dMCForm.findMany({
       where: {
         id: { in: selectedDMCIds },
@@ -324,15 +359,16 @@ export async function POST(request: NextRequest) {
     })
 
     if (selectedDMCs.length === 0) {
+      console.error("❌ No active DMCs found with provided IDs")
       return NextResponse.json({ 
         error: "No active DMCs found with the provided IDs",
         success: false 
       }, { status: 400 })
     }
 
-    console.log(`Found ${selectedDMCs.length} active DMCs`)
+    console.log(`✅ Found ${selectedDMCs.length} active DMCs`)
 
-    // Get customer/enquiry details for personalized email
+    // Get customer/enquiry details
     let customerDetails: { name: string; locations?: string } = { name: "Valued Customer" }
     if (enquiryId) {
       try {
@@ -345,23 +381,33 @@ export async function POST(request: NextRequest) {
             name: enquiry.name,
             locations: enquiry.locations || undefined
           }
+          console.log("✅ Found enquiry details:", customerDetails)
         }
       } catch (error) {
-        console.log("Could not fetch enquiry details:", error)
+        console.log("⚠️ Could not fetch enquiry details:", error)
       }
     }
 
-    // Prepare PDF attachment
+    // Prepare PDF attachment - UPDATED LOGIC
     let pdfFilePath: string | null = null
     
-    console.log("=== PDF Attachment Preparation ===")
+    console.log("\n=== PDF Attachment Preparation ===")
     console.log("selectedItinerary:", selectedItinerary)
+    console.log("pdfPath:", pdfPath)
     
-    if (selectedItinerary?.pdfUrl) {
-      console.log("PDF URL from selectedItinerary:", selectedItinerary.pdfUrl)
+    // Priority 1: Use activePdfUrl from selectedItinerary (NEW)
+    if (selectedItinerary?.activePdfUrl) {
+      console.log("📄 PDF URL from selectedItinerary.activePdfUrl:", selectedItinerary.activePdfUrl)
+      pdfFilePath = findPdfFile(selectedItinerary.activePdfUrl, enquiryId)
+    } 
+    // Priority 2: Use pdfUrl from selectedItinerary
+    else if (selectedItinerary?.pdfUrl) {
+      console.log("📄 PDF URL from selectedItinerary.pdfUrl:", selectedItinerary.pdfUrl)
       pdfFilePath = findPdfFile(selectedItinerary.pdfUrl, enquiryId)
-    } else if (pdfPath) {
-      console.log("PDF path from request:", pdfPath)
+    } 
+    // Priority 3: Use pdfPath parameter
+    else if (pdfPath) {
+      console.log("📄 PDF path from request:", pdfPath)
       pdfFilePath = findPdfFile(pdfPath, enquiryId)
     } else {
       console.log("⚠️ No PDF URL or path provided")
@@ -381,15 +427,16 @@ export async function POST(request: NextRequest) {
       console.log("⚠️ No PDF will be attached to emails")
     }
 
-    // Send emails to all selected DMCs with PDF attachment
-    console.log(`=== Starting email sending to ${selectedDMCs.length} DMCs ===`)
+    // Send emails to all selected DMCs
+    console.log(`\n=== Starting email sending to ${selectedDMCs.length} DMCs ===`)
     const emailResults: LocalEmailResult[] = []
     
     for (const dmc of selectedDMCs) {
-      console.log(`\n--- Processing DMC: ${dmc.name} (${dmc.email}) ---`)
+      console.log(`\n--- Processing DMC: ${dmc.name} ---`)
+      console.log(`    Email: ${dmc.email}`)
       
       if (!dmc.email) {
-        console.log(`❌ No email address for ${dmc.name}`)
+        console.log(`    ❌ No email address`)
         emailResults.push({
           dmcId: dmc.id,
           dmcName: dmc.name,
@@ -419,7 +466,7 @@ export async function POST(request: NextRequest) {
               </div>
               <p>Please review the ${attachments ? 'attached itinerary' : 'itinerary details'} and provide your quotation.</p>
               <div style="background-color: #e8f5f4; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                <h4>🎯 Next Steps</h4>
+                <h4 style="margin-top: 0;">🎯 Next Steps</h4>
                 <ol>
                   <li><strong>Review</strong> the attached itinerary carefully</li>
                   <li><strong>Prepare</strong> your detailed quotation</li>
@@ -449,13 +496,13 @@ export async function POST(request: NextRequest) {
         })
 
         if (!emailResult.success) {
-          console.error(`❌ Email failed for ${dmc.name}:`, emailResult.error)
+          console.error(`    ❌ Email failed:`, emailResult.error)
         } else {
-          console.log(`✅ Email sent successfully to ${dmc.name}`)
+          console.log(`    ✅ Email sent successfully`)
         }
 
       } catch (emailError) {
-        console.error(`❌ Error sending email to ${dmc.name}:`, emailError)
+        console.error(`    ❌ Error sending email:`, emailError)
         emailResults.push({
           dmcId: dmc.id,
           dmcName: dmc.name,
@@ -466,19 +513,55 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`\n=== Email sending completed ===`)
+    console.log(`\n=== Email Summary ===`)
     console.log(`Total DMCs: ${selectedDMCs.length}`)
-    console.log(`Emails sent successfully: ${emailResults.filter(r => r.sent).length}`)
+    console.log(`Emails sent: ${emailResults.filter(r => r.sent).length}`)
     console.log(`Emails failed: ${emailResults.filter(r => !r.sent).length}`)
 
     // Create the shared DMC record in database
+    console.log("\n=== Creating database records ===")
+    
+    // Store the PDF URL properly - prefer activePdfUrl
+    const storedPdfUrl = selectedItinerary?.activePdfUrl || selectedItinerary?.pdfUrl || pdfPath || null
+    
+    // Parse dateGenerated - handle different formats
+    let parsedDate = new Date()
+    if (dateGenerated) {
+      try {
+        const cleanDate = dateGenerated.replace(/\s+/g, '').replace(/\./g, '-')
+        const parts = cleanDate.split(/[-/]/)
+        if (parts.length === 3) {
+          const day = parseInt(parts[0])
+          const month = parseInt(parts[1]) - 1
+          const year = parseInt(parts[2])
+          parsedDate = new Date(year, month, day)
+          
+          if (isNaN(parsedDate.getTime())) {
+            console.warn("Invalid date format, using current date")
+            parsedDate = new Date()
+          }
+        } else {
+          parsedDate = new Date(dateGenerated)
+          if (isNaN(parsedDate.getTime())) {
+            console.warn("Invalid date format, using current date")
+            parsedDate = new Date()
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to parse dateGenerated:", error)
+        parsedDate = new Date()
+      }
+    }
+    
+    console.log("Parsed date:", parsedDate.toISOString())
+    
     const newSharedDMC = await prisma.sharedDMC.create({
       data: {
         enquiryId: enquiryId,
         customerId: customerId || undefined,
         assignedStaffId: assignedStaffId || undefined,
-        dateGenerated: dateGenerated ? new Date(dateGenerated) : new Date(),
-        pdfUrl: selectedItinerary?.pdfUrl || pdfPath || null,
+        dateGenerated: parsedDate,
+        pdfUrl: storedPdfUrl,
         isActive: true,
         status: "PENDING",
       },
@@ -486,7 +569,7 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ Created SharedDMC record:", newSharedDMC.id)
 
-    // Create SharedDMCItem records for each DMC
+    // Create SharedDMCItem records
     const sharedDMCItems = await Promise.all(
       selectedDMCs.map(async (dmc) => {
         return await prisma.sharedDMCItem.create({
@@ -501,7 +584,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Created ${sharedDMCItems.length} SharedDMCItems`)
 
-    // Fetch the complete SharedDMC record with included items
+    // Fetch complete record
     const sharedDMCWithItems = await prisma.sharedDMC.findUnique({
       where: { id: newSharedDMC.id },
       include: {
@@ -517,7 +600,7 @@ export async function POST(request: NextRequest) {
       throw new Error("Failed to fetch created shared DMC record")
     }
 
-    // Format the response
+    // Format response
     const response = {
       success: true,
       message: "DMC sharing created successfully and emails sent",
@@ -537,6 +620,7 @@ export async function POST(request: NextRequest) {
           dmc: {
             id: item.dmc.id,
             name: item.dmc.name,
+            primaryContact: item.dmc.contactPerson || "",
             contactPerson: item.dmc.contactPerson || "",
             email: item.dmc.email || "",
             phoneNumber: item.dmc.phoneNumber || "",
@@ -558,12 +642,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log("=== POST Share DMC Completed Successfully ===")
+    console.log("=== POST Share DMC Completed Successfully ===\n")
     return NextResponse.json(response)
     
   } catch (error) {
-    console.error("=== Error in POST Share DMC ===", error)
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
+    console.error("\n=== Error in POST Share DMC ===")
+    console.error("Error:", error)
+    console.error("Stack:", error instanceof Error ? error.stack : "No stack trace")
     
     return NextResponse.json({ 
       error: "Failed to create shared DMC",
@@ -577,7 +662,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Update shared DMC or DMC item status, add commission, and handle customer sharing
+// PUT - Update shared DMC
 export async function PUT(request: NextRequest) {
   let prismaConnected = false;
   
@@ -588,7 +673,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json()
     const { id, action, ...updateData } = body
 
-    console.log("PUT request:", { id, action, updateData })
+    console.log("PUT request:", { id, action })
 
     if (action === "toggleActive") {
       const updated = await prisma.sharedDMC.update({
@@ -609,20 +694,9 @@ export async function PUT(request: NextRequest) {
     if (action === "updateDMCStatus") {
       if (!updateData.itemId) {
         return NextResponse.json({ 
-          error: "itemId is required for updating DMC status",
+          error: "itemId is required",
           success: false 
         }, { status: 400 })
-      }
-
-      const existingItem = await prisma.sharedDMCItem.findUnique({
-        where: { id: updateData.itemId },
-      })
-
-      if (!existingItem) {
-        return NextResponse.json({ 
-          error: "SharedDMC item not found",
-          success: false 
-        }, { status: 404 })
       }
 
       const updated = await prisma.sharedDMCItem.update({
@@ -651,7 +725,7 @@ export async function PUT(request: NextRequest) {
 
       if (!enquiryId || !dmcId) {
         return NextResponse.json({ 
-          error: "enquiryId and dmcId are required for adding commission",
+          error: "enquiryId and dmcId are required",
           success: false 
         }, { status: 400 })
       }
@@ -704,19 +778,14 @@ export async function PUT(request: NextRequest) {
     if (action === "shareToCustomer") {
       const { enquiryId, customerId, dmcId, itineraryId } = updateData
 
-      let commission = null
-      try {
-        commission = await prisma.commission.findUnique({
-          where: {
-            enquiryId_dmcId: {
-              enquiryId: enquiryId,
-              dmcId: dmcId,
-            },
+      const commission = await prisma.commission.findUnique({
+        where: {
+          enquiryId_dmcId: {
+            enquiryId: enquiryId,
+            dmcId: dmcId,
           },
-        })
-      } catch (error) {
-        console.log("Could not fetch commission:", error)
-      }
+        },
+      })
 
       if (!commission) {
         return NextResponse.json({ 
@@ -728,37 +797,29 @@ export async function PUT(request: NextRequest) {
       let customer: { name: string; email: string; phone: string | null; locations?: string } | null = null;
 
       if (enquiryId) {
-        try {
-          const enquiry = await prisma.enquiries.findUnique({
-            where: { id: enquiryId },
-            select: { name: true, email: true, phone: true, locations: true },
-          })
-          
-          if (enquiry) {
-            customer = {
-              name: enquiry.name,
-              email: enquiry.email,
-              phone: enquiry.phone,
-              locations: enquiry.locations || undefined
-            }
+        const enquiry = await prisma.enquiries.findUnique({
+          where: { id: enquiryId },
+          select: { name: true, email: true, phone: true, locations: true },
+        })
+        
+        if (enquiry) {
+          customer = {
+            name: enquiry.name,
+            email: enquiry.email,
+            phone: enquiry.phone,
+            locations: enquiry.locations || undefined
           }
-        } catch (error) {
-          console.log("Could not fetch enquiry:", error)
         }
       }
       
       if (!customer && customerId) {
-        try {
-          const directCustomer = await prisma.customers.findUnique({
-            where: { id: customerId },
-            select: { name: true, email: true, phone: true },
-          })
-          
-          if (directCustomer) {
-            customer = directCustomer
-          }
-        } catch (error) {
-          console.log("Could not fetch customer:", error)
+        const directCustomer = await prisma.customers.findUnique({
+          where: { id: customerId },
+          select: { name: true, email: true, phone: true },
+        })
+        
+        if (directCustomer) {
+          customer = directCustomer
         }
       }
 
@@ -775,7 +836,6 @@ export async function PUT(request: NextRequest) {
       });
 
       const customerPdfUrl = `/uploads/customer-quotes/quote-${enquiryId || customerId}-${Date.now()}.pdf`;
-
       const emailAttachments: Array<{ filename: string; path: string; contentType: string }> = []
       
       const selectedItinerary = await prisma.itineraries.findUnique({
@@ -795,7 +855,6 @@ export async function PUT(request: NextRequest) {
           })
         }
       }
-
       const markupPrice = commission.markupPrice ?? 0
       const emailResult = await sendEmail({
         to: customer.email,
@@ -968,7 +1027,7 @@ export async function DELETE(request: NextRequest) {
   let prismaConnected = false;
   
   try {
-    await prisma.$connect()
+    await prisma.$disconnect()
     prismaConnected = true
     
     const { searchParams } = new URL(request.url)

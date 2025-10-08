@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Eye, Download, RefreshCw,  FileText, Send, X, Star, Clock} from "lucide-react"
+import { Eye, Download, RefreshCw, FileText, Send, X, Star} from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 
 // Interface for DMC data from your API
@@ -89,20 +89,22 @@ interface CommunicationLog {
 interface RowDMCSelections {
   [itineraryId: string]: string;
 }
-
-interface SharedDMC {
-  id: string;
-  dateGenerated: string;
-  pdf: string;
-  pdfUrl: string | null;
-  activeStatus: boolean;
+// Update the SharedDMCResponse interface to match SharedDMCItem's status type
+interface SharedDMCResponse {
   enquiryId: string;
-  customerId: string;
-  assignedStaffId: string;
   selectedDMCs: Array<{
     id: string;
     dmcId: string;
-    status: string;
+    status: "AWAITING_TRANSFER" | "VIEWED" | "AWAITING_INTERNAL_REVIEW" | 
+            "QUOTATION_RECEIVED" | "REJECTED" | "COMMISSION_ADDED";
+    notes?: string;
+    lastUpdated?: string;
+    // Add other fields that might be in SharedDMCItem
+    quotationAmount?: number;
+    markupPrice?: number;
+    commissionType?: string;
+    commissionAmount?: number;
+    dmc?: DMC;
   }>;
 }
 
@@ -132,6 +134,8 @@ const DMCAdminInterface = () => {
   const [markupPrice, setMarkupPrice] = useState("1280")
   const [comments, setComments] = useState("")
   const [quotationPrice, setQuotationPrice] = useState("1100.00")
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false)
+const [quoteError, setQuoteError] = useState("")
 
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationLog[]>([])
   const [isSubmittingCommission, setIsSubmittingCommission] = useState(false)
@@ -221,20 +225,49 @@ const DMCAdminInterface = () => {
         
         if (sharedResponse.ok) {
           sharedDMCData = await sharedResponse.json()
+          console.log("📦 Shared DMC Data:", sharedDMCData)
         }
+
+        // Create a map to efficiently lookup shared DMCs by enquiryId
+        const sharedDMCMap = new Map()
+        if (sharedDMCData?.data) {
+          sharedDMCData.data.forEach((shared: SharedDMCResponse) => {
+            if (shared.enquiryId) {
+              if (!sharedDMCMap.has(shared.enquiryId)) {
+                sharedDMCMap.set(shared.enquiryId, [])
+              }
+              sharedDMCMap.get(shared.enquiryId).push(shared)
+            }
+          })
+        }
+
+        console.log("🗺️ Shared DMC Map:", sharedDMCMap)
 
         // Merge itineraries with shared DMC data
         const mergedItineraries = itinerariesData.itineraries.map((itin: ExtendedItinerary) => {
-          const sharedDMC = sharedDMCData?.data?.find((shared: SharedDMC) => 
-            shared.id === itin.originalId || shared.id === itin.id
-          )
+          // Try to find matching shared DMCs by enquiryId
+          const matchingShared = sharedDMCMap.get(itin.enquiryId || enquiryId)
+          
+          let allSelectedDMCs: SharedDMCItem[] = []
+          
+          if (matchingShared && matchingShared.length > 0) {
+            // Collect all DMCs from all matching shared records
+            matchingShared.forEach((shared: SharedDMCResponse) => {
+              if (shared.selectedDMCs) {
+                allSelectedDMCs = [...allSelectedDMCs, ...shared.selectedDMCs];
+              }
+            });
+          }
+
+          console.log(`📋 Itinerary ${itin.id} has ${allSelectedDMCs.length} DMCs`)
           
           return {
             ...itin,
-            selectedDMCs: sharedDMC?.selectedDMCs || []
+            selectedDMCs: allSelectedDMCs
           }
         })
 
+        console.log("✅ Merged itineraries:", mergedItineraries)
         setItineraries(mergedItineraries)
       }
 
@@ -250,6 +283,37 @@ const DMCAdminInterface = () => {
       }
     }
   }
+  useEffect(() => {
+    const fetchQuote = async () => {
+      if (!selectedDMCItem || !enquiryId) return
+      
+      setIsLoadingQuote(true)
+      setQuoteError("")
+      
+      try {
+        const response = await fetch(`/api/quotes?enquiryId=${enquiryId}&dmcId=${selectedDMCItem.dmcId}`)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch quote')
+        }
+        
+        const result = await response.json()
+        
+        if (result.success && result.data && result.data.length > 0) {
+          // Use the most recent quote
+          const latestQuote = result.data[0]
+          setQuotationPrice(latestQuote.amount.toString())
+        }
+      } catch (error) {
+        console.error('Error fetching quote:', error)
+        setQuoteError('Failed to load quote. Please enter manually.')
+      } finally {
+        setIsLoadingQuote(false)
+      }
+    }
+    
+    fetchQuote()
+  }, [selectedDMCItem, enquiryId])
 
   const handleDMCSelect = (itineraryId: string, dmcId: string) => {
     setRowDMCSelections(prev => ({
@@ -258,6 +322,7 @@ const DMCAdminInterface = () => {
     }));
   };
 
+  // FIXED: Updated handleSendToDMC with proper error handling and response parsing
   const handleSendToDMC = async (itinerary: ExtendedItinerary) => {
     const dmcId = rowDMCSelections[itinerary.id];
     
@@ -266,7 +331,9 @@ const DMCAdminInterface = () => {
       return;
     }
 
-    if (!itinerary.activePdfUrl) {
+    // Check if PDF is available - prefer activePdfUrl
+    const pdfUrl = itinerary.activePdfUrl || itinerary.pdfUrl
+    if (!pdfUrl) {
       alert("PDF not available for this itinerary")
       return;
     }
@@ -274,29 +341,79 @@ const DMCAdminInterface = () => {
     try {
       setSendingEmail(itinerary.id);
       
+      console.log("🔍 Sending to DMC with itinerary:", {
+        id: itinerary.id,
+        originalId: itinerary.originalId,
+        pdfUrl: itinerary.pdfUrl,
+        activePdfUrl: itinerary.activePdfUrl,
+        dateGenerated: itinerary.dateGenerated
+      })
+      
+      // Format date properly
+      let formattedDate = new Date().toISOString().split("T")[0]
+      if (itinerary.dateGenerated) {
+        try {
+          const cleanDate = itinerary.dateGenerated.replace(/\s+/g, '').replace(/\./g, '-')
+          const parts = cleanDate.split(/[-/]/)
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0')
+            const month = parts[1].padStart(2, '0')
+            const year = parts[2]
+            formattedDate = `${year}-${month}-${day}`
+          } else {
+            formattedDate = itinerary.dateGenerated
+          }
+        } catch (error) {
+          console.warn("Date formatting failed, using current date:", error)
+        }
+      }
+      
+      // Prepare the payload with complete itinerary data
+      const emailPayload = {
+        selectedDMCs: [dmcId],
+        enquiryId: enquiryId || itinerary.enquiryId,
+        customerId: customerId || itinerary.customerId,
+        selectedItinerary: {
+          id: itinerary.originalId || itinerary.id,
+          pdfUrl: itinerary.pdfUrl,
+          activePdfUrl: itinerary.activePdfUrl,
+          dateGenerated: formattedDate,
+        },
+        dateGenerated: formattedDate,
+        assignedStaffId: "staff-1",
+      }
+      
+      console.log("📧 Sending email with payload:", JSON.stringify(emailPayload, null, 2))
+      
       const response = await fetch('/api/share-dmc', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          selectedDMCs: [dmcId],
-          enquiryId: enquiryId || itinerary.enquiryId,
-          customerId: customerId || itinerary.customerId,
-          selectedItinerary: {
-            id: itinerary.originalId || itinerary.id,
-            pdfUrl: itinerary.activePdfUrl,
-            dateGenerated: itinerary.dateGenerated || new Date().toISOString().split("T")[0],
-          },
-          dateGenerated: itinerary.dateGenerated || new Date().toISOString().split("T")[0],
-          assignedStaffId: "staff-1",
-        }),
+        body: JSON.stringify(emailPayload),
       });
-  
+
+      // Check if response is OK before parsing JSON
       if (!response.ok) {
-        throw new Error('Failed to share with DMC');
+        const errorText = await response.text()
+        console.error("❌ Server response error:", errorText)
+        throw new Error(`Server error: ${response.status} - ${errorText}`)
       }
 
+      // Parse JSON response
+      let result
+      try {
+        result = await response.json()
+      } catch (jsonError) {
+        console.error("❌ JSON parsing error:", jsonError)
+        throw new Error("Invalid JSON response from server")
+      }
+      
+      if (!result.success) {
+        throw new Error(result.error || result.details || 'Failed to share with DMC');
+      }
+
+      console.log("✅ Email sent successfully:", result)
       
       // Clear the selection for this row
       setRowDMCSelections(prev => {
@@ -308,11 +425,17 @@ const DMCAdminInterface = () => {
       // Refresh data to show updated state with new DMC card
       await fetchData(false);
       
-      alert(`Successfully sent to DMC!`);
+      // Show success message with email summary
+      const emailSummary = result.emailSummary
+      if (emailSummary) {
+        alert(`Successfully sent to DMC!\n\nEmails sent: ${emailSummary.sent}/${emailSummary.total}`)
+      } else {
+        alert(`Successfully sent to DMC!`)
+      }
       
     } catch (error) {
-      console.error('Error sharing with DMC:', error);
-      alert("Failed to share with DMC");
+      console.error('❌ Error sharing with DMC:', error);
+      alert(`Failed to share with DMC: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSendingEmail(null);
     }
@@ -738,142 +861,55 @@ const DMCAdminInterface = () => {
                   </div>
                 </div>
 
-                {/* Previous PDFs Section */}
-                {itineraries.filter((version) => !version.isLatestVersion).length > 0 && (
-                  <div className="p-4">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Previous PDF Versions ({itineraries.filter((version) => !version.isLatestVersion).length})
-                    </h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase">Date</th>
-                            <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase">PDF Version</th>
-                            <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase">Actions</th>
-                            <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase">Status</th>
-                            <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase">Select DMC</th>
-                            <th className="text-right p-2 text-xs font-medium text-gray-700 uppercase">Share</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {itineraries
-                            .filter((version) => !version.isLatestVersion)
-                            .map((version) => (
-                              <tr
-                                key={version.id}
-                                className="border-b border-gray-100 hover:bg-gray-50"
-                              >
-                                <td className="p-3">
-                                  <div className="text-sm text-gray-900">
-                                    {version.dateGenerated || new Date(version.createdAt || "").toLocaleDateString()}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {new Date(version.createdAt || "").toLocaleTimeString()}
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex items-center gap-2">
-                                    <div
-                                      className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                                        version.isEdited ? "bg-blue-400" : "bg-gray-400"
-                                      }`}
-                                    >
-                                      V{version.versionNumber}
-                                    </div>
-                                    <div>
-                                      <div className="text-sm font-medium text-gray-700">
-                                        {version.displayVersion}
-                                      </div>
-                                      <div className="text-xs text-gray-500">
-                                        {version.isEdited ? "Regenerated PDF" : "Original PDF"}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex gap-1">
-                                    {version.activePdfUrl && (
-                                      <>
-                                        <button
-                                          onClick={() => handleViewPDF(version.activePdfUrl!)}
-                                          className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
-                                        >
-                                          <Eye className="w-3 h-3" />
-                                          View
-                                        </button>
-                                        <button
-                                          onClick={() => handleDownloadPDF(
-                                            version.activePdfUrl!,
-                                            `itinerary-v${version.versionNumber}.pdf`
-                                          )}
-                                          className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
-                                        >
-                                          <Download className="w-3 h-3" />
-                                        </button>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <div className="flex items-center gap-2">
-                                    <div
-                                      className={`w-2 h-2 rounded-full ${
-                                        version.activePdfUrl ? "bg-green-500" : "bg-red-500"
-                                      }`}
-                                    ></div>
-                                    <span
-                                      className={`text-xs font-medium ${
-                                        version.activePdfUrl ? "text-green-600" : "text-red-600"
-                                      }`}
-                                    >
-                                      {version.activePdfUrl ? "Available" : "Missing"}
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="p-3">
-                                  <select
-                                    value={rowDMCSelections[version.id] || ''}
-                                    onChange={(e) => handleDMCSelect(version.id, e.target.value)}
-                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
-                                  >
-                                    <option value="">Select DMC...</option>
-                                    {availableDMCs
-                                      .filter(dmc => !version.selectedDMCs?.some(item => item.dmcId === dmc.id))
-                                      .map((dmc) => (
-                                        <option key={dmc.id} value={dmc.id}>
-                                          {dmc.name}
-                                        </option>
-                                      ))}
-                                  </select>
-                                </td>
-                                <td className="p-3 text-right">
-                                  <button
-                                    onClick={() => handleSendToDMC(version)}
-                                    disabled={!rowDMCSelections[version.id] || sendingEmail === version.id}
-                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ml-auto"
-                                  >
-                                    {sendingEmail === version.id ? (
-                                      <>
-                                        <RefreshCw className="w-3 h-3 animate-spin" />
-                                        Sending...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Send className="w-3 h-3" />
-                                        Send
-                                      </>
-                                    )}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
+              {/* Previous PDFs Section */}
+{itineraries
+  .filter(version => !version.isLatestVersion)
+  .sort((a, b) => 
+    new Date(b.dateGenerated || b.createdAt || 0).getTime() - 
+    new Date(a.dateGenerated || a.createdAt || 0).getTime()
+  )
+  .map((version) => (
+    <div key={version.id} className="p-4 border-b border-gray-100">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-medium text-gray-900">
+            Version {version.versionNumber || 'N/A'}
+          </h4>
+          <p className="text-xs text-gray-500">
+            {new Date(version.dateGenerated || version.createdAt || '').toLocaleString()}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {version.pdfUrl && (
+            <a
+              href={version.pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"
+            >
+              <Eye className="w-4 h-4" /> View
+            </a>
+          )}
+          {version.pdfUrl && (
+          <button
+          onClick={() => {
+            if (version.pdfUrl) {
+              handleDownloadPDF(version.pdfUrl, `Itinerary-${version.versionNumber || ''}`)
+            }
+          }}
+          disabled={!version.pdfUrl}
+          className={`text-gray-600 hover:text-gray-800 text-sm font-medium flex items-center gap-1 ${
+            !version.pdfUrl ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        >
+          <Download className="w-4 h-4" /> Download
+        </button>
+          )}
+        </div>
+      </div>
+    </div>
+  ))
+}
               </>
             )}
           </div>
@@ -883,10 +919,32 @@ const DMCAdminInterface = () => {
         <h3 className="text-lg font-semibold text-gray-800 mb-6">Itinerary Quote & Margin Overview</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {itineraries.flatMap((itinerary) =>
-            (itinerary.selectedDMCs || []).map((dmcItem) => {
+          {/* Flatten all DMCs from all itineraries and create unique cards */}
+          {(() => {
+            const uniqueDMCs = new Map()
+            const allDMCs = itineraries.flatMap(itinerary => 
+              (itinerary.selectedDMCs || []).map(dmcItem => ({
+                dmcItem,
+                itinerary
+              }))
+            )
+        
+            // Filter to keep only the first occurrence of each DMC
+            const uniqueDMCList = allDMCs.filter(({ dmcItem }) => {
+              if (uniqueDMCs.has(dmcItem.dmcId)) return false
+              uniqueDMCs.set(dmcItem.dmcId, true)
+              return true
+            })
+        
+            console.log("🎴 Unique DMC cards to display:", uniqueDMCList.length)
+        
+            return uniqueDMCList.map(({ dmcItem, itinerary }) => {
               const dmc = dmcItem.dmc || getDMCById(dmcItem.dmcId)
-              if (!dmc) return null
+              if (!dmc) {
+                console.log("❌ DMC not found for ID:", dmcItem.dmcId)
+                return null
+              }
+        
 
               const getCardStatus = () => {
                 switch (dmcItem.status) {
@@ -919,7 +977,7 @@ const DMCAdminInterface = () => {
               const hasCommission = dmcItem.quotationAmount && dmcItem.markupPrice
 
               return (
-                <div key={dmcItem.id} className={`shadow-sm rounded-lg ${getCardColor()}`}>
+                <div key={`${dmcItem.id}-${itinerary.id}`} className={`shadow-sm rounded-lg ${getCardColor()}`}>
                   <div className="p-4 border-b">
                     <div className="flex items-center">
                       <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center mr-3 text-white font-bold">
@@ -1007,10 +1065,11 @@ const DMCAdminInterface = () => {
                   </div>
                 </div>
               )
-            }),
-          )}
+            })
+          })()}
         </div>
 
+        {/* Show message if no DMCs */}
         {itineraries.every(itinerary => !itinerary.selectedDMCs || itinerary.selectedDMCs.length === 0) && (
           <div className="text-center py-8 text-gray-500">
             <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
@@ -1149,22 +1208,26 @@ const DMCAdminInterface = () => {
                 </button>
               </div>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Quotation received</label>
-                  <div className="flex">
-                    <span className="flex items-center px-3 border border-r-0 border-gray-300 rounded-l-md bg-gray-50 text-gray-500">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={quotationPrice}
-                      onChange={(e) => setQuotationPrice(e.target.value)}
-                      className="flex-1 p-3 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-green-500"
-                      placeholder="Enter quotation amount"
-                    />
-                  </div>
-                </div>
+              <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Quotation received</label>
+  <div className="flex">
+    <span className="flex items-center px-3 border border-r-0 border-gray-300 rounded-l-md bg-gray-50 text-gray-500">
+      $
+    </span>
+    <input
+      type="number"
+      step="0.01"
+      value={quotationPrice}
+      onChange={(e) => setQuotationPrice(e.target.value)}
+      className="flex-1 p-3 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-green-500"
+      placeholder={isLoadingQuote ? "Loading..." : "Enter quotation amount"}
+      disabled={isLoadingQuote}
+    />
+  </div>
+  {quoteError && (
+    <p className="mt-1 text-sm text-red-600">{quoteError}</p>
+  )}
+</div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Commission type</label>

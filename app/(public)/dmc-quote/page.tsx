@@ -9,6 +9,7 @@ function DmcQuoteContent() {
   const searchParams = useSearchParams();
   const enquiryId = searchParams.get("enquiryId");
   const dmcId = searchParams.get("dmcId");
+  
 
   return <DmcQuoteForm enquiryId={enquiryId} dmcId={dmcId} />;
 }
