@@ -377,11 +377,12 @@ export default function ShareCustomerDashboard() {
 
   // Handle itinerary selection
   const handleSelectItinerary = (itinerary: ExtendedItinerary) => {
-    setSelectedItinerary(itinerary)
-    setSelectedPDFVersion(itinerary.activePdfUrl || null)
-    console.log("Selected itinerary version:", itinerary)
-  }
-
+    setSelectedItinerary(itinerary);
+    // Make sure we're using the correct URL (try activePdfUrl first, then fall back to pdfUrl)
+    const pdfUrl = itinerary.activePdfUrl || itinerary.pdfUrl;
+    setSelectedPDFVersion(pdfUrl || null);
+    console.log("Selected itinerary version:", itinerary, "PDF URL:", pdfUrl);
+  };
   // Email validation function
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -449,33 +450,27 @@ export default function ShareCustomerDashboard() {
 
   // Send Itinerary function with PDF version selection
   const sendItineraryViaEmail = async () => {
-    // Enhanced validation
+    console.log("sendItineraryViaEmail called", {
+      selectedPDFVersion,
+      selectedItinerary,
+      formData
+    });
+    // Validation checks
     if (!formData.name?.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter customer name",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please enter customer name" })
       return
     }
 
     if (!formData.email?.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter customer email",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please enter customer email" })
       return
     }
 
     if (!validateEmail(formData.email)) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter a valid email address",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please enter a valid email address" })
       return
     }
+
 
     if (!formData.whatsappNumber?.trim()) {
       toast({
@@ -496,12 +491,22 @@ export default function ShareCustomerDashboard() {
     }
 
     if (!selectedPDFVersion) {
+      console.error("No PDF version selected. Current state:", {
+        selectedPDFVersion,
+        selectedItinerary,
+        itineraryVersions: itineraryVersions.map(i => ({
+          id: i.id,
+          activePdfUrl: i.activePdfUrl,
+          pdfUrl: i.pdfUrl,
+          versionNumber: i.versionNumber
+        }))
+      });
       toast({
         variant: "destructive",
         title: "Error",
         description: "Please select a PDF version to send",
-      })
-      return
+      });
+      return;
     }
 
     const itineraryToSend =
@@ -986,9 +991,8 @@ export default function ShareCustomerDashboard() {
                               .map((version) => (
                                 <tr
                                   key={version.id}
-                                  className={`border-b border-green-100 hover:bg-green-25 cursor-pointer ${
-                                    selectedItinerary?.id === version.id ? "bg-green-100" : ""
-                                  }`}
+                                  className={`border-b border-green-100 hover:bg-green-25 cursor-pointer ${selectedItinerary?.id === version.id ? "bg-green-100" : ""
+                                    }`}
                                   onClick={() => handleSelectItinerary(version)}
                                 >
                                   <td className="p-3">
@@ -1011,9 +1015,8 @@ export default function ShareCustomerDashboard() {
                                   <td className="p-3">
                                     <div className="flex items-center gap-2">
                                       <div
-                                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                                          version.isEdited ? "bg-blue-500" : "bg-green-500"
-                                        }`}
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${version.isEdited ? "bg-blue-500" : "bg-green-500"
+                                          }`}
                                       >
                                         V{version.versionNumber}
                                       </div>
@@ -1061,14 +1064,12 @@ export default function ShareCustomerDashboard() {
                                   <td className="p-3">
                                     <div className="flex items-center gap-2">
                                       <div
-                                        className={`w-2 h-2 rounded-full ${
-                                          version.activePdfUrl ? "bg-green-500" : "bg-red-500"
-                                        }`}
+                                        className={`w-2 h-2 rounded-full ${version.activePdfUrl ? "bg-green-500" : "bg-red-500"
+                                          }`}
                                       ></div>
                                       <span
-                                        className={`text-xs font-medium ${
-                                          version.activePdfUrl ? "text-green-600" : "text-red-600"
-                                        }`}
+                                        className={`text-xs font-medium ${version.activePdfUrl ? "text-green-600" : "text-red-600"
+                                          }`}
                                       >
                                         {version.activePdfUrl ? "Available" : "Missing"}
                                       </span>
@@ -1088,135 +1089,7 @@ export default function ShareCustomerDashboard() {
                     </div>
 
                     {/* Previous PDFs Section */}
-                    {itineraryVersions.filter((version) => !version.isLatestVersion).length > 0 && (
-                      <div className="p-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          Previous PDF Versions (
-                          {itineraryVersions.filter((version) => !version.isLatestVersion).length})
-                        </h4>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b border-gray-200">
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Select
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Date
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  PDF
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Action
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Status
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {itineraryVersions
-                                .filter((version) => !version.isLatestVersion)
-                                .map((version) => (
-                                  <tr
-                                    key={version.id}
-                                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                                      selectedItinerary?.id === version.id ? "bg-blue-50" : ""
-                                    }`}
-                                    onClick={() => handleSelectItinerary(version)}
-                                  >
-                                    <td className="p-3">
-                                      <input
-                                        type="radio"
-                                        name="selectedPDF"
-                                        checked={selectedItinerary?.id === version.id}
-                                        onChange={() => handleSelectItinerary(version)}
-                                        className="text-green-600"
-                                      />
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="text-sm text-gray-900">
-                                        {new Date(version.createdAt || "").toLocaleDateString()}
-                                      </div>
-                                      <div className="text-xs text-gray-500">
-                                        {new Date(version.createdAt || "").toLocaleTimeString()}
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex items-center gap-2">
-                                        <div
-                                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                                            version.isEdited ? "bg-blue-400" : "bg-gray-400"
-                                          }`}
-                                        >
-                                          V{version.versionNumber}
-                                        </div>
-                                        <div>
-                                          <div className="text-sm font-medium text-gray-700">
-                                            {version.displayVersion}
-                                          </div>
-                                          <div className="text-xs text-gray-500">
-                                            {version.isEdited ? "Regenerated PDF" : "Original PDF"}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex gap-1">
-                                        {version.activePdfUrl && (
-                                          <>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleViewPDF(version.activePdfUrl!)
-                                              }}
-                                              className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
-                                            >
-                                              <Eye className="w-3 h-3" />
-                                              View
-                                            </button>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleDownloadPDF(
-                                                  version.activePdfUrl!,
-                                                  `itinerary-v${version.versionNumber}.pdf`,
-                                                )
-                                              }}
-                                              className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
-                                            >
-                                              <Download className="w-3 h-3" />
-                                              Download
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex items-center gap-2">
-                                        <div
-                                          className={`w-2 h-2 rounded-full ${
-                                            version.activePdfUrl ? "bg-green-500" : "bg-red-500"
-                                          }`}
-                                        ></div>
-                                        <span
-                                          className={`text-xs font-medium ${
-                                            version.activePdfUrl ? "text-green-600" : "text-red-600"
-                                          }`}
-                                        >
-                                          {version.activePdfUrl ? "Available" : "Missing"}
-                                        </span>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
+                  
                   </>
                 )}
               </div>

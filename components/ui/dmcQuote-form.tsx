@@ -61,6 +61,7 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
   const [error, setError] = useState<string | null>(null)
   const [, setQuoteSubmittedAt] = useState<string | null>(null);
 
+
   const [enquiry, setEnquiry] = useState<Enquiry | null>(null)
  
 
@@ -80,35 +81,49 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
         setLoading(true)
         setError(null)
         console.log("Fetching data for:", { enquiryId, dmcId })
-
-        // 1) Fetch enquiry details (public single fetch for emailed link)
+    
         if (enquiryId) {
-          const res = await fetch(`/api/enquiries?public=1&id=${encodeURIComponent(enquiryId)}`)
-          if (res.ok) {
-            const data = await res.json()
-            const newEnquiry = {
-              id: enquiryId,
-              name: data.name,
-              email: data.email,
-              phone: data.phone,
-              locations: data.locations,
-              estimatedDates: data.estimatedDates,
-              travellers: data.numberOfTravellers || data.travelerCount,
-              tripName: data.locations,
-            }
-            if (!cancelled) {
-              setEnquiry(newEnquiry)
-            }
-            console.log("Enquiry data:", newEnquiry)
+          // Add the public=1 parameter for public access
+          const res = await fetch(`/api/enquiries/public?id=${encodeURIComponent(enquiryId)}`)
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}))
+            throw new Error(errorData.error || 'Failed to fetch enquiry')
           }
+          
+          const result = await res.json()
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to load enquiry data')
+          }
+    
+          const newEnquiry = {
+            id: enquiryId,
+            name: result.data.name,
+            email: result.data.email,
+            phone: result.data.phone,
+            locations: result.data.locations,
+            estimatedDates: result.data.estimatedDates,
+            travellers: result.data.numberOfTravellers || result.data.travellerCount,
+            tripName: result.data.locations,
+          }
+          
+          if (!cancelled) {
+            setEnquiry(newEnquiry)
+            setCurrency(result.data.currency || "USD")
+          }
+          console.log("Enquiry data:", newEnquiry)
         }
-      } catch (error) {
-        console.error("Error loading enquiry:", error)
-        if (!cancelled) setError("Failed to load itinerary info")
+      } catch (err) {
+        console.error('Error loading enquiry:', err)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load enquiry')
+        }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
+    
     
     if (enquiryId && dmcId) {
       load()

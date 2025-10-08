@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import prisma from "@/lib/prisma"
 import nodemailer from "nodemailer"
 import { writeFile, mkdir } from "fs/promises"
 import path from "path"
 import { existsSync } from "fs"
 import { agencyApprovalEmailTemplate } from "@/lib/email-templates"
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 
 // Define enum values
 const AGENCY_TYPES = [
