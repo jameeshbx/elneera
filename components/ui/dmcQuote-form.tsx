@@ -54,6 +54,17 @@ interface DmcQuoteFormProps {
   dmcId: string | null;
   onSuccess?: () => void;
 }
+interface SharedDMCItem {
+  dmcId: string;
+  // Add other properties as needed
+}
+
+interface SharedDMCData {
+  data?: Array<{
+    selectedDMCs?: SharedDMCItem[];
+    // Add other properties as needed
+  }>;
+}
 
 export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFormProps) {
   const [loading, setLoading] = useState(true)
@@ -195,8 +206,16 @@ export default function DmcQuoteForm({ enquiryId, dmcId, onSuccess }: DmcQuoteFo
       }
 
       if (!selectedDMC) {
-        console.error('Could not find matching DMC in any of the items:', sharedDMCData);
-        throw new Error(`Could not find DMC with ID: ${dmcId} in any of the shared items`);
+        const availableDMCIds = (sharedDMCData as SharedDMCData).data?.flatMap((item) => 
+          item.selectedDMCs?.map((d) => d.dmcId) || []
+        ) || [];
+        
+        console.error('Available DMC IDs in sharedDMCData:', availableDMCIds);
+        throw new Error(
+          `Could not find DMC with ID: ${dmcId} in any of the shared items. ` +
+          `Available DMC IDs: ${availableDMCIds.join(', ') || 'None found'}. ` +
+          `Please ensure the DMC is properly shared before submitting quotes.`
+        );
       }
 
       const itemId = selectedDMC.id;

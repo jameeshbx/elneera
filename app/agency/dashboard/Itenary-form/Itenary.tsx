@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
-import LoadingComponent from "@/app/agency/dashboard/Itenary-form/loading"
+import LoadingComponent from "@/app/agency-admin/dashboard/Itenary-form/loading"
 
 // Define types for the itinerary data (matching ItineraryView)
 interface Activity {
@@ -220,6 +220,7 @@ const transportOptions = [
 
 function ItineraryFormContent() {
   const [enquiryData, setEnquiryData] = useState<EnquiryData | null>(null)
+  const [assignedStaffName, setAssignedStaffName] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [itineraryId, setItineraryId] = useState<string | null>(null)
   const [, setAgencyCancellationPolicies] = useState<AgencyCancellationPolicy[]>([])
@@ -297,6 +298,7 @@ function ItineraryFormContent() {
         const editMode = searchParams.get("edit") === "true"
         let enquiry: EnquiryData | null = null
         let existingItinerary: ItineraryData | null = null
+        let staffId: string | null | undefined = null
 
         if (enquiryIdParam) {
           // Fetch enquiry data
@@ -349,6 +351,30 @@ function ItineraryFormContent() {
               }
             }
           }
+        }
+
+        // Determine staffId from itinerary (preferred) or enquiry
+        if (existingItinerary?.enquiry?.assignedStaff) {
+          staffId = existingItinerary.enquiry.assignedStaff
+        } else if (enquiry?.assignedStaff) {
+          staffId = enquiry.assignedStaff
+        }
+
+        // Fetch staff name from userform if staffId exists
+        if (staffId) {
+          try {
+            const staffRes = await fetch(`/api/auth/agency-add-user/${staffId}`)
+            if (staffRes.ok) {
+              const staffData = await staffRes.json()
+              setAssignedStaffName(staffData.name || staffId)
+            } else {
+              setAssignedStaffName(staffId)
+            }
+          } catch {
+            setAssignedStaffName(staffId)
+          }
+        } else {
+          setAssignedStaffName("")
         }
 
         // Populate form data with null safety checks
@@ -498,9 +524,9 @@ function ItineraryFormContent() {
       alert("Please select an enquiry first.")
       return
     }
-
+  
     setIsGenerating(true)
-
+  
     try {
       const dataToSend = {
         ...formData,
@@ -512,9 +538,9 @@ function ItineraryFormContent() {
         dietaryPreference: formData.dietaryPreference.join(", "),
         transportPreferences: formData.transportPreferences.join(", "),
       }
-
+  
       let response
-
+  
       if (itineraryId) {
         console.log("Updating itinerary with ID:", itineraryId, "Data:", dataToSend)
         response = await fetch("/api/itineraries", {
@@ -522,7 +548,14 @@ function ItineraryFormContent() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ id: itineraryId, ...dataToSend }),
+          body: JSON.stringify({ 
+            id: itineraryId, 
+            ...dataToSend,
+            // Reset edit flags when regenerating from form
+            isEdited: false,
+            editedAt: null,
+            editedPdfUrl: null
+          }),
         })
       } else {
         console.log("Creating new itinerary with Data:", dataToSend)
@@ -534,7 +567,7 @@ function ItineraryFormContent() {
           body: JSON.stringify(dataToSend),
         })
       }
-
+  
       if (!response.ok) {
         let errorMessage = "Failed to process itinerary"
         try {
@@ -551,12 +584,13 @@ function ItineraryFormContent() {
         alert(`Error: ${errorMessage}`)
         return
       }
-
+  
       const processedItinerary = await response.json()
-
+  
       // Generate PDF after successfully creating/updating itinerary
+      // This is the ORIGINAL PDF generation (not edited)
       try {
-        console.log("[v0] Generating PDF...")
+        console.log("[v0] Generating original PDF...")
         const pdfResponse = await fetch("/api/generate-pdf", {
           method: "POST",
           headers: {
@@ -566,67 +600,58 @@ function ItineraryFormContent() {
             enquiryId: enquiryData.id,
             itineraryId: processedItinerary.id,
             formData: dataToSend,
+            isEditedVersion: false, // This is the original version
           }),
         })
-
+  
         console.log("[v0] PDF response status:", pdfResponse.status)
-        console.log("[v0] PDF response headers:", Object.fromEntries(pdfResponse.headers.entries()))
-
+  
         if (pdfResponse.ok) {
-          const contentType = pdfResponse.headers.get("content-type")
-          if (contentType && contentType.includes("application/json")) {
-            const pdfResult = await pdfResponse.json()
-            console.log("[v0] PDF generated successfully:", pdfResult)
-          } else {
-            console.log("[v0] PDF generated successfully as binary data")
-          }
-
+          const pdfResult = await pdfResponse.json()
+          console.log("[v0] Original PDF generated successfully:", pdfResult)
+  
           alert("Itinerary and PDF generated successfully!")
           setIsGenerated(true)
-
-          // Redirect to share customer page with the generated itinerary
+  
+          // Redirect to itinerary view
           router.push(
-            `/agency/dashboard/Itenary-view?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+            `/agency-admin/dashboard/Itenary-view?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
           )
         } else {
+          // Handle PDF generation error but still redirect
           let pdfErrorMessage = "PDF generation failed"
           try {
             const contentType = pdfResponse.headers.get("content-type")
-            console.log("[v0] Error response content type:", contentType)
-
+            
             if (contentType && contentType.includes("application/json")) {
               const pdfError = await pdfResponse.json()
               pdfErrorMessage = pdfError.error || pdfError.message || pdfErrorMessage
-              console.error("[v0] Failed to generate PDF (JSON response):", pdfError)
               if (pdfError.details) {
                 pdfErrorMessage += `: ${pdfError.details}`
               }
             } else {
-              // If response is not JSON, get text content
               const errorText = await pdfResponse.text()
               pdfErrorMessage = errorText || `HTTP ${pdfResponse.status}: ${pdfResponse.statusText}`
-              console.error("[v0] Failed to generate PDF (non-JSON response):", errorText)
             }
-          } catch (parseError) {
-            console.error("[v0] Failed to parse PDF error response:", parseError)
+          } catch  {
             pdfErrorMessage = `HTTP ${pdfResponse.status}: ${pdfResponse.statusText}`
           }
-
+  
           console.error("[v0] PDF generation failed:", pdfErrorMessage)
           alert(`PDF generation failed: ${pdfErrorMessage}`)
-
+  
           // Still redirect to share customer page
           router.push(
-            `/agency/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+            `/agency-admin/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
           )
         }
       } catch (pdfError) {
         console.error("[v0] Error generating PDF:", pdfError)
         alert("Itinerary saved, but PDF generation failed. You can regenerate it later.")
-
-        // Still redirect to share customer page
+  
+        // Still redirect
         router.push(
-          `/agency/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+          `/agency-admin/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
         )
       }
     } catch (error) {
@@ -1459,7 +1484,7 @@ function ItineraryFormContent() {
                   </div>
                   <div className="flex">
                     <span className="text-gray-700 font-medium w-20 font-poppins">Assigned Staff:</span>
-                    <span className="text-gray-900 font-poppins">{enquiryData?.assignedStaff || "AStaff2"}</span>
+                    <span className="text-gray-900 font-poppins">{assignedStaffName || enquiryData?.assignedStaff || "AStaff2"}</span>
                   </div>
                 </div>
               </CardContent>

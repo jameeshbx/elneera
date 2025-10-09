@@ -22,7 +22,7 @@ export async function GET() {
     }
 
     // Check if user has admin access (adjust based on your auth logic)
-    const isAuthorized = user.role === "ADMIN" || user.role === "SUPER_ADMIN" || user.userType === "AGENCY"
+    const isAuthorized = user.role === "ADMIN" || user.role === "SUPER_ADMIN" || user.userType === "AGENCY" || user.role === "USER"
 
     if (!isAuthorized) {
       return NextResponse.json(

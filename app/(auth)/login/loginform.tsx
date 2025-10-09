@@ -34,6 +34,8 @@ export default function LoginForm() {
   const [, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  
+
   useEffect(() => {
     const checkIfMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -229,13 +231,15 @@ export default function LoginForm() {
               </div>
               <div className="relative z-10">
                 <div className="flex items-center justify-center md:justify-start">
+                  <Link href="/">
                   <Image
-                    src="/elneera-white.png"
+                    src="/logo/elneeraw.png"
                     alt="Trekking Miles Logo"
-                    width={200}
+                    width={100}
                     height={80}
-                    className="object-contain mt-[-125px] w-[360px] "
+                    className="object-contain mt-[7px] w-[160px] ml-[78px]"
                   />
+                  </Link>
                 </div>
                 <h1 className="mt-8 md:mt-12 lg-mt-[-30] text-3xl font-nunito md:text-4xl font-semibold text-white text-center md:text-left">
                   Start your remarkable journey with us!
@@ -362,14 +366,16 @@ export default function LoginForm() {
               <div className="relative z-30">
                 {/* Logo Image */}
                 <div className="flex justify-center mb-4">
+                  <Link href="/">
                   <Image
-                    src="/login/cropped-logo-1_1567c4bc-84c5-4188-81e0-d5dd9ed8ef8d (1) 1.png"
+                    src="/logo/elneeraw.png"
                     alt="Trekking Miles Logo"
                     width={180}
                     height={60}
                     className="object-contain"
                     priority
                   />
+                  </Link>
                 </div>
                 <h1 className="text-xl font-semibold text-white text-center font-nunito">
                   Start your remarkable journey with us!

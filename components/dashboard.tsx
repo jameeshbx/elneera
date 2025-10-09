@@ -5,12 +5,16 @@ import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/c
 import { Badge } from "@/components/ui/badge"
 import Image from "next/image"
 import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+
 
 import ActiveUsersChart from "@/components/active-users-chart"
 import SalesOverviewChart from "@/components/sales-overview-chart"
 import { RequestsTable, type RequestRow } from "@/components/requests-table"
 
 export default function Page() {
+  const { data: session } = useSession()
+
   const [agencyRequests, setAgencyRequests] = useState<RequestRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -46,17 +50,20 @@ export default function Page() {
         setError(null)
 
         const response = await fetch("/api/agency-request", {
-          // Changed from '/api/agency-requests'
           method: "GET",
           headers: {
             "Content-Type": "application/json",
+            ...(session?.user?.email && { 'X-User-Email': session.user.email })
           },
         })
-
         if (!response.ok) {
-          const errorText = await response.text()
-          console.error("API Error:", errorText)
-          throw new Error(`HTTP error! status: ${response.status}`)
+          const errorData = await response.json().catch(() => ({}));
+          if (response.status === 403) {
+            setError("You don't have permission to view agency requests. Please contact an administrator.");
+            setAgencyRequests([]);
+            return;
+          }
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
 
         let data
