@@ -1,14 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Eye, Download, RefreshCw, Calendar, FileText, Send, X } from "lucide-react"
+import { Eye, Download, RefreshCw, FileText, Send, X, Star} from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/components/ui/use-toast"
 
 // Interface for DMC data from your API
 interface DMC {
@@ -24,30 +18,63 @@ interface DMC {
   cities?: string
 }
 
+interface PDFVersion {
+  id: string
+  url: string
+  version: number
+  isActive: boolean
+  createdAt: string
+  metadata?: {
+    isEdited?: boolean
+    fileSize?: number
+    s3Key?: string
+  }
+}
+
+interface ExtendedItinerary {
+  id: string
+  originalId?: string
+  createdAt?: Date | string
+  pdfUrl?: string | null
+  editedPdfUrl?: string | null
+  isEdited?: boolean
+  activeStatus?: boolean
+  status?: string
+  destinations?: string | string[]
+  startDate?: Date | string | null
+  endDate?: Date | string | null
+  budget?: number | null
+  currency?: string | null
+  enquiryId?: string | null
+  customerId?: string | null
+  updatedAt?: Date | string
+  editedAt?: Date | string | null
+  lastPdfRegeneratedAt?: Date | string | null
+  activePdfVersion?: string
+  customerName?: string
+  pdfVersions?: PDFVersion[]
+  activePdfUrl?: string | null
+  displayVersion?: string
+  versionNumber?: number
+  isLatestVersion?: boolean
+  dateGenerated?: string
+  pdf?: string
+  pdfStatus?: string
+  itinerary?: string
+  selectedDMCs?: SharedDMCItem[]
+}
+
 interface SharedDMCItem {
   id: string
   dmcId: string
-  status: "AWAITING_TRANSFER" | "VIEWED" | "AWAITING_INTERNAL_REVIEW" | "QUOTATION_RECEIVED" | "REJECTED"
-  quotedPrice?: number
-  lastUpdated?: string
+  status: "AWAITING_TRANSFER" | "VIEWED" | "AWAITING_INTERNAL_REVIEW" | "QUOTATION_RECEIVED" | "REJECTED" | "COMMISSION_ADDED"
+  notes?: string
+  lastUpdated?: string | Date
   quotationAmount?: number
   markupPrice?: number
+  commissionType?: string
   commissionAmount?: number
-  commissionType?: "FLAT" | "PERCENTAGE"
-  notes?: string
   dmc?: DMC
-}
-
-interface SharedItinerary {
-  id: string
-  dateGenerated: string
-  pdf: string
-  pdfUrl?: string | null
-  activeStatus: boolean
-  enquiryId: string
-  customerId?: string
-  assignedStaffId?: string
-  selectedDMCs: SharedDMCItem[]
 }
 
 interface CommunicationLog {
@@ -59,32 +86,56 @@ interface CommunicationLog {
   dmcName: string
 }
 
+interface RowDMCSelections {
+  [itineraryId: string]: string;
+}
+// Update the SharedDMCResponse interface to match SharedDMCItem's status type
+interface SharedDMCResponse {
+  enquiryId: string;
+  selectedDMCs: Array<{
+    id: string;
+    dmcId: string;
+    status: "AWAITING_TRANSFER" | "VIEWED" | "AWAITING_INTERNAL_REVIEW" | 
+            "QUOTATION_RECEIVED" | "REJECTED" | "COMMISSION_ADDED";
+    notes?: string;
+    lastUpdated?: string;
+    // Add other fields that might be in SharedDMCItem
+    quotationAmount?: number;
+    markupPrice?: number;
+    commissionType?: string;
+    commissionAmount?: number;
+    dmc?: DMC;
+  }>;
+}
+
 const DMCAdminInterface = () => {
   const router = useRouter()
   const searchParams = useSearchParams()
   const enquiryId = searchParams.get("enquiryId")
   const customerId = searchParams.get("customerId")
 
-  const [itineraries, setItineraries] = useState<SharedItinerary[]>([])
+  const [itineraries, setItineraries] = useState<ExtendedItinerary[]>([])
   const [availableDMCs, setAvailableDMCs] = useState<DMC[]>([])
-  const [selectedDMCForAdd, setSelectedDMCForAdd] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [addingDMC, setAddingDMC] = useState<string | null>(null)
+  const [rowDMCSelections, setRowDMCSelections] = useState<RowDMCSelections>({});
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null)
 
   const [showCommunicationLog, setShowCommunicationLog] = useState(false)
   const [showUpdateStatus, setShowUpdateStatus] = useState(false)
   const [showSetMargin, setShowSetMargin] = useState(false)
   const [selectedDMCItem, setSelectedDMCItem] = useState<SharedDMCItem | null>(null)
-  const [selectedItinerary, setSelectedItinerary] = useState<SharedItinerary | null>(null)
+  const [selectedItinerary, setSelectedItinerary] = useState<ExtendedItinerary | null>(null)
 
   const [statusDetails, setStatusDetails] = useState("AWAITING_TRANSFER")
   const [feedbackText, setFeedbackText] = useState("")
-  const [commissionType, setCommissionType] = useState<"FLAT" | "PERCENTAGE">("FLAT")
+  const [commissionType, setCommissionType] = useState<string>("FLAT")
   const [commissionAmount, setCommissionAmount] = useState("180")
   const [markupPrice, setMarkupPrice] = useState("1280")
   const [comments, setComments] = useState("")
   const [quotationPrice, setQuotationPrice] = useState("1100.00")
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false)
+const [quoteError, setQuoteError] = useState("")
 
   const [communicationLogs, setCommunicationLogs] = useState<CommunicationLog[]>([])
   const [isSubmittingCommission, setIsSubmittingCommission] = useState(false)
@@ -93,7 +144,9 @@ const DMCAdminInterface = () => {
   // PDF-related state
   const [showPDFPreview, setShowPDFPreview] = useState(false)
   const [selectedPDFUrl, setSelectedPDFUrl] = useState<string | null>(null)
-  const [regeneratingPDF, setRegeneratingPDF] = useState<string | null>(null)
+
+  // Auto-refresh state
+  const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true)
 
   // Calculate markup price dynamically
   const calculateMarkupPrice = () => {
@@ -111,185 +164,312 @@ const DMCAdminInterface = () => {
   // Update markup price when quotation or commission changes
   useEffect(() => {
     setMarkupPrice(calculateMarkupPrice())
-  }, [quotationPrice, commissionAmount, commissionType, calculateMarkupPrice])
+  }, [quotationPrice, commissionAmount, commissionType])
 
-  // Fetch DMCs and shared itineraries from API - refresh when params change
+  // Fetch DMCs and shared itineraries from API
   useEffect(() => {
     if (enquiryId || customerId) {
       fetchData()
     }
   }, [enquiryId, customerId])
 
-  // Also listen for URL parameter changes and refresh data
+  // Auto-refresh functionality
   useEffect(() => {
-    const handleParamChange = () => {
-      const currentParams = new URLSearchParams(window.location.search)
-      const newEnquiryId = currentParams.get("enquiryId")
-      const newCustomerId = currentParams.get("customerId")
-      
-      if ((newEnquiryId && newEnquiryId !== enquiryId) || 
-          (newCustomerId && newCustomerId !== customerId)) {
-        // Force refresh data when parameters change
-        setTimeout(() => {
-          fetchData()
-        }, 100)
-      }
-    }
+    if (!isAutoRefreshEnabled || (!enquiryId && !customerId)) return
+  
+    const interval = setInterval(() => {
+      fetchData(false)
+    }, 10000)
+  
+    return () => clearInterval(interval)
+  }, [isAutoRefreshEnabled, enquiryId, customerId])
 
-    window.addEventListener('popstate', handleParamChange)
-    return () => window.removeEventListener('popstate', handleParamChange)
-  }, [enquiryId, customerId])
-
-  const fetchData = async (forceRefresh = false) => {
+  const fetchData = async (showLoadingState = true) => {
     try {
-      setLoading(true)
-      setError(null)
-
-      // Clear existing data if force refresh
-      if (forceRefresh) {
-        setItineraries([])
-        setAvailableDMCs([])
+      if (showLoadingState) {
+        setLoading(true)
+        setError(null)
       }
 
       console.log("Fetching data for:", { enquiryId, customerId })
 
-      // Fetch DMCs from your API endpoint
+      // Fetch DMCs
       const dmcResponse = await fetch("/api/auth/agency-add-dmc?limit=100")
       
       if (!dmcResponse.ok) {
-        const errorData = await dmcResponse.text()
-        console.error("DMC API Error:", errorData)
-        throw new Error("Failed to fetch DMCs: " + dmcResponse.statusText)
+        throw new Error(`Failed to fetch DMCs: ${dmcResponse.statusText}`)
       }
 
       const dmcData = await dmcResponse.json()
       if (dmcData.success && dmcData.data) {
         setAvailableDMCs(dmcData.data)
-      } else {
-        console.warn("DMC API returned no data or unsuccessful response:", dmcData)
-        setAvailableDMCs([])
       }
 
-      // Fetch shared DMC data
+      // Fetch itineraries from share-customer API
       const params = new URLSearchParams()
       if (enquiryId) params.append("enquiryId", enquiryId)
       if (customerId) params.append("customerId", customerId)
 
-      const sharedResponse = await fetch(`/api/share-dmc?${params.toString()}`)
+      const itinerariesResponse = await fetch(`/api/share-customer?${params.toString()}`)
       
-      if (!sharedResponse.ok) {
-        const errorData = await sharedResponse.text()
-        console.error("Shared DMC API Error:", errorData)
-        
-        // Try to parse as JSON for better error info
-        try {
-          const errorJson = JSON.parse(errorData)
-          throw new Error(errorJson.error || errorJson.details || "Failed to fetch shared DMCs: " + sharedResponse.statusText)
-        } catch  {
-          throw new Error("Failed to fetch shared DMCs: " + sharedResponse.statusText)
-        }
+      if (!itinerariesResponse.ok) {
+        throw new Error(`Failed to fetch itineraries: ${itinerariesResponse.statusText}`)
       }
 
-      const sharedData = await sharedResponse.json()
-      if (sharedData.success && sharedData.data) {
-        setItineraries(sharedData.data)
-        // Also update available DMCs if provided in the response
-        if (sharedData.availableDMCs) {
-          setAvailableDMCs(sharedData.availableDMCs)
+      const itinerariesData = await itinerariesResponse.json()
+      
+      if (itinerariesData.success && itinerariesData.itineraries) {
+        // Fetch shared DMC data to get selected DMCs
+        const sharedResponse = await fetch(`/api/share-dmc?${params.toString()}`)
+        let sharedDMCData = null
+        
+        if (sharedResponse.ok) {
+          sharedDMCData = await sharedResponse.json()
+          console.log("📦 Shared DMC Data:", sharedDMCData)
         }
-      } else {
-        console.warn("Shared DMC API returned unsuccessful response:", sharedData)
-        setError(sharedData.error || sharedData.details || "Failed to fetch shared DMCs")
+
+        // Create a map to efficiently lookup shared DMCs by enquiryId
+        const sharedDMCMap = new Map()
+        if (sharedDMCData?.data) {
+          sharedDMCData.data.forEach((shared: SharedDMCResponse) => {
+            if (shared.enquiryId) {
+              if (!sharedDMCMap.has(shared.enquiryId)) {
+                sharedDMCMap.set(shared.enquiryId, [])
+              }
+              sharedDMCMap.get(shared.enquiryId).push(shared)
+            }
+          })
+        }
+
+        console.log("🗺️ Shared DMC Map:", sharedDMCMap)
+
+        // Merge itineraries with shared DMC data
+        const mergedItineraries = itinerariesData.itineraries.map((itin: ExtendedItinerary) => {
+          // Try to find matching shared DMCs by enquiryId
+          const matchingShared = sharedDMCMap.get(itin.enquiryId || enquiryId)
+          
+          let allSelectedDMCs: SharedDMCItem[] = []
+          
+          if (matchingShared && matchingShared.length > 0) {
+            // Collect all DMCs from all matching shared records
+            matchingShared.forEach((shared: SharedDMCResponse) => {
+              if (shared.selectedDMCs) {
+                allSelectedDMCs = [...allSelectedDMCs, ...shared.selectedDMCs];
+              }
+            });
+          }
+
+          console.log(`📋 Itinerary ${itin.id} has ${allSelectedDMCs.length} DMCs`)
+          
+          return {
+            ...itin,
+            selectedDMCs: allSelectedDMCs
+          }
+        })
+
+        console.log("✅ Merged itineraries:", mergedItineraries)
+        setItineraries(mergedItineraries)
       }
 
     } catch (err) {
       console.error("Error fetching data:", err)
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch data"
-      setError(errorMessage)
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      if (showLoadingState) {
+        setError(errorMessage)
+      }
     } finally {
-      setLoading(false)
+      if (showLoadingState) {
+        setLoading(false)
+      }
     }
   }
+  useEffect(() => {
+    const fetchQuote = async () => {
+      if (!selectedDMCItem || !enquiryId) return
+      
+      setIsLoadingQuote(true)
+      setQuoteError("")
+      
+      try {
+        const response = await fetch(`/api/quotes?enquiryId=${enquiryId}&dmcId=${selectedDMCItem.dmcId}`)
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch quote')
+        }
+        
+        const result = await response.json()
+        
+        if (result.success && result.data && result.data.length > 0) {
+          // Use the most recent quote
+          const latestQuote = result.data[0]
+          setQuotationPrice(latestQuote.amount.toString())
+        }
+      } catch (error) {
+        console.error('Error fetching quote:', error)
+        setQuoteError('Failed to load quote. Please enter manually.')
+      } finally {
+        setIsLoadingQuote(false)
+      }
+    }
+    
+    fetchQuote()
+  }, [selectedDMCItem, enquiryId])
 
-  const getDMCById = (dmcId: string) => {
-    return availableDMCs.find((dmc) => dmc.id === dmcId)
-  }
+  const handleDMCSelect = (itineraryId: string, dmcId: string) => {
+    setRowDMCSelections(prev => ({
+      ...prev,
+      [itineraryId]: dmcId
+    }));
+  };
 
-  // PDF Generation function
-  const handleRegeneratePDF = async (itinerary: SharedItinerary) => {
-    setRegeneratingPDF(itinerary.id)
+  // FIXED: Updated handleSendToDMC with proper error handling and response parsing
+  const handleSendToDMC = async (itinerary: ExtendedItinerary) => {
+    const dmcId = rowDMCSelections[itinerary.id];
+    
+    if (!dmcId) {
+      alert("Please select a DMC")
+      return;
+    }
 
+    // Check if PDF is available - prefer activePdfUrl
+    const pdfUrl = itinerary.activePdfUrl || itinerary.pdfUrl
+    if (!pdfUrl) {
+      alert("PDF not available for this itinerary")
+      return;
+    }
+  
     try {
-      const response = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          enquiryId: enquiryId || itinerary.enquiryId,
-          itineraryId: itinerary.id,
-          formData: {
-            customerName: "DMC Customer",
-            destinations: ["Default Destination"],
-            startDate: new Date().toISOString().split("T")[0],
-            endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-            adults: 2,
-            travelType: "Premium",
-            currency: "USD",
-            budget: 2000,
-            // Add other form data as needed
-          },
-        }),
+      setSendingEmail(itinerary.id);
+      
+      console.log("🔍 Sending to DMC with itinerary:", {
+        id: itinerary.id,
+        originalId: itinerary.originalId,
+        pdfUrl: itinerary.pdfUrl,
+        activePdfUrl: itinerary.activePdfUrl,
+        dateGenerated: itinerary.dateGenerated
       })
+      
+      // Format date properly
+      let formattedDate = new Date().toISOString().split("T")[0]
+      if (itinerary.dateGenerated) {
+        try {
+          const cleanDate = itinerary.dateGenerated.replace(/\s+/g, '').replace(/\./g, '-')
+          const parts = cleanDate.split(/[-/]/)
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0')
+            const month = parts[1].padStart(2, '0')
+            const year = parts[2]
+            formattedDate = `${year}-${month}-${day}`
+          } else {
+            formattedDate = itinerary.dateGenerated
+          }
+        } catch (error) {
+          console.warn("Date formatting failed, using current date:", error)
+        }
+      }
+      
+      // Prepare the payload with complete itinerary data
+      const emailPayload = {
+        selectedDMCs: [dmcId],
+        enquiryId: enquiryId || itinerary.enquiryId,
+        customerId: customerId || itinerary.customerId,
+        selectedItinerary: {
+          id: itinerary.originalId || itinerary.id,
+          pdfUrl: itinerary.pdfUrl,
+          activePdfUrl: itinerary.activePdfUrl,
+          dateGenerated: formattedDate,
+        },
+        dateGenerated: formattedDate,
+        assignedStaffId: "staff-1",
+      }
+      
+      console.log("📧 Sending email with payload:", JSON.stringify(emailPayload, null, 2))
+      
+      const response = await fetch('/api/share-dmc', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(emailPayload),
+      });
 
+      // Check if response is OK before parsing JSON
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to regenerate PDF")
+        const errorText = await response.text()
+        console.error("❌ Server response error:", errorText)
+        throw new Error(`Server error: ${response.status} - ${errorText}`)
       }
 
-      const result = await response.json()
+      // Parse JSON response
+      let result
+      try {
+        result = await response.json()
+      } catch (jsonError) {
+        console.error("❌ JSON parsing error:", jsonError)
+        throw new Error("Invalid JSON response from server")
+      }
+      
+      if (!result.success) {
+        throw new Error(result.error || result.details || 'Failed to share with DMC');
+      }
 
-      // Update the itinerary with new PDF URL
-      setItineraries((prev) =>
-        prev.map((item) => 
-          item.id === itinerary.id
-            ? { ...item, pdfUrl: result.pdfUrl, pdf: "D" }
-            : item
-        )
-      )
-
-      toast({
-        title: "Success",
-        description: "PDF regenerated successfully",
-      })
+      console.log("✅ Email sent successfully:", result)
+      
+      // Clear the selection for this row
+      setRowDMCSelections(prev => {
+        const updated = { ...prev };
+        delete updated[itinerary.id];
+        return updated;
+      });
+      
+      // Refresh data to show updated state with new DMC card
+      await fetchData(false);
+      
+      // Show success message with email summary
+      const emailSummary = result.emailSummary
+      if (emailSummary) {
+        alert(`Successfully sent to DMC!\n\nEmails sent: ${emailSummary.sent}/${emailSummary.total}`)
+      } else {
+        alert(`Successfully sent to DMC!`)
+      }
+      
     } catch (error) {
-      console.error("Error regenerating PDF:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to regenerate PDF",
-        variant: "destructive",
-      })
+      console.error('❌ Error sharing with DMC:', error);
+      alert(`Failed to share with DMC: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setRegeneratingPDF(null)
+      setSendingEmail(null);
     }
-  }
+  };
 
   // View PDF function
-  const handleViewPDF = (pdfUrl: string | null) => {
-    if (pdfUrl) {
-      setSelectedPDFUrl(pdfUrl)
+  const handleViewPDF = async (pdfUrl: string | null) => {
+    if (!pdfUrl) {
+      alert("PDF not available")
+      return
+    }
+
+    try {
+      // If it's an S3 URL, generate a fresh pre-signed URL
+      if (pdfUrl.includes("amazonaws.com")) {
+        const url = new URL(pdfUrl)
+        const key = url.pathname.substring(1)
+
+        const response = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(key)}`)
+
+        if (!response.ok) {
+          throw new Error("Failed to generate pre-signed URL")
+        }
+
+        const { url: signedUrl } = await response.json()
+        setSelectedPDFUrl(signedUrl)
+      } else {
+        setSelectedPDFUrl(pdfUrl)
+      }
+
       setShowPDFPreview(true)
-    } else {
-      toast({
-        title: "Error",
-        description: "PDF not available",
-        variant: "destructive",
-      })
+    } catch (error) {
+      console.error("Error generating pre-signed URL:", error)
+      alert("Failed to load PDF. Please try again.")
     }
   }
 
@@ -303,161 +483,11 @@ const DMCAdminInterface = () => {
       link.click()
       document.body.removeChild(link)
     } else {
-      toast({
-        title: "Error",
-        description: "PDF not available",
-        variant: "destructive",
-      })
+      alert("PDF not available")
     }
   }
 
-  const toggleActiveStatus = async (itineraryId: string, currentStatus: boolean) => {
-    try {
-      const response = await fetch("/api/share-dmc", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: itineraryId,
-          action: "toggleActive",
-          isActive: !currentStatus,
-        }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || result.details || "Failed to update status")
-      }
-
-      setItineraries((prev) =>
-        prev.map((itin) => (itin.id === itineraryId ? { ...itin, activeStatus: !itin.activeStatus } : itin)),
-      )
-
-      toast({
-        title: "Success",
-        description: `Itinerary ${!currentStatus ? "activated" : "deactivated"}`,
-      })
-    } catch (error) {
-      console.error("Error toggling status:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update status",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const addDMCToItinerary = async (itineraryId: string, dmcId: string) => {
-    if (!dmcId) return
-
-    try {
-      setAddingDMC(dmcId)
-
-      // First add the DMC to the itinerary
-      const response = await fetch("/api/share-dmc", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: itineraryId,
-          action: "addDMC",
-          dmcId: dmcId,
-          enquiryId: enquiryId,
-          dateGenerated: new Date().toISOString().split("T")[0],
-        }),
-      })
-
-      const result = await response.json()
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || result.details || "Failed to add DMC")
-      }
-
-      // Update local state with new DMC
-      setItineraries((prev) =>
-        prev.map((itin) =>
-          itin.id === itineraryId
-            ? {
-                ...itin,
-                selectedDMCs: [...itin.selectedDMCs, ...result.data.selectedDMCs],
-              }
-            : itin,
-        ),
-      )
-
-      // Find the itinerary and automatically send PDF email
-      const itinerary = itineraries.find(itin => itin.id === itineraryId)
-      console.log("🔍 Found itinerary for email:", itinerary)
-      console.log("📎 PDF URL:", itinerary?.pdfUrl)
-      
-      if (itinerary && itinerary.pdfUrl) {
-        try {
-          // Create a properly formatted date string
-          const currentDate = new Date().toISOString();
-          
-          const emailPayload = {
-            selectedDMCs: [dmcId],
-            enquiryId: enquiryId,
-            customerId: customerId || undefined,
-            selectedItinerary: itinerary,
-            dateGenerated: currentDate, // Use the properly formatted date
-            assignedStaffId: itinerary.assignedStaffId || "staff-1",
-          }
-          
-          console.log("📧 Sending email with payload:", JSON.stringify(emailPayload, null, 2))
-          
-          const emailResponse = await fetch("/api/share-dmc", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(emailPayload),
-          })
-
-          const emailResult = await emailResponse.json()
-          
-          if (emailResponse.ok && emailResult.success) {
-            toast({
-              title: "Success",
-              description: "DMC added and PDF email sent successfully",
-            })
-          } else {
-            toast({
-              title: "Partial Success",
-              description: "DMC added but failed to send PDF email",
-              variant: "destructive",
-            })
-          }
-        } catch (emailError) {
-          console.error("Error sending PDF email:", emailError)
-          toast({
-            title: "Partial Success", 
-            description: "DMC added but failed to send PDF email",
-            variant: "destructive",
-          })
-        }
-      } else {
-        toast({
-          title: "Success",
-          description: "DMC added successfully (no PDF available to send)",
-        })
-      }
-    } catch (error) {
-      console.error("Error adding DMC:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add DMC",
-        variant: "destructive",
-      })
-    } finally {
-      setAddingDMC(null)
-    }
-  }
-
-  const handleViewUpdates = (dmcItem: SharedDMCItem, itinerary: SharedItinerary) => {
+  const handleViewUpdates = (dmcItem: SharedDMCItem, itinerary: ExtendedItinerary) => {
     setSelectedDMCItem(dmcItem)
     setSelectedItinerary(itinerary)
     setCommunicationLogs([])
@@ -481,7 +511,7 @@ const DMCAdminInterface = () => {
     setShowSetMargin(true)
   }
 
-  const handleShareToCustomer = async (itinerary: SharedItinerary, dmcItem: SharedDMCItem) => {
+  const handleShareToCustomer = async (itinerary: ExtendedItinerary, dmcItem: SharedDMCItem) => {
     try {
       setIsShareToCustomerLoading(true)
 
@@ -491,33 +521,27 @@ const DMCAdminInterface = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          id: itinerary.id,
+          id: itinerary.originalId || itinerary.id,
           action: "shareToCustomer",
           enquiryId: enquiryId || itinerary.enquiryId,
           customerId: customerId || itinerary.customerId,
           dmcId: dmcItem.dmcId,
-          itineraryId: itinerary.id,
+          itineraryId: itinerary.originalId || itinerary.id,
         }),
       })
 
-      const result: { success: boolean; error?: string; details?: string } = await response.json()
+      const result = await response.json()
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || result.details || "Failed to share to customer")
+        throw new Error(result.error || "Failed to share to customer")
       }
 
-      toast({
-        title: "Success",
-        description: "Quote shared with customer successfully",
-      })
+      alert("Quote shared with customer successfully")
+      await fetchData(false)
 
     } catch (error) {
       console.error("Error sharing to customer:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to share quote with customer",
-        variant: "destructive",
-      })
+      alert("Failed to share quote with customer")
     } finally {
       setIsShareToCustomerLoading(false)
     }
@@ -544,38 +568,15 @@ const DMCAdminInterface = () => {
       const result = await response.json()
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || result.details || "Failed to update status")
+        throw new Error(result.error || "Failed to update status")
       }
 
-      // Update local state
-      setItineraries((prev) =>
-        prev.map((itin) => ({
-          ...itin,
-          selectedDMCs: itin.selectedDMCs.map((dmc) =>
-            dmc.id === selectedDMCItem.id
-              ? {
-                  ...dmc,
-                  status: statusDetails as SharedDMCItem["status"],
-                  notes: feedbackText,
-                  lastUpdated: result.data.updatedAt,
-                }
-              : dmc,
-          ),
-        })),
-      )
-
       setShowUpdateStatus(false)
-      toast({
-        title: "Success",
-        description: "DMC status updated",
-      })
+      alert("DMC status updated")
+      await fetchData(false)
     } catch (error) {
       console.error("Error updating status:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update status",
-        variant: "destructive",
-      })
+      alert("Failed to update status")
     }
   }
 
@@ -591,7 +592,7 @@ const DMCAdminInterface = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          id: selectedItinerary?.id,
+          id: selectedItinerary?.originalId || selectedItinerary?.id,
           action: "addCommission",
           enquiryId: enquiryId,
           dmcId: selectedDMCItem.dmcId,
@@ -606,40 +607,15 @@ const DMCAdminInterface = () => {
       const result = await response.json()
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || result.details || "Failed to add commission")
+        throw new Error(result.error || "Failed to add commission")
       }
 
-      // Update local state with commission data
-      setItineraries((prev) =>
-        prev.map((itin) => ({
-          ...itin,
-          selectedDMCs: itin.selectedDMCs.map((dmc) =>
-            dmc.id === selectedDMCItem.id
-              ? {
-                  ...dmc,
-                  quotationAmount: parseFloat(quotationPrice),
-                  commissionAmount: parseFloat(commissionAmount),
-                  commissionType: commissionType,
-                  markupPrice: parseFloat(markupPrice),
-                  notes: comments,
-                }
-              : dmc,
-          ),
-        })),
-      )
-
       setShowSetMargin(false)
-      toast({
-        title: "Success",
-        description: "Commission added successfully",
-      })
+      alert("Commission added successfully")
+      await fetchData(false)
     } catch (error) {
       console.error("Error adding commission:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to add commission",
-        variant: "destructive",
-      })
+      alert("Failed to add commission")
     } finally {
       setIsSubmittingCommission(false)
     }
@@ -650,15 +626,15 @@ const DMCAdminInterface = () => {
       enquiryId: enquiryId || "",
       customerId: customerId || "",
     });
-    router.push(`/agency/dashboard/dmc-payment?${queryParams.toString()}`)
+    router.push(`/agency-admin/dashboard/dmc-payment?${queryParams.toString()}`)
   }
 
   const handleRefresh = () => {
-    fetchData(true) // Force refresh with data clearing
-    toast({
-      title: "Refreshing",
-      description: "Fetching latest data...",
-    })
+    fetchData(true)
+  }
+
+  const getDMCById = (dmcId: string) => {
+    return availableDMCs.find((dmc) => dmc.id === dmcId)
   }
 
   if (loading) {
@@ -678,14 +654,12 @@ const DMCAdminInterface = () => {
         <div className="text-center text-red-600">
           <p className="text-lg font-semibold">Error Loading Data</p>
           <p className="mt-2">{error}</p>
-          <Button 
+          <button 
             onClick={() => fetchData()} 
-            className="mt-4"
-            variant="outline"
+            className="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
           >
-            <RefreshCw className="w-4 h-4 mr-2" />
             Retry
-          </Button>
+          </button>
         </div>
       </div>
     )
@@ -697,7 +671,7 @@ const DMCAdminInterface = () => {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div className="text-sm text-gray-600">
-            Handled by: <span className="font-medium text-gray-800">AStaff2</span>
+            <span className="font-medium text-gray-800">Share Itineraries with DMCs</span>
             {enquiryId && (
               <span className="ml-4">
                 Enquiry: <span className="font-medium text-gray-800">{enquiryId}</span>
@@ -705,133 +679,238 @@ const DMCAdminInterface = () => {
             )}
           </div>
           <div className="flex gap-2">
-            <Button 
-              onClick={handleRefresh}
-              variant="outline"
-              size="sm"
+            <button 
+              onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)}
+              className={`px-3 py-1.5 text-sm rounded flex items-center gap-2 ${
+                isAutoRefreshEnabled 
+                  ? "bg-green-50 border border-green-200 text-green-700" 
+                  : "border border-gray-300 text-gray-700"
+              }`}
             >
-              <RefreshCw className="w-4 h-4 mr-2" />
+              <RefreshCw className={`w-4 h-4 ${isAutoRefreshEnabled ? "text-green-600" : ""}`} />
+              Auto-refresh {isAutoRefreshEnabled ? "ON" : "OFF"}
+            </button>
+            <button 
+              onClick={handleRefresh}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
               Refresh
-            </Button>
-            <Button className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-md text-sm font-medium">
-              Reassign Staff
-            </Button>
+            </button>
           </div>
         </div>
 
-        {/* Main Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-8">
-          <div className="bg-green-100 px-6 py-3 grid grid-cols-5 text-sm font-medium text-gray-700">
-            <div className="flex items-center">
-              <Calendar className="w-4 h-4 mr-2" />
-              Date generated
-            </div>
-            <div className="text-center">PDF</div>
-            <div className="text-center">PDF Actions</div>
-            <div className="text-center">Active Status</div>
-            <div className="text-center">Send to DMC</div>
+        {/* Itinerary PDF Versions Table */}
+        <div className="bg-white rounded-lg shadow-sm mb-8">
+          <div className="p-4 border-b">
+            <h3 className="text-lg font-semibold">Itinerary PDF Versions</h3>
+            <p className="text-sm text-gray-600">
+              {itineraries.length > 0
+                ? `Total: ${itineraries.length} PDF versions available`
+                : "No PDF versions generated yet"}
+            </p>
           </div>
 
-          <div className="divide-y divide-gray-200">
+          <div className="overflow-x-auto">
             {itineraries.length === 0 ? (
-              <div className="px-6 py-8 text-center text-gray-500">
-                <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                No shared itineraries found
+              <div className="p-8 text-center text-gray-500">
+                <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h4 className="text-lg font-medium text-gray-700 mb-2">No PDF Versions Available</h4>
+                <p className="text-sm text-gray-500">
+                  Generate itinerary PDFs to share with DMCs
+                </p>
               </div>
             ) : (
-              itineraries
-                .filter((itinerary) => itinerary.activeStatus || itinerary.selectedDMCs.length > 0)
-                .map((itinerary) => (
-                  <div
-                    key={itinerary.id}
-                    className={`px-6 py-4 grid grid-cols-5 items-center ${
-                      itinerary.activeStatus ? "bg-orange-50" : ""
-                    }`}
-                  >
-                    <div className="text-sm text-gray-600">{itinerary.dateGenerated}</div>
-                    <div className="text-center">
-                      <div
-                        className={`w-8 h-8 rounded flex items-center justify-center text-white font-bold mx-auto ${
-                          itinerary.pdf === "D" ? "bg-yellow-500" : "bg-gray-800"
-                        }`}
-                      >
-                        {itinerary.pdf}
-                      </div>
-                      {!itinerary.pdfUrl && (
-                        <button
-                          onClick={() => handleRegeneratePDF(itinerary)}
-                          disabled={regeneratingPDF === itinerary.id}
-                          className="text-xs text-blue-600 hover:underline disabled:opacity-50 mt-1"
-                        >
-                          {regeneratingPDF === itinerary.id ? "Generating..." : "Generate PDF"}
-                        </button>
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <div className="flex gap-1 justify-center">
-                        {itinerary.pdfUrl && (
-                          <>
-                            <button
-                              onClick={() => handleViewPDF(itinerary.pdfUrl ?? null)}
-                              className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
-                              disabled={!itinerary.pdfUrl}
+              <>
+                {/* Latest PDF Section */}
+                <div className="p-4 border-b bg-green-50">
+                  <h4 className="text-sm font-semibold text-green-700 mb-3 flex items-center gap-2">
+                    <Star className="w-4 h-4" />
+                    Latest PDF Versions
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-green-200">
+                          <th className="text-left p-2 text-xs font-medium text-green-700 uppercase">Date</th>
+                          <th className="text-left p-2 text-xs font-medium text-green-700 uppercase">PDF Version</th>
+                          <th className="text-left p-2 text-xs font-medium text-green-700 uppercase">Actions</th>
+                          <th className="text-left p-2 text-xs font-medium text-green-700 uppercase">Status</th>
+                          <th className="text-left p-2 text-xs font-medium text-green-700 uppercase">Select DMC</th>
+                          <th className="text-right p-2 text-xs font-medium text-green-700 uppercase">Share</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itineraries
+                          .filter((version) => version.isLatestVersion)
+                          .map((version) => (
+                            <tr
+                              key={version.id}
+                              className="border-b border-green-100 hover:bg-green-25"
                             >
-                              <Eye className="w-3 h-3" />
-                              View
-                            </button>
-                            <button
-                              onClick={() => handleDownloadPDF(itinerary.pdfUrl ?? null, `itinerary-${itinerary.id}.pdf`)}
-                              className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
-                              disabled={!itinerary.pdfUrl}
-                            >
-                              <Download className="w-3 h-3" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="sr-only peer"
-                          checked={itinerary.activeStatus}
-                          onChange={() => toggleActiveStatus(itinerary.id, itinerary.activeStatus)}
-                        />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-400"></div>
-                      </label>
-                    </div>
-                    <div className="flex gap-2 items-center justify-center flex-wrap">
-                      <Select
-                        value={selectedDMCForAdd}
-                        onValueChange={(value: string) => {
-                          setSelectedDMCForAdd(value)
-                          if (value) {
-                            addDMCToItinerary(itinerary.id, value)
-                          }
-                        }}
-                        disabled={addingDMC !== null}
-                      >
-                        <SelectTrigger className="w-32 text-xs">
-                          <SelectValue placeholder={addingDMC ? "Adding..." : "Add DMC..."} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableDMCs
-                            .filter((dmc) => dmc.status === "Active")
-                            .filter((dmc) => !itinerary.selectedDMCs.some((item) => item.dmcId === dmc.id))
-                            .map((dmc) => (
-                              <SelectItem key={dmc.id} value={dmc.id}>
-                                {dmc.name}
-                              </SelectItem>
-                            ))}
-                          {availableDMCs.filter((dmc) => dmc.status === "Active").length === 0 && (
-                            <SelectItem value="" disabled>No active DMCs available</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                              <td className="p-3">
+                                <div className="text-sm text-gray-900">
+                                  {version.dateGenerated || new Date(version.createdAt || "").toLocaleDateString()}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {new Date(version.createdAt || "").toLocaleTimeString()}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                                      version.isEdited ? "bg-blue-500" : "bg-green-500"
+                                    }`}
+                                  >
+                                    V{version.versionNumber}
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">
+                                      {version.displayVersion}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {version.isEdited ? "Regenerated PDF" : "Original PDF"}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex gap-1">
+                                  {version.activePdfUrl && (
+                                    <>
+                                      <button
+                                        onClick={() => handleViewPDF(version.activePdfUrl!)}
+                                        className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        View
+                                      </button>
+                                      <button
+                                        onClick={() => handleDownloadPDF(
+                                          version.activePdfUrl!,
+                                          `itinerary-v${version.versionNumber}.pdf`
+                                        )}
+                                        className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`w-2 h-2 rounded-full ${
+                                      version.activePdfUrl ? "bg-green-500" : "bg-red-500"
+                                    }`}
+                                  ></div>
+                                  <span
+                                    className={`text-xs font-medium ${
+                                      version.activePdfUrl ? "text-green-600" : "text-red-600"
+                                    }`}
+                                  >
+                                    {version.activePdfUrl ? "Available" : "Missing"}
+                                  </span>
+                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full inline-flex items-center gap-1">
+                                    <Star className="w-3 h-3" />
+                                    LATEST
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <select
+                                  value={rowDMCSelections[version.id] || ''}
+                                  onChange={(e) => handleDMCSelect(version.id, e.target.value)}
+                                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                                >
+                                  <option value="">Select DMC...</option>
+                                  {availableDMCs
+                                    .filter(dmc => !version.selectedDMCs?.some(item => item.dmcId === dmc.id))
+                                    .map((dmc) => (
+                                      <option key={dmc.id} value={dmc.id}>
+                                        {dmc.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </td>
+                              <td className="p-3 text-right">
+                                <button
+                                  onClick={() => handleSendToDMC(version)}
+                                  disabled={!rowDMCSelections[version.id] || sendingEmail === version.id}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ml-auto"
+                                >
+                                  {sendingEmail === version.id ? (
+                                    <>
+                                      <RefreshCw className="w-3 h-3 animate-spin" />
+                                      Sending...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Send className="w-3 h-3" />
+                                      Send
+                                    </>
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))
+                </div>
+
+              {/* Previous PDFs Section */}
+{itineraries
+  .filter(version => !version.isLatestVersion)
+  .sort((a, b) => 
+    new Date(b.dateGenerated || b.createdAt || 0).getTime() - 
+    new Date(a.dateGenerated || a.createdAt || 0).getTime()
+  )
+  .map((version) => (
+    <div key={version.id} className="p-4 border-b border-gray-100">
+      <div className="flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-medium text-gray-900">
+            Version {version.versionNumber || 'N/A'}
+          </h4>
+          <p className="text-xs text-gray-500">
+            {new Date(version.dateGenerated || version.createdAt || '').toLocaleString()}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {version.pdfUrl && (
+            <a
+              href={version.pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1"
+            >
+              <Eye className="w-4 h-4" /> View
+            </a>
+          )}
+          {version.pdfUrl && (
+          <button
+          onClick={() => {
+            if (version.pdfUrl) {
+              handleDownloadPDF(version.pdfUrl, `Itinerary-${version.versionNumber || ''}`)
+            }
+          }}
+          disabled={!version.pdfUrl}
+          className={`text-gray-600 hover:text-gray-800 text-sm font-medium flex items-center gap-1 ${
+            !version.pdfUrl ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        >
+          <Download className="w-4 h-4" /> Download
+        </button>
+          )}
+        </div>
+      </div>
+    </div>
+  ))
+}
+              </>
             )}
           </div>
         </div>
@@ -840,10 +919,32 @@ const DMCAdminInterface = () => {
         <h3 className="text-lg font-semibold text-gray-800 mb-6">Itinerary Quote & Margin Overview</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {itineraries.flatMap((itinerary) =>
-            itinerary.selectedDMCs.map((dmcItem) => {
+          {/* Flatten all DMCs from all itineraries and create unique cards */}
+          {(() => {
+            const uniqueDMCs = new Map()
+            const allDMCs = itineraries.flatMap(itinerary => 
+              (itinerary.selectedDMCs || []).map(dmcItem => ({
+                dmcItem,
+                itinerary
+              }))
+            )
+        
+            // Filter to keep only the first occurrence of each DMC
+            const uniqueDMCList = allDMCs.filter(({ dmcItem }) => {
+              if (uniqueDMCs.has(dmcItem.dmcId)) return false
+              uniqueDMCs.set(dmcItem.dmcId, true)
+              return true
+            })
+        
+            console.log("🎴 Unique DMC cards to display:", uniqueDMCList.length)
+        
+            return uniqueDMCList.map(({ dmcItem, itinerary }) => {
               const dmc = dmcItem.dmc || getDMCById(dmcItem.dmcId)
-              if (!dmc) return null
+              if (!dmc) {
+                console.log("❌ DMC not found for ID:", dmcItem.dmcId)
+                return null
+              }
+        
 
               const getCardStatus = () => {
                 switch (dmcItem.status) {
@@ -876,14 +977,14 @@ const DMCAdminInterface = () => {
               const hasCommission = dmcItem.quotationAmount && dmcItem.markupPrice
 
               return (
-                <Card key={dmcItem.id} className={`shadow-sm ${getCardColor()}`}>
-                  <CardHeader className="pb-3">
+                <div key={`${dmcItem.id}-${itinerary.id}`} className={`shadow-sm rounded-lg ${getCardColor()}`}>
+                  <div className="p-4 border-b">
                     <div className="flex items-center">
                       <div className="w-10 h-10 bg-teal-600 rounded-full flex items-center justify-center mr-3 text-white font-bold">
                         {dmc.name.charAt(0)}
                       </div>
                       <div>
-                        <CardTitle className="text-base font-semibold">{dmc.name}</CardTitle>
+                        <h3 className="text-base font-semibold">{dmc.name}</h3>
                         <p className="text-sm text-gray-500">
                           {dmcItem.status === "AWAITING_INTERNAL_REVIEW" ? "Not responded" : "Manually entered"}
                         </p>
@@ -892,9 +993,8 @@ const DMCAdminInterface = () => {
                         )}
                       </div>
                     </div>
-                  </CardHeader>
-
-                  <CardContent className="pt-0">
+                  </div>
+                  <div className="p-4">
                     <div className="mb-4">
                       <h3 className="font-semibold text-lg mb-1">{getCardStatus()}</h3>
                       <p className="text-sm text-gray-500">Itinerary sent on : {itinerary.dateGenerated}</p>
@@ -921,64 +1021,60 @@ const DMCAdminInterface = () => {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1"
+                      <button
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded"
                         onClick={() => handleViewUpdates(dmcItem, itinerary)}
                       >
                         View updates
-                      </Button>
-                      <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1"
+                      </button>
+                      <button
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded"
                         onClick={() => handleUpdateStatus(dmcItem)}
                       >
                         Update Status
-                      </Button>
+                      </button>
                       {dmcItem.status === "QUOTATION_RECEIVED" && (
                         <>
-                          <Button
-                            size="sm"
-                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1"
+                          <button
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded"
                             onClick={() => handleSetMargin(dmcItem)}
                           >
                             Set margin
-                          </Button>
+                          </button>
                           {hasCommission && (
                             <>
-                              <Button
-                                size="sm"
-                                className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-1"
+                              <button
+                                className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-1 rounded flex items-center gap-1"
                                 onClick={() => handleShareToCustomer(itinerary, dmcItem)}
                                 disabled={isShareToCustomerLoading}
                               >
-                                <Send className="w-3 h-3 mr-1" />
+                                <Send className="w-3 h-3" />
                                 Share to customer
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-3 py-1"
+                              </button>
+                              <button
+                                className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-3 py-1 rounded"
                                 onClick={handlePayDMC}
                               >
                                 Pay to DMC
-                              </Button>
+                              </button>
                             </>
                           )}
                         </>
                       )}
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )
-            }),
-          )}
+            })
+          })()}
         </div>
 
-        {itineraries.every(itinerary => itinerary.selectedDMCs.length === 0) && (
+        {/* Show message if no DMCs */}
+        {itineraries.every(itinerary => !itinerary.selectedDMCs || itinerary.selectedDMCs.length === 0) && (
           <div className="text-center py-8 text-gray-500">
             <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <p className="text-lg font-medium">No DMCs added yet</p>
-            <p className="text-sm">Use the dropdown above to add DMCs to your itinerary</p>
+            <p className="text-sm">Use the dropdown in the table above to add DMCs to your itineraries</p>
           </div>
         )}
 
@@ -993,9 +1089,9 @@ const DMCAdminInterface = () => {
                     DMC: {selectedDMCItem && getDMCById(selectedDMCItem.dmcId)?.name}
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowCommunicationLog(false)}>
+                <button onClick={() => setShowCommunicationLog(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-6 h-6" />
-                </Button>
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -1037,9 +1133,9 @@ const DMCAdminInterface = () => {
             <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-semibold text-gray-800">Update status and add feedbacks</h2>
-                <Button variant="ghost" size="sm" onClick={() => setShowUpdateStatus(false)}>
+                <button onClick={() => setShowUpdateStatus(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-6 h-6" />
-                </Button>
+                </button>
               </div>
               <div className="space-y-4">
                 <div className="flex items-center space-x-3 mb-4">
@@ -1054,42 +1150,41 @@ const DMCAdminInterface = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                  <Select value={statusDetails} onValueChange={setStatusDetails}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="AWAITING_TRANSFER">Awaiting Transfer</SelectItem>
-                      <SelectItem value="VIEWED">Viewed</SelectItem>
-                      <SelectItem value="AWAITING_INTERNAL_REVIEW">Awaiting Internal Review</SelectItem>
-                      <SelectItem value="QUOTATION_RECEIVED">Quotation Received</SelectItem>
-                      <SelectItem value="REJECTED">Rejected</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <select
+                    value={statusDetails}
+                    onChange={(e) => setStatusDetails(e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                  >
+                    <option value="AWAITING_TRANSFER">Awaiting Transfer</option>
+                    <option value="VIEWED">Viewed</option>
+                    <option value="AWAITING_INTERNAL_REVIEW">Awaiting Internal Review</option>
+                    <option value="QUOTATION_RECEIVED">Quotation Received</option>
+                    <option value="REJECTED">Rejected</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Feedback/Notes</label>
-                  <Textarea
+                  <textarea
                     value={feedbackText}
                     onChange={(e) => setFeedbackText(e.target.value)}
                     rows={4}
-                    className="w-full"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
                     placeholder="Enter feedback or notes..."
                   />
                 </div>
                 <div className="flex justify-end space-x-3">
-                  <Button 
-                    variant="outline" 
+                  <button 
                     onClick={() => setShowUpdateStatus(false)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
-                  </Button>
-                  <Button 
+                  </button>
+                  <button 
                     onClick={updateDMCStatus} 
-                    className="bg-green-600 hover:bg-green-700"
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg"
                   >
                     Update Status
-                  </Button>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1108,52 +1203,55 @@ const DMCAdminInterface = () => {
                   </p>
                   <p className="text-sm text-gray-600">Quotation received</p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setShowSetMargin(false)}>
+                <button onClick={() => setShowSetMargin(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-6 h-6" />
-                </Button>
+                </button>
               </div>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Quotation received</label>
-                  <div className="flex">
-                    <span className="flex items-center px-3 border border-r-0 border-gray-300 rounded-l-md bg-gray-50 text-gray-500">
-                      $
-                    </span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={quotationPrice}
-                      onChange={(e) => setQuotationPrice(e.target.value)}
-                      className="rounded-l-none"
-                      placeholder="Enter quotation amount"
-                    />
-                  </div>
-                </div>
+              <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Quotation received</label>
+  <div className="flex">
+    <span className="flex items-center px-3 border border-r-0 border-gray-300 rounded-l-md bg-gray-50 text-gray-500">
+      $
+    </span>
+    <input
+      type="number"
+      step="0.01"
+      value={quotationPrice}
+      onChange={(e) => setQuotationPrice(e.target.value)}
+      className="flex-1 p-3 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-green-500"
+      placeholder={isLoadingQuote ? "Loading..." : "Enter quotation amount"}
+      disabled={isLoadingQuote}
+    />
+  </div>
+  {quoteError && (
+    <p className="mt-1 text-sm text-red-600">{quoteError}</p>
+  )}
+</div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Commission type</label>
-                    <Select value={commissionType} onValueChange={(value: "FLAT" | "PERCENTAGE") => setCommissionType(value)}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="FLAT">Flat commission</SelectItem>
-                        <SelectItem value="PERCENTAGE">Percentage commission</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <select
+                      value={commissionType}
+                      onChange={(e) => setCommissionType(e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="FLAT">Flat commission</option>
+                      <option value="PERCENTAGE">Percentage commission</option>
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Commission</label>
                     <div className="flex">
-                      <Input
+                      <input
                         type="number"
                         step="0.01"
                         value={commissionAmount}
                         onChange={(e) => setCommissionAmount(e.target.value)}
-                        className="rounded-r-none"
+                        className="flex-1 p-3 border border-r-0 border-gray-300 rounded-l-lg focus:ring-2 focus:ring-green-500"
                         placeholder={commissionType === "PERCENTAGE" ? "10" : "180"}
                       />
-                      <div className="flex items-center px-3 border border-l-0 border-gray-300 rounded-r-md bg-gray-50 text-gray-500 text-sm">
+                      <div className="flex items-center px-3 border border-gray-300 rounded-r-md bg-gray-50 text-gray-500 text-sm">
                         {commissionType === "PERCENTAGE" ? "%" : "$"}
                       </div>
                     </div>
@@ -1161,14 +1259,14 @@ const DMCAdminInterface = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Markup price</label>
                     <div className="flex">
-                      <Input
+                      <input
                         type="text"
                         value={markupPrice}
                         readOnly
-                        className="rounded-r-none bg-gray-50"
+                        className="flex-1 p-3 border border-r-0 border-gray-300 rounded-l-lg bg-gray-50"
                         placeholder="1280"
                       />
-                      <div className="flex items-center px-3 border border-l-0 border-gray-300 rounded-r-md bg-gray-50 text-gray-500 text-sm">
+                      <div className="flex items-center px-3 border border-gray-300 rounded-r-md bg-gray-50 text-gray-500 text-sm">
                         $
                       </div>
                     </div>
@@ -1176,28 +1274,29 @@ const DMCAdminInterface = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
-                  <Textarea
+                  <textarea
                     value={comments}
                     onChange={(e) => setComments(e.target.value)}
                     rows={3}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
                     placeholder="Enter comments..."
                   />
                 </div>
                 <div className="flex justify-end space-x-3">
-                  <Button 
-                    variant="outline" 
+                  <button 
                     onClick={() => setShowSetMargin(false)}
                     disabled={isSubmittingCommission}
+                    className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
                   >
                     Cancel
-                  </Button>
-                  <Button 
+                  </button>
+                  <button 
                     onClick={addCommission} 
-                    className="bg-green-600 hover:bg-green-700"
                     disabled={isSubmittingCommission}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50"
                   >
                     {isSubmittingCommission ? "Adding..." : "Add commission"}
-                  </Button>
+                  </button>
                 </div>
               </div>
             </div>

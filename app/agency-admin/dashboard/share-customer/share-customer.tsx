@@ -176,195 +176,236 @@ export default function ShareCustomerDashboard() {
     setLoading(false)
   }, [searchParams, router, toast]) // Added missing dependencies
 
-  const fetchCustomerData = async (
-    customerIdParam: string | null,
-    enquiryIdParam: string | null,
-    itineraryIdParam: string | null,
-    forceRefresh = false,
-  ) => {
-    try {
-      setLoading(true)
-      setError(null)
+  // Update the fetchCustomerData function to properly handle both generated and regenerated PDFs
 
-      // Preserve current selection so it doesn't "move" on refresh
-      const prevSelectedId = selectedItinerary?.id
-      const prevSelectedUrl = selectedPDFVersion
+// Key changes in fetchCustomerData function:
 
-      if (forceRefresh) {
-        setSelectedItinerary(null)
-        setItineraryVersions([])
-        setCustomerFeedbacks([])
-        setSentItineraries([])
-      }
+const fetchCustomerData = async (
+  customerIdParam: string | null,
+  enquiryIdParam: string | null,
+  itineraryIdParam: string | null,
+  forceRefresh = false,
+) => {
+  try {
+    setLoading(true)
+    setError(null)
 
-      console.log("Fetching customer data for:", { customerIdParam, enquiryIdParam, itineraryIdParam })
+    const prevSelectedId = selectedItinerary?.id
+    const prevSelectedUrl = selectedPDFVersion
 
-      const params = new URLSearchParams()
-      if (customerIdParam) {
-        params.append("customerId", customerIdParam)
-      }
-      if (enquiryIdParam) {
-        params.append("enquiryId", enquiryIdParam)
-      }
-      if (itineraryIdParam) {
-        params.append("itineraryId", itineraryIdParam)
-      }
+    if (forceRefresh) {
+      setSelectedItinerary(null)
+      setItineraryVersions([])
+      setCustomerFeedbacks([])
+      setSentItineraries([])
+    }
 
-      const response = await fetch(`/api/share-customer?${params.toString()}`)
+    console.log("Fetching customer data for:", { customerIdParam, enquiryIdParam, itineraryIdParam })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-      }
+    const params = new URLSearchParams()
+    if (customerIdParam) params.append("customerId", customerIdParam)
+    if (enquiryIdParam) params.append("enquiryId", enquiryIdParam)
+    if (itineraryIdParam) params.append("itineraryId", itineraryIdParam)
 
-      const data: CustomerDashboardData = await response.json()
-      if (data.customer) {
-        setFormData((prev) => ({
-          ...prev,
-          name: data.customer?.name || "",
-          email: data.customer?.email || "",
-          whatsappNumber: data.customer?.whatsappNumber || data.customer?.phone || "",
-        }))
-      }
+    const response = await fetch(`/api/share-customer?${params.toString()}`)
 
-      // Helper: ensure a usable URL for a PDF version (handles s3Key and raw S3 URLs)
-      const ensureUrlForVersion = async (version: PDFVersion): Promise<string | null> => {
-        try {
-          // If there is a URL, check if it needs presigning
-          if (version.url) {
-            try {
-              const u = new URL(version.url)
-              const isS3 = u.hostname.includes("amazonaws.com")
-              const isAlreadySigned =
-                u.searchParams.has("X-Amz-Signature") ||
-                u.searchParams.has("X-Amz-Credential") ||
-                u.searchParams.has("X-Amz-Algorithm")
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+    }
 
-              // For S3 URLs that aren't signed, request a signed URL from our API
-              if (isS3 && !isAlreadySigned) {
-                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(version.url)}`)
-                if (!resp.ok) return version.url // fall back to original URL so it's still selectable
-                const { url: signedUrl } = await resp.json()
-                return signedUrl || version.url
-              }
-            } catch {
-              // if URL parsing fails, just return as-is
-              return version.url
+    const data: CustomerDashboardData = await response.json()
+    if (data.customer) {
+      setFormData((prev) => ({
+        ...prev,
+        name: data.customer?.name || "",
+        email: data.customer?.email || "",
+        whatsappNumber: data.customer?.whatsappNumber || data.customer?.phone || "",
+      }))
+    }
+
+    const ensureUrlForVersion = async (version: PDFVersion): Promise<string | null> => {
+      try {
+        if (version.url) {
+          try {
+            const u = new URL(version.url)
+            const isS3 = u.hostname.includes("amazonaws.com")
+            const isAlreadySigned =
+              u.searchParams.has("X-Amz-Signature") ||
+              u.searchParams.has("X-Amz-Credential") ||
+              u.searchParams.has("X-Amz-Algorithm")
+
+            if (isS3 && !isAlreadySigned) {
+              const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(version.url)}`)
+              if (!resp.ok) return version.url
+              const { url: signedUrl } = await resp.json()
+              return signedUrl || version.url
             }
+          } catch {
             return version.url
           }
-
-          // If no URL, try with stored S3 key
-          const s3Key = version.metadata?.s3Key
-          if (s3Key) {
-            const signed = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(s3Key)}`)
-            if (!signed.ok) return null
-            const { url: signedUrl } = await signed.json()
-            return signedUrl || null
-          }
-
-          return null
-        } catch {
-          return null
+          return version.url
         }
+
+        const s3Key = version.metadata?.s3Key
+        if (s3Key) {
+          const signed = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(s3Key)}`)
+          if (!signed.ok) return null
+          const { url: signedUrl } = await signed.json()
+          return signedUrl || null
+        }
+
+        return null
+      } catch {
+        return null
       }
+    }
 
-      // Process itineraries and create separate rows for each PDF version
-      const allVersions: ExtendedItinerary[] = []
+    // **KEY FIX: Process all PDF versions separately**
+    const allVersions: ExtendedItinerary[] = []
 
-      if (data.itineraries && data.itineraries.length > 0) {
-        for (const itinerary of data.itineraries) {
-          const pdfVersions = Array.isArray(itinerary.pdfVersions) ? itinerary.pdfVersions : []
+    if (data.itineraries && data.itineraries.length > 0) {
+      for (const itinerary of data.itineraries) {
+        const pdfVersions = Array.isArray(itinerary.pdfVersions) ? itinerary.pdfVersions : []
 
-          if (pdfVersions.length > 0) {
-            const versionsWithResolvedUrls = await Promise.all(
-              pdfVersions.map(async (v) => {
-                const resolvedUrl = await ensureUrlForVersion(v)
-                return { ...v, url: resolvedUrl ?? v.url ?? null }
-              }),
-            )
+        if (pdfVersions.length > 0) {
+          // Resolve URLs for all versions
+          const versionsWithResolvedUrls = await Promise.all(
+            pdfVersions.map(async (v) => {
+              const resolvedUrl = await ensureUrlForVersion(v)
+              return { ...v, url: resolvedUrl ?? v.url ?? null }
+            }),
+          )
 
-            versionsWithResolvedUrls.forEach((version) => {
-              const versionItinerary: ExtendedItinerary = {
-                ...itinerary,
-                id: `${itinerary.id}-v${version.version}`, // Unique ID for each version row
-                originalId: itinerary.id, // Keep reference to original itinerary
-                activePdfUrl: version.url || null, // now resolved if s3Key existed
-                displayVersion: version.metadata?.isEdited
-                  ? `REGENERATED (V${version.version})`
-                  : `GENERATED (V${version.version})`,
-                versionNumber: version.version,
-                isLatestVersion: version.isActive,
-                isEdited: version.metadata?.isEdited || false,
-                createdAt: version.createdAt,
-                pdfVersions: [version], // Only include this specific version
-                activeStatus: version.isActive,
-              }
-              allVersions.push(versionItinerary)
-            })
-          } else {
-            // Handle itineraries without PDF versions (legacy)
-            let versionNumber = 1
-            let displayVersion = "GENERATED (V1)"
-            let activePdfUrl = itinerary.pdfUrl
+          // Sort versions by version number (ascending)
+          const sortedVersions = versionsWithResolvedUrls.sort((a, b) => a.version - b.version)
 
-            if (itinerary.editedPdfUrl) {
-              versionNumber = 2
-              displayVersion = "REGENERATED (V2)"
-              activePdfUrl = itinerary.editedPdfUrl
-            }
-
-            const legacyItinerary: ExtendedItinerary = {
+          // Create a row for EACH version
+          sortedVersions.forEach((version) => {
+            const versionItinerary: ExtendedItinerary = {
               ...itinerary,
-              activePdfUrl: activePdfUrl || null,
-              displayVersion,
-              versionNumber,
-              isLatestVersion: true,
-              isEdited: !!itinerary.editedPdfUrl,
+              id: `${itinerary.id}-v${version.version}`,
+              originalId: itinerary.id,
+              activePdfUrl: version.url || null,
+              displayVersion: version.metadata?.isEdited
+                ? `REGENERATED (V${version.version})`
+                : `GENERATED (V${version.version})`,
+              versionNumber: version.version,
+              isLatestVersion: version.isActive,
+              isEdited: version.metadata?.isEdited || false,
+              createdAt: version.createdAt,
+              pdfVersions: [version],
+              activeStatus: version.isActive,
+            }
+            allVersions.push(versionItinerary)
+          })
+        } else {
+          // **CRITICAL FIX: Handle legacy itineraries - show BOTH generated and regenerated**
+          
+          // Always add the original generated PDF if it exists
+          if (itinerary.pdfUrl) {
+            let pdfUrl = itinerary.pdfUrl
+            // Generate signed URL if it's an S3 URL
+            if (typeof pdfUrl === 'string' && pdfUrl.includes('amazonaws.com')) {
+              try {
+                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(pdfUrl)}`)
+                if (resp.ok) {
+                  const { url: signedUrl } = await resp.json()
+                  pdfUrl = signedUrl || pdfUrl
+                }
+              } catch (error) {
+                console.error("Error generating signed URL:", error)
+              }
+            }
+            
+            const generatedVersion: ExtendedItinerary = {
+              ...itinerary,
+              id: `${itinerary.id}-v1`,
+              originalId: itinerary.id,
+              activePdfUrl: pdfUrl,
+              pdfUrl: pdfUrl,
+              displayVersion: "GENERATED (V1)",
+              versionNumber: 1,
+              isLatestVersion: !itinerary.editedPdfUrl, // Only latest if no edited version
+              isEdited: false,
               pdfVersions: [],
             }
-            allVersions.push(legacyItinerary)
+            allVersions.push(generatedVersion)
+          }
+
+          // Add regenerated PDF as a separate row if it exists
+          if (itinerary.editedPdfUrl) {
+            let editedPdfUrl = itinerary.editedPdfUrl
+            // Generate signed URL if it's an S3 URL
+            if (typeof editedPdfUrl === 'string' && editedPdfUrl.includes('amazonaws.com')) {
+              try {
+                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(editedPdfUrl)}`)
+                if (resp.ok) {
+                  const { url: signedUrl } = await resp.json()
+                  editedPdfUrl = signedUrl || editedPdfUrl
+                }
+              } catch (error) {
+                console.error("Error generating signed URL:", error)
+              }
+            }
+            
+            const regeneratedVersion: ExtendedItinerary = {
+              ...itinerary,
+              id: `${itinerary.id}-v2`,
+              originalId: itinerary.id,
+              activePdfUrl: editedPdfUrl,
+              editedPdfUrl: editedPdfUrl,
+              displayVersion: "REGENERATED (V2)",
+              versionNumber: 2,
+              isLatestVersion: true, // Edited version is always latest
+              isEdited: true,
+              pdfVersions: [],
+            }
+            allVersions.push(regeneratedVersion)
           }
         }
       }
-
-      // Sort versions by creation date (newest first)
-      const sortedVersions = allVersions.sort((a, b) => {
-        const dateA = new Date(a.createdAt || "").getTime()
-        const dateB = new Date(b.createdAt || "").getTime()
-        return dateB - dateA
-      })
-
-      setItineraryVersions(sortedVersions)
-
-      // Preserve previous selection if still present; otherwise select latest available
-      const stillExists = prevSelectedId && sortedVersions.find((v) => v.id === prevSelectedId && v.activePdfUrl)
-      if (stillExists) {
-        const v = stillExists
-        setSelectedItinerary(v)
-        setSelectedPDFVersion(prevSelectedUrl || v.activePdfUrl || null)
-      } else {
-        const latestVersion = sortedVersions.find((version) => version.activePdfUrl)
-        if (latestVersion && latestVersion.activePdfUrl) {
-          setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
-          setSelectedItinerary(latestVersion)
-          setSelectedPDFVersion(latestVersion.activePdfUrl)
-        } else {
-          // Clear selection if nothing available
-          setSelectedItinerary(null)
-          setSelectedPDFVersion(null)
-        }
-      }
-
-      setCustomerFeedbacks(data.feedbacks || [])
-      setSentItineraries(data.sentItineraries || [])
-    } catch (error) {
-      console.error("Error fetching customer data:", error)
-      setError(error instanceof Error ? error.message : "Failed to fetch customer data")
-    } finally {
-      setLoading(false)
     }
+
+    // Sort versions: Latest first within each itinerary group
+    const sortedVersions = allVersions.sort((a, b) => {
+      const idCompare = (a.originalId || a.id).localeCompare(b.originalId || b.id)
+      if (idCompare !== 0) return idCompare
+      
+      return (b.versionNumber || 0) - (a.versionNumber || 0)
+    })
+
+    setItineraryVersions(sortedVersions)
+
+    // Restore previous selection or select latest
+    const stillExists = prevSelectedId && sortedVersions.find((v) => v.id === prevSelectedId && v.activePdfUrl)
+    if (stillExists) {
+      setSelectedItinerary(stillExists)
+      setSelectedPDFVersion(prevSelectedUrl || stillExists.activePdfUrl || null)
+    } else {
+      const latestVersion = sortedVersions
+        .filter((v) => v.activePdfUrl)
+        .sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0))[0]
+      
+      if (latestVersion && latestVersion.activePdfUrl) {
+        setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
+        setSelectedItinerary(latestVersion)
+        setSelectedPDFVersion(latestVersion.activePdfUrl)
+      } else {
+        setSelectedItinerary(null)
+        setSelectedPDFVersion(null)
+      }
+    }
+
+    setCustomerFeedbacks(data.feedbacks || [])
+    setSentItineraries(data.sentItineraries || [])
+  } catch (error) {
+    console.error("Error fetching customer data:", error)
+    setError(error instanceof Error ? error.message : "Failed to fetch customer data")
+  } finally {
+    setLoading(false)
   }
+}
 
   // Add refresh handler
   const handleRefresh = () => {
@@ -377,11 +418,12 @@ export default function ShareCustomerDashboard() {
 
   // Handle itinerary selection
   const handleSelectItinerary = (itinerary: ExtendedItinerary) => {
-    setSelectedItinerary(itinerary)
-    setSelectedPDFVersion(itinerary.activePdfUrl || null)
-    console.log("Selected itinerary version:", itinerary)
-  }
-
+    setSelectedItinerary(itinerary);
+    // Make sure we're using the correct URL (try activePdfUrl first, then fall back to pdfUrl)
+    const pdfUrl = itinerary.activePdfUrl || itinerary.pdfUrl;
+    setSelectedPDFVersion(pdfUrl || null);
+    console.log("Selected itinerary version:", itinerary, "PDF URL:", pdfUrl);
+  };
   // Email validation function
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -449,33 +491,27 @@ export default function ShareCustomerDashboard() {
 
   // Send Itinerary function with PDF version selection
   const sendItineraryViaEmail = async () => {
-    // Enhanced validation
+    console.log("sendItineraryViaEmail called", {
+      selectedPDFVersion,
+      selectedItinerary,
+      formData
+    });
+    // Validation checks
     if (!formData.name?.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter customer name",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please enter customer name" })
       return
     }
 
     if (!formData.email?.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter customer email",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please enter customer email" })
       return
     }
 
     if (!validateEmail(formData.email)) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please enter a valid email address",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please enter a valid email address" })
       return
     }
+
 
     if (!formData.whatsappNumber?.trim()) {
       toast({
@@ -496,12 +532,22 @@ export default function ShareCustomerDashboard() {
     }
 
     if (!selectedPDFVersion) {
+      console.error("No PDF version selected. Current state:", {
+        selectedPDFVersion,
+        selectedItinerary,
+        itineraryVersions: itineraryVersions.map(i => ({
+          id: i.id,
+          activePdfUrl: i.activePdfUrl,
+          pdfUrl: i.pdfUrl,
+          versionNumber: i.versionNumber
+        }))
+      });
       toast({
         variant: "destructive",
         title: "Error",
         description: "Please select a PDF version to send",
-      })
-      return
+      });
+      return;
     }
 
     const itineraryToSend =
@@ -986,9 +1032,8 @@ export default function ShareCustomerDashboard() {
                               .map((version) => (
                                 <tr
                                   key={version.id}
-                                  className={`border-b border-green-100 hover:bg-green-25 cursor-pointer ${
-                                    selectedItinerary?.id === version.id ? "bg-green-100" : ""
-                                  }`}
+                                  className={`border-b border-green-100 hover:bg-green-25 cursor-pointer ${selectedItinerary?.id === version.id ? "bg-green-100" : ""
+                                    }`}
                                   onClick={() => handleSelectItinerary(version)}
                                 >
                                   <td className="p-3">
@@ -1011,9 +1056,8 @@ export default function ShareCustomerDashboard() {
                                   <td className="p-3">
                                     <div className="flex items-center gap-2">
                                       <div
-                                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                                          version.isEdited ? "bg-blue-500" : "bg-green-500"
-                                        }`}
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${version.isEdited ? "bg-blue-500" : "bg-green-500"
+                                          }`}
                                       >
                                         V{version.versionNumber}
                                       </div>
@@ -1061,14 +1105,12 @@ export default function ShareCustomerDashboard() {
                                   <td className="p-3">
                                     <div className="flex items-center gap-2">
                                       <div
-                                        className={`w-2 h-2 rounded-full ${
-                                          version.activePdfUrl ? "bg-green-500" : "bg-red-500"
-                                        }`}
+                                        className={`w-2 h-2 rounded-full ${version.activePdfUrl ? "bg-green-500" : "bg-red-500"
+                                          }`}
                                       ></div>
                                       <span
-                                        className={`text-xs font-medium ${
-                                          version.activePdfUrl ? "text-green-600" : "text-red-600"
-                                        }`}
+                                        className={`text-xs font-medium ${version.activePdfUrl ? "text-green-600" : "text-red-600"
+                                          }`}
                                       >
                                         {version.activePdfUrl ? "Available" : "Missing"}
                                       </span>
@@ -1088,135 +1130,7 @@ export default function ShareCustomerDashboard() {
                     </div>
 
                     {/* Previous PDFs Section */}
-                    {itineraryVersions.filter((version) => !version.isLatestVersion).length > 0 && (
-                      <div className="p-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          Previous PDF Versions (
-                          {itineraryVersions.filter((version) => !version.isLatestVersion).length})
-                        </h4>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b border-gray-200">
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Select
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Date
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  PDF
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Action
-                                </th>
-                                <th className="text-left p-2 text-xs font-medium text-gray-700 uppercase tracking-wide">
-                                  Status
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {itineraryVersions
-                                .filter((version) => !version.isLatestVersion)
-                                .map((version) => (
-                                  <tr
-                                    key={version.id}
-                                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                                      selectedItinerary?.id === version.id ? "bg-blue-50" : ""
-                                    }`}
-                                    onClick={() => handleSelectItinerary(version)}
-                                  >
-                                    <td className="p-3">
-                                      <input
-                                        type="radio"
-                                        name="selectedPDF"
-                                        checked={selectedItinerary?.id === version.id}
-                                        onChange={() => handleSelectItinerary(version)}
-                                        className="text-green-600"
-                                      />
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="text-sm text-gray-900">
-                                        {new Date(version.createdAt || "").toLocaleDateString()}
-                                      </div>
-                                      <div className="text-xs text-gray-500">
-                                        {new Date(version.createdAt || "").toLocaleTimeString()}
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex items-center gap-2">
-                                        <div
-                                          className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                                            version.isEdited ? "bg-blue-400" : "bg-gray-400"
-                                          }`}
-                                        >
-                                          V{version.versionNumber}
-                                        </div>
-                                        <div>
-                                          <div className="text-sm font-medium text-gray-700">
-                                            {version.displayVersion}
-                                          </div>
-                                          <div className="text-xs text-gray-500">
-                                            {version.isEdited ? "Regenerated PDF" : "Original PDF"}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex gap-1">
-                                        {version.activePdfUrl && (
-                                          <>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleViewPDF(version.activePdfUrl!)
-                                              }}
-                                              className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 rounded text-xs text-white transition-colors"
-                                            >
-                                              <Eye className="w-3 h-3" />
-                                              View
-                                            </button>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleDownloadPDF(
-                                                  version.activePdfUrl!,
-                                                  `itinerary-v${version.versionNumber}.pdf`,
-                                                )
-                                              }}
-                                              className="flex items-center gap-1 px-2 py-1 bg-gray-500 hover:bg-gray-600 rounded text-xs text-white transition-colors"
-                                            >
-                                              <Download className="w-3 h-3" />
-                                              Download
-                                            </button>
-                                          </>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="p-3">
-                                      <div className="flex items-center gap-2">
-                                        <div
-                                          className={`w-2 h-2 rounded-full ${
-                                            version.activePdfUrl ? "bg-green-500" : "bg-red-500"
-                                          }`}
-                                        ></div>
-                                        <span
-                                          className={`text-xs font-medium ${
-                                            version.activePdfUrl ? "text-green-600" : "text-red-600"
-                                          }`}
-                                        >
-                                          {version.activePdfUrl ? "Available" : "Missing"}
-                                        </span>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
+                  
                   </>
                 )}
               </div>

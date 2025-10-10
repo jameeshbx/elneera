@@ -1,4 +1,4 @@
-import { UserRole, UserType } from "@/types/next-auth";
+import { Role as UserRole, UserType } from "@/types/next-auth";
 
 
 export function getRoleBasedPath(role: UserRole, userType?: UserType): string {

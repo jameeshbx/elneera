@@ -34,6 +34,8 @@ export default function LoginForm() {
   const [, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  
+
   useEffect(() => {
     const checkIfMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -98,69 +100,72 @@ export default function LoginForm() {
       });
 
       // Helper to check if agency-form is submitted
-      const checkAgencyFormSubmitted = async (): Promise<boolean> => {
-        try {
-          const res = await fetch("/api/agencyform", {
-            method: "GET",
-            headers: { "Content-Type": "application/json" },
-          });
-
-          if (res.status === 404) {
-            console.warn(
-              "API endpoint not found - assuming form not submitted"
-            );
-            return false;
-          }
-
-          if (!res.ok) {
-            console.error("API error:", res.status);
-            return false;
-          }
-
-          const data = await res.json();
-          return data.exists === true;
-        } catch (err) {
-          console.error("Error checking agency form status:", err);
-          return false;
-        }
-      };
 
       // Determine the redirect path based on userType or role
-      const getRedirectPath = async (): Promise<string> => {
-        // Only check for agency form for AGENCY_ADMIN
-        if (
-          (userType && userType.toUpperCase() === "AGENCY_ADMIN") ||
-          (role && role.toUpperCase() === "AGENCY_ADMIN")
-        ) {
-          const exists = await checkAgencyFormSubmitted();
-          return exists
-            ? "/agency-admin/dashboard"
-            : "/agency-admin/agency-form";
-        }
+    // Inside the handleSubmit function, replace the getRedirectPath function with this fixed version:
 
-        // Handle AGENCY_ADMIN specific redirection for profileCompleted
-        if (userType && userType.toUpperCase() === "AGENCY_ADMIN") {
-          if (!profileCompleted) {
-            return "/agency-admin/agency-form";
-          }
+const getRedirectPath = async (): Promise<string> => {
+  // Handle AGENCY_ADMIN specific redirection
+  if ((userType && userType.toUpperCase() === "AGENCY_ADMIN") || 
+      (role && role.toUpperCase() === "AGENCY_ADMIN")) {
+    
+    try {
+      const agencyFormRes = await fetch('/api/agencyform');
+      
+      // If API returns 404, it means no form exists yet
+      if (agencyFormRes.status === 404) {
+        return "/agency-admin/agency-form";
+      }
+      
+      const agencyData = await agencyFormRes.json();
+      
+      // Check if form exists
+      if (agencyData.data) {
+        const status = agencyData.data.status?.toUpperCase();
+        
+        // If APPROVED or ACTIVE - go directly to dashboard
+        if (status === 'APPROVED' || status === 'ACTIVE') {
           return "/agency-admin/dashboard";
         }
-
-        // Other user types
-        const type = userType || role;
-        if (type) {
-          const upperType = type.toUpperCase();
-          if (upperType === "SUPER_ADMIN") return "/super-admin/dashboard";
-          if (upperType === "ADMIN") return "/admin/dashboard";
-          if (upperType === "MANAGER") return "/agency/dashboard";
-          if (upperType === "EXECUTIVE") return "/executive/dashboard";
-          if (upperType === "TEAM_LEAD") return "/teamlead/dashboard";
-          if (upperType === "TL") return "/telecaller/dashboard";
+        // If PENDING or UNDER_REVIEW - show under review page with modal
+        else if (status === 'PENDING' || status === 'UNDER_REVIEW') {
+          return "/agency-admin/under-review";
         }
+        // If REJECTED or DECLINED - show under review page with rejected modal
+        else if (status === 'REJECTED' || status === 'DECLINED') {
+          return "/agency-admin/under-review";
+        }
+        // For any other status, redirect to dashboard (safety fallback)
+        else {
+          return "/agency-admin/dashboard";
+        }
+      }
+      // If no form data exists, show the agency form
+      else {
+        return "/agency-admin/agency-form";
+      }
+    } catch (error) {
+      console.error("Error checking agency form status:", error);
+      // If there's an error, redirect to agency form to be safe
+      return "/agency-admin/agency-form";
+    }
+  }
 
-        // Default fallback
-        return "/dashboard";
-      };
+  // Existing code for other user types
+  const type = userType || role;
+  if (type) {
+    const upperType = type.toUpperCase();
+    if (upperType === "SUPER_ADMIN") return "/super-admin/dashboard";
+    if (upperType === "ADMIN") return "/admin/dashboard";
+    if (upperType === "MANAGER") return "/agency/dashboard";
+    if (upperType === "EXECUTIVE") return "/executive/dashboard";
+    if (upperType === "TEAM_LEAD") return "/teamlead/dashboard";
+    if (upperType === "TL") return "/telecaller/dashboard";
+  }
+
+  // Default fallback
+  return "/dashboard";
+};
 
       const redirectPath = await getRedirectPath();
       console.log("Redirecting to:", redirectPath);
@@ -229,13 +234,15 @@ export default function LoginForm() {
               </div>
               <div className="relative z-10">
                 <div className="flex items-center justify-center md:justify-start">
+                  <Link href="/">
                   <Image
-                    src="/elneera-white.png"
+                    src="/logo/elneeraw.png"
                     alt="Trekking Miles Logo"
-                    width={200}
+                    width={100}
                     height={80}
-                    className="object-contain mt-[-125px] w-[360px] "
+                    className="object-contain mt-[7px] w-[160px] ml-[78px]"
                   />
+                  </Link>
                 </div>
                 <h1 className="mt-8 md:mt-12 lg-mt-[-30] text-3xl font-nunito md:text-4xl font-semibold text-white text-center md:text-left">
                   Start your remarkable journey with us!
@@ -362,14 +369,16 @@ export default function LoginForm() {
               <div className="relative z-30">
                 {/* Logo Image */}
                 <div className="flex justify-center mb-4">
+                  <Link href="/">
                   <Image
-                    src="/login/cropped-logo-1_1567c4bc-84c5-4188-81e0-d5dd9ed8ef8d (1) 1.png"
+                    src="/logo/elneeraw.png"
                     alt="Trekking Miles Logo"
                     width={180}
                     height={60}
                     className="object-contain"
                     priority
                   />
+                  </Link>
                 </div>
                 <h1 className="text-xl font-semibold text-white text-center font-nunito">
                   Start your remarkable journey with us!

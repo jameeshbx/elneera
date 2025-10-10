@@ -212,6 +212,8 @@ model AgencyForm {
   subscriptions       Subscription[]
   creator             User           @relation("AgencyFormCreator", fields: [createdBy], references: [id])
 
+
+
   @@index([name])
   @@index([createdBy])
   @@index([email])
@@ -398,7 +400,24 @@ model Feedback {
   @@index([enquiryId])
   @@map("feedbacks")
 }
+model PDFVersion {
+  
+  id          String      @id @default(cuid())
+  sharedDmcId String?
+  itineraryId String
+  url         String
+  version     Int
+  isActive    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  metadata    Json?
+    
+  sharedDMC   SharedDMC?  @relation("SharedDMCToPDFVersions", fields: [sharedDmcId], references: [id])
+  itinerary   itineraries @relation(fields: [itineraryId], references: [id])
 
+  @@index([itineraryId])
+  @@map("PDFVersion")  // Keep the same table name
+
+}
 model itineraries {
   id                         String                    @id @default(uuid())
   enquiryId                  String
@@ -469,18 +488,7 @@ model itineraries {
   @@index([agencyCancellationPolicyId])
 }
 
-model PDFVersion {
-  id          String      @id @default(cuid())
-  itineraryId String
-  url         String
-  version     Int
-  isActive    Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  metadata    Json?
-  itinerary   itineraries @relation(fields: [itineraryId], references: [id])
 
-  @@index([itineraryId])
-}
 
 model booking_reminder {
   id           String      @id @default(cuid())
@@ -747,6 +755,9 @@ model SharedDMC {
   assignedStaff   Staff?          @relation("AssignedStaff", fields: [assignedStaffId], references: [id])
   enquiry         enquiries?      @relation("EnquirySharedDMCs", fields: [enquiryId], references: [id])
   sharedDMCItems  SharedDMCItem[] @relation("SharedDMCToItems")
+
+PDFVersion PDFVersion[] @relation("SharedDMCToPDFVersions")  
+
 
   @@index([assignedStaffId])
   @@index([enquiryId])
@@ -1028,6 +1039,8 @@ enum Role {
   EXECUTIVE
   CUSTOMER
   TEKKING_MYLES
+  AGENCY_ADMIN
+  TEAM_LEAD
 }
 
 enum UserType {

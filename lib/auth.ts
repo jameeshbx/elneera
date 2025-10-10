@@ -1,56 +1,18 @@
-import { NextAuthOptions, User } from "next-auth";
+import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { UserRole, UserType } from "@/types/next-auth";
+import { Role, UserType, UserStatus } from "@prisma/client";
 
-// Map Prisma Role to UserRole
-type PrismaUser = User & {
-  role: string;
-  userType: string;
-};
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
 
-// Extend for user_form table
-type UserFormUser = {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  userType: string;
-  phoneNumber: string;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-// Extend the User type to include custom fields
-type ExtendedUser = PrismaUser & {
-  isActive?: boolean;
-  password?: string;  
-  agency?: ({
-    id: string;
-    name: string;
-    createdAt: Date;
-    updatedAt: Date;
-    config: Record<string, unknown>;
-    createdBy: string;
-  } & {
-    agencyForm?: {
-      id: string;
-      name: string;
-      email?: string | null;
-    } | null;
-  }) | null;
-};
-
-// Create a single PrismaClient instance to avoid too many connections
-const prismaClient = prisma;
-
-// Add database connection check
 async function checkDatabaseConnection() {
   try {
-    await prismaClient.$queryRaw`SELECT 1`;
+    await prisma.$queryRaw`SELECT 1`;
     console.log('✅ Database connection successful');
     return true;
   } catch (error) {
@@ -59,28 +21,7 @@ async function checkDatabaseConnection() {
   }
 }
 
-// Verify database connection on startup
 checkDatabaseConnection().catch(console.error);
-
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
-function mapUserTypeToRole(userType: string): UserRole {
-  switch (userType.toUpperCase()) {
-    case 'AGENCY_ADMIN':
-      return 'AGENCY_ADMIN';
-    case 'MANAGER':
-      return 'MANAGER';
-    case 'TEAM_LEAD':
-    case 'TL':
-      return 'TEAM_LEAD';
-    case 'EXECUTIVE':
-      return 'EXECUTIVE';
-    default:
-      return 'EXECUTIVE'; // Default role
-  }
-}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -90,239 +31,123 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: async (credentials) => {
-        console.log('🔑 Authorization attempt started');
+      async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          console.warn('❌ Missing credentials:', { 
-            hasEmail: !!credentials?.email,
-            hasPassword: !!credentials?.password 
-          });
           throw new Error(JSON.stringify({
             error: 'MissingCredentials',
             message: 'Email and password are required'
           }));
         }
-          
 
-          try {
-            // Validate credentials format
-            const { email, password } = loginSchema.parse(credentials);
-            const normalizedEmail = email.toLowerCase().trim();
-  
-            console.log('🔍 Looking up user with email:', normalizedEmail);
-  
-            // First verify database connection
-            const isDbConnected = await checkDatabaseConnection();
-            if (!isDbConnected) {
-              console.error('❌ Database connection failed');
-              throw new Error(JSON.stringify({
-                error: 'DatabaseError',
-                message: 'Unable to connect to the database. Please try again later.'
-              }));
-            }
-  
-            // Try to find user in main user table first
-            let user: ExtendedUser | null = null;
-            let userFormUser: UserFormUser | null = null;
-            let isFromUserForm = false;
+        try {
+          const { email, password } = loginSchema.parse(credentials);
+          const normalizedEmail = email.toLowerCase().trim();
 
-          try {
-            // Check if password is in plain text (for development only)
-            console.log('🔍 Querying main user table for:', normalizedEmail);
-            user = await prismaClient.user.findUnique({
-              where: { email: normalizedEmail },
-              include: {
-                agency: true
-              }
-            }) as ExtendedUser | null;            
-            // Check if password is hashed
-             // If not found in main table, check user_form table
-             if (!user) {
-              console.log('🔍 User not found in main table, checking user_form table');
-              userFormUser = await prismaClient.userForm.findUnique({
-                where: { email: normalizedEmail }
-              }) as UserFormUser | null;
-
-              if (userFormUser) {
-                console.log('✅ Found user in user_form table:', userFormUser.email);
-                isFromUserForm = true;
-              }
-            }
-            
-            if (!user && !userFormUser) {
-              console.warn('⚠️ No user found with email:', normalizedEmail);
-              throw new Error(JSON.stringify({
-                error: 'UserNotFound',
-                message: 'No account found with this email address. Please check your email or sign up.'
-              }));
-            }
-          } catch (error) {
-            console.error('❌ Database error when finding user:', {
-              error: error instanceof Error ? error.message : 'Unknown error',
-              stack: error instanceof Error ? error.stack : undefined,
-              name: error instanceof Error ? error.name : 'UnknownError'
-            });
-            
-            // If password was in plain text, hash it for security
-            // More specific error handling
-            const errorMessage = error instanceof Error ? 
-              (error.message.includes('prisma') ? 'Database connection error' : error.message) :
-              'An unknown error occurred';
-
+          const isDbConnected = await checkDatabaseConnection();
+          if (!isDbConnected) {
             throw new Error(JSON.stringify({
               error: 'DatabaseError',
-              message: errorMessage,
-              code: error instanceof Error ? error.name : 'UNKNOWN_ERROR'
+              message: 'Unable to connect to the database. Please try again later.'
             }));
           }
 
-          // Handle user_form users
-          if (isFromUserForm && userFormUser) {
-            // Check if user is active
+          // Try main user table first
+          const user = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            include: {
+              agencyForms: {
+                orderBy: { createdAt: 'desc' },
+                take: 1
+              }
+            }
+          });
+
+          // Try user_form table if not found
+          let userFormUser = null;
+          if (!user) {
+            userFormUser = await prisma.userForm.findUnique({
+              where: { email: normalizedEmail }
+            });
+          }
+
+          if (!user && !userFormUser) {
+            throw new Error(JSON.stringify({
+              error: 'UserNotFound',
+              message: 'No account found with this email address.'
+            }));
+          }
+
+          // Handle user_form table users
+          if (userFormUser) {
             if (userFormUser.status !== 'ACTIVE') {
-              console.warn('🚫 User account is not active:', normalizedEmail);
               throw new Error(JSON.stringify({
                 error: 'AccountInactive',
                 message: 'Your account is not active. Please contact support.'
               }));
             }
 
-            // Verify password for user_form user
-            console.log('🔑 Verifying password for user_form user:', userFormUser.id);
-            let isValid = false;
-            try {
-              isValid = await bcrypt.compare(password, userFormUser.password);
-            } catch (bcryptError) {
-              console.error('❌ Bcrypt compare error:', bcryptError);
-              throw new Error('Error during password verification. Please try again.');
-            }
-
+            const isValid = await bcrypt.compare(password, userFormUser.password);
             if (!isValid) {
-              console.warn('❌ Invalid password for user_form user:', userFormUser.id);
               throw new Error(JSON.stringify({
                 error: 'InvalidPassword',
-                message: 'The password you entered is incorrect. Please try again.'
+                message: 'The password you entered is incorrect.'
               }));
             }
 
-            console.log('✅ Login successful for user_form user:', {
-              id: userFormUser.id,
-              email: userFormUser.email,
-              userType: userFormUser.userType
-            });
-
-            // Map userType to role
-            const role = mapUserTypeToRole(userFormUser.userType);
-
-            // Return user object for user_form users
             return {
               id: userFormUser.id,
-              email: userFormUser.email,
-              name: userFormUser.name,
-              role: role,
+              email: userFormUser.email ?? null,
+              name: userFormUser.name ?? null,
+              role: "EXECUTIVE" as Role,
               userType: userFormUser.userType as UserType,
-              agencyId: null, // user_form users don't have agencies
+              agencyId: null,
               agencyFormSubmitted: true,
-              isActive: true
+              isActive: true,
+              agencyFormStatus: null,
+              profileCompleted: true,
+              status: userFormUser.status as UserStatus
             };
           }
 
-          // Handle regular users (from main user table)
+          // Handle main user table
           if (user) {
-            const userWithPassword = user as ExtendedUser & { password: string };
-
-            if (!userWithPassword.password) {
-              console.warn('⚠️ User has no password set:', normalizedEmail);
+            if (!user.password) {
               throw new Error(JSON.stringify({
                 error: 'NoPasswordSet',
-                message: 'Account not properly configured. Please use the password reset option or contact support.'
+                message: 'Account not properly configured. Please contact support.'
               }));
             }
 
-            console.log('🔑 Verifying password for regular user:', user.id);
-            let isValid = false;
-            try {
-              isValid = await bcrypt.compare(credentials.password, userWithPassword.password);
-            } catch (error) {
-              console.error('❌ Password verification error:', error);
-              throw new Error(JSON.stringify({
-                error: 'PasswordVerificationError',
-                message: 'Error verifying password'
-              }));
-            }
-
+            const isValid = await bcrypt.compare(password, user.password);
             if (!isValid) {
-              console.warn('❌ Invalid password for user:', user.id);
               throw new Error(JSON.stringify({
                 error: 'InvalidPassword',
-                message: 'The password you entered is incorrect. Please try again.'
+                message: 'The password you entered is incorrect.'
               }));
             }
 
-            // Default to true if isActive is not set
-            const isActive = user.isActive !== false; // Treat undefined as true
+            const agencyFormStatus = user.agencyForms[0]?.status || null;
 
-            if (!isActive) {
-              console.warn('🚫 User account is not active:', normalizedEmail);
-              throw new Error(JSON.stringify({
-                error: 'AccountInactive',
-                message: 'Your account is not active. Please contact support.'
-              }));
-            }
-
-            // Check if user is AGENT_ADMIN and has submitted agency form
-            const isAgentAdmin = user.role === 'AGENT_ADMIN';
-            const hasAgencyForm = isAgentAdmin && user.agency?.agencyForm !== null;
-
-            // For AGENT_ADMIN, ensure they have submitted the agency form
-            if (isAgentAdmin && !hasAgencyForm) {
-              console.log('ℹ️ Agent admin needs to submit agency form');
-              return {
-                id: user.id,
-                email: user.email,
-                name: user.name,
-                role: user.role as UserRole,
-                userType: user.userType as UserType,
-                agencyId: user.agencyId,
-                agencyFormSubmitted: false,
-                isActive: user.isActive
-              };
-            }
-
-            console.log('✅ Login successful for regular user:', {
-              id: user.id,
-              email: user.email,
-              role: user.role,
-              userType: user.userType,
-              isAgentAdmin,
-              hasAgencyForm: isAgentAdmin ? hasAgencyForm : 'N/A',
-              agencyId: user.agencyId
-            });
-
-            // For all other users, redirect to their respective dashboards
             return {
               id: user.id,
-              email: user.email,
-              name: user.name,
-              role: user.role as UserRole,
+              email: user.email ?? null,
+              name: user.name ?? null,
+              role: user.role as Role,
               userType: user.userType as UserType,
               agencyId: user.agencyId,
-              agencyFormSubmitted: true,
-              isActive: user.isActive
+              agencyFormStatus,
+              profileCompleted: user.profileCompleted,
+              status: user.status as UserStatus,
+              agencyFormSubmitted: !!user.agencyForms[0],
+              isActive: user.isOnline
             };
           }
-
-
-
 
           throw new Error('User authentication failed');
         } catch (error) {
           if (error instanceof Error) {
-            console.error('🔴 Authorization error:', error.message);
-            // Rethrow the error with a user-friendly message
             throw new Error(error.message || 'Authentication failed. Please try again.');
           }
-          console.error('🔴 Unknown authorization error');
           throw new Error('An unexpected error occurred during authentication');
         }
       },
@@ -331,70 +156,60 @@ export const authOptions: NextAuthOptions = {
   
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60,
   },
+  
   pages: {
     signIn: '/login',
     error: '/login',
   },
+  
   callbacks: {
-    async jwt({ token, user, trigger, session }) {
+    async jwt({ token, user }) {
       if (user) {
-        return {
-          ...token,
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          userType: user.userType,
-          agencyId: user.agencyId,
-          agencyFormSubmitted: user.agencyFormSubmitted,
-          isActive: user.isActive
-        };
-      }
-
-      // Update token from session if triggered by update
-      if (trigger === 'update' && session) {
-        return { ...token, ...session.user };
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+        token.role = user.role;
+        token.userType = user.userType;
+        token.agencyId = user.agencyId;
+        token.agencyFormStatus = user.agencyFormStatus;
+        token.agencyFormSubmitted = user.agencyFormSubmitted;
+        token.isActive = user.isActive;
+        token.profileCompleted = user.profileCompleted;
+        token.status = user.status;
       }
       return token;
     },
+    
     async session({ session, token }) {
       if (session?.user) {
-        session.user = {
-          ...session.user,
-          id: token.id as string,
-          email: token.email,
-          name: token.name,
-          role: token.role as UserRole,
-          userType: token.userType as UserType,
-          agencyId: token.agencyId as string | undefined,
-          agencyFormSubmitted: token.agencyFormSubmitted as boolean | undefined,
-          isActive: token.isActive as boolean | undefined
-        };
+        session.user.id = token.id as string;
+        session.user.email = token.email as string | null;
+        session.user.name = token.name as string | null;
+        session.user.role = token.role as Role;
+        session.user.userType = token.userType as UserType;
+        session.user.agencyId = token.agencyId as string | null;
+        session.user.agencyFormStatus = token.agencyFormStatus as string | null;
+        session.user.agencyFormSubmitted = token.agencyFormSubmitted as boolean;
+        session.user.isActive = token.isActive as boolean;
+        session.user.profileCompleted = token.profileCompleted as boolean;
+        session.user.status = token.status as UserStatus;
       }
       return session;
     },
+    
     async signIn({ user }) {
-      // Only allow sign in if user is active (or if isActive is not set)
-      const isActive = user.isActive !== false; // Treat undefined as true
-      if (!isActive) {
-        return false; // Reject sign in
-      }
-      return true;
+      return user.isActive !== false;
     },
+    
     async redirect({ url, baseUrl }) {
-      // Allows relative callback URLs
       if (url.startsWith("/")) return `${baseUrl}${url}`;
-      // Allows callback URLs on the same origin
       if (new URL(url).origin === baseUrl) return url;
-
-      // Otherwise redirect to base URL
       return baseUrl;
-  
     },
   },
+  
   debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET,
-  
 };
