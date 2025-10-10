@@ -9,14 +9,14 @@ import { z } from "zod"
 import { toast } from "sonner"
 
 
-const userTypes = ["USER", "AGENCY_ADMIN", "TEAM_LEAD", "ADMIN", "SUPER_ADMIN"] as const
+const userTypes = ["AGENCY_ADMIN"] as const;
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
-  userType: z.enum(["USER", "AGENCY_ADMIN", "TEAM_LEAD", "ADMIN", "SUPER_ADMIN"], {
+  userType: z.enum(["AGENCY_ADMIN"], {
     message: "Please select a valid user type"
   })
 });
@@ -28,6 +28,9 @@ export default function SignupForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+
+
+ 
 
   useEffect(() => {
     const checkIfMobile = () => {
@@ -159,6 +162,7 @@ export default function SignupForm() {
 
               <div className="relative z-10">
                 <div className="flex items-center justify-center md:justify-start">
+                  <Link href="/">
                 <Image
   src="/logo/elneeraw.png"
   alt="Trekking Miles Logo"
@@ -166,6 +170,7 @@ export default function SignupForm() {
   height={20}
   className="object-contain mt-[56px] w-[137px] ml-[126px]"
 />
+</Link>
                                  </div>
                 
 
@@ -296,14 +301,16 @@ export default function SignupForm() {
             <div className="bg-greenook p-6 rounded-t-lg relative overflow-hidden z-20">
               <div className="relative z-30">
                 <div className="flex justify-center mb-4">
+                  <Link href="/">
                   <Image
-                    src="/login/cropped-logo-1_1567c4bc-84c5-4188-81e0-d5dd9ed8ef8d (1) 1.svg"
+                    src="/logo/elneeraw.png"
                     alt="Elneera Logo"
                     width={180}
                     height={60}
                     className="object-contain"
                     priority
                   />
+                  </Link>
                 </div>
 
                 <h1 className="text-xl font-semibold text-white text-center font-nunito">

@@ -64,6 +64,8 @@ function findPdfFile(pdfUrl: string, enquiryId: string): string | null {
   return null
 }
 
+
+
 // GET - Fetch all shared DMCs with their details
 export async function GET(request: NextRequest) {
   let prismaConnected = false;
