@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { writeFile } from "fs/promises";
-import path from "path";
 import { randomUUID } from "crypto";
+import { S3Service } from "@/lib/s3-service";
 
 // POST request to upload manager's profile image
 export async function POST(req: Request) {
@@ -30,23 +29,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "File must be < 5MB" }, { status: 400 });
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const fileName = `${randomUUID()}-${file.name}`;
-  const filePath = path.join(process.cwd(), "public/uploads", fileName);
-  const imageUrl = `/uploads/${fileName}`;
-
   try {
-    await writeFile(filePath, buffer);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const fileName = `${randomUUID()}-${file.name}`;
+    
+    // Upload to S3 using static method
+    const fileInfo = await S3Service.uploadFile(
+      buffer,
+      fileName,
+      file.type,
+      "manager-profiles" // Store in manager-profiles folder in S3
+    );
 
+    // Store file metadata in database
     const fileEntry = await prisma.file.create({
       data: {
         name: file.name,
         size: file.size,
         type: file.type,
-        url: imageUrl,
+        url: fileInfo.url, // Store the full S3 URL
       },
     });
 
+    // Update manager with the new profile image
     await prisma.manager.update({
       where: { id: managerId },
       data: {
@@ -54,9 +59,15 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ imageUrl }, { status: 200 });
+    return NextResponse.json({ 
+      imageUrl: fileInfo.url,
+      fileId: fileEntry.id
+    }, { status: 200 });
   } catch (error) {
     console.error("Manager image upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Upload failed" }, 
+      { status: 500 }
+    );
   }
 }

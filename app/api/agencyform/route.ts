@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import nodemailer from "nodemailer"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
-import { existsSync } from "fs"
 import { agencyApprovalEmailTemplate } from "@/lib/email-templates"
 import { PrismaClient } from '@prisma/client';
+import { S3Service } from "@/lib/s3-service";
+
 const prisma = new PrismaClient();
 
 // Define enum values
@@ -66,23 +65,24 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-// File upload helper
-async function saveFile(file: File, directory: string): Promise<string> {
-  const bytes = await file.arrayBuffer()
-  const buffer = Buffer.from(bytes)
-  
-  const uploadDir = path.join(process.cwd(), "public", "uploads", directory)
-  
-  if (!existsSync(uploadDir)) {
-    await mkdir(uploadDir, { recursive: true })
+// File upload helper for S3
+async function uploadToS3(file: File, directory: string): Promise<string> {
+  try {
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    const fileName = `${directory}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`
+    
+    const s3File = await S3Service.uploadFile(
+      fileBuffer,
+      fileName,
+      file.type || 'application/octet-stream',
+      directory
+    )
+    
+    return s3File.url
+  } catch (error) {
+    console.error(`Error uploading ${directory} to S3:`, error)
+    throw new Error(`Failed to upload ${directory} to S3`)
   }
-  
-  const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`
-  const filePath = path.join(uploadDir, fileName)
-  
-  await writeFile(filePath, buffer)
-  
-  return `/uploads/${directory}/${fileName}`
 }
 
 // Helper function to validate enum values
@@ -258,18 +258,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid PAN type" }, { status: 400 });
     }
 
-    // Handle file uploads
+    // Handle file uploads to S3
     let businessLicensePath = null;
     let logoPath = null;
 
-    if (businessLicense && businessLicense.size > 0) {
-      businessLicensePath = await saveFile(businessLicense, "licenses");
-      console.log("Business license saved:", businessLicensePath);
-    }
+    try {
+      if (businessLicense && businessLicense.size > 0) {
+        businessLicensePath = await uploadToS3(businessLicense, "licenses");
+        console.log("Business license uploaded to S3:", businessLicensePath);
+      }
 
-    if (logo && logo.size > 0) {
-      logoPath = await saveFile(logo, "logos");
-      console.log("Logo saved:", logoPath);
+      if (logo && logo.size > 0) {
+        logoPath = await uploadToS3(logo, "logos");
+        console.log("Logo uploaded to S3:", logoPath);
+      }
+    } catch (error) {
+      console.error("Error uploading files to S3:", error);
+      // Continue with the rest of the operation even if file upload fails
     }
 
     // Check if agency form already exists

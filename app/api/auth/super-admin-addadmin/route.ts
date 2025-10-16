@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { put } from "@vercel/blob";
 import * as bcrypt from "bcryptjs";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
-import fs from "fs/promises";
-import path from "path";
+import { S3Service } from "@/lib/s3-service";
 
 export const runtime = "nodejs";
 
@@ -166,79 +164,57 @@ export async function POST(request: Request) {
     // Handle profile image upload if present
 
        if (profileImage && profileImage.size > 0) {
-        const file = profileImage as File; // ensure non-null inside try/catch
+        const file = profileImage as File;
         try {
+          // Validate file type and size
           const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
           const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-  
+
           if (file.size > MAX_FILE_SIZE) {
-            return NextResponse.json({ message: "File size must be less than 5MB" }, { status: 400 });
+            return NextResponse.json(
+              { message: "File size must be less than 5MB" }, 
+              { status: 400 }
+            );
           }
           if (!ALLOWED_TYPES.includes(file.type)) {
-            return NextResponse.json({ message: "Only JPEG, PNG, and WebP images are allowed" }, { status: 400 });
+            return NextResponse.json(
+              { message: "Only JPEG, PNG, and WebP images are allowed" }, 
+              { status: 400 }
+            );
           }
-  
-          const bytes = await file.arrayBuffer();
-          const buffer = Buffer.from(bytes);
-  
-          let fileUrl: string;
-          const storedName = `${uuidv4()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
-  
-          if (process.env.BLOB_READ_WRITE_TOKEN) {
-            const blob = await put(`admin-profiles/${storedName}`, buffer, {
-              access: "public",
-              contentType: file.type,
-            });
-            fileUrl = blob.url;
-          } else {
-            const uploadDir = path.join(process.cwd(), "public", "uploads");
-            await fs.mkdir(uploadDir, { recursive: true });
-            const filePath = path.join(uploadDir, storedName);
-            await fs.writeFile(filePath, buffer);
-            fileUrl = `/uploads/${storedName}`;
-          }
-  
+
+          // Convert file to buffer and upload to S3
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const fileName = `${uuidv4()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
+          
+          // Upload to S3
+          const fileInfo = await S3Service.uploadFile(
+            buffer,
+            fileName,
+            file.type,
+            "admin-profiles" // Store in admin-profiles folder in S3
+          );
+
+          // Create file record in database
           const newFile = await prisma.file.create({
             data: {
-              url: fileUrl,
               name: file.name,
               size: file.size,
               type: file.type,
+              url: fileInfo.url, // Store the full S3 URL
             },
           });
+          
           profileId = newFile.id;
-        } catch (fileError) {
-          console.error("Detailed file upload error (primary path):", fileError);
-          // Fallback: write to public/uploads even if Blob branch failed
-          try {
-            const bytes = await file.arrayBuffer();
-            const buffer = Buffer.from(bytes);
-            const storedName = `${uuidv4()}-${file.name.replace(/[^\w.\-]/g, "_")}`;
-            const uploadDir = path.join(process.cwd(), "public", "uploads");
-            await fs.mkdir(uploadDir, { recursive: true });
-            const filePath = path.join(uploadDir, storedName);
-            await fs.writeFile(filePath, buffer);
-            const localUrl = `/uploads/${storedName}`;
-  
-            const newFile = await prisma.file.create({
-              data: {
-                url: localUrl,
-                name: file.name,
-                size: file.size,
-                type: file.type,
-              },
-            });
-            profileId = newFile.id;
-          } catch (fallbackError) {
-            console.error("Fallback upload error:", fallbackError);
-            return NextResponse.json(
-              {
-                message: "Failed to upload profile image",
-                error: fallbackError instanceof Error ? fallbackError.message : "Unknown error",
-              },
-              { status: 500 }
-            );
-          }
+        } catch (error) {
+          console.error("Error uploading profile image:", error);
+          return NextResponse.json(
+            {
+              message: "Failed to upload profile image",
+              error: error instanceof Error ? error.message : "Unknown error",
+            },
+            { status: 500 }
+          );
         }
       }
 
