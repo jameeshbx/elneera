@@ -4,7 +4,16 @@ import { sendEmail } from "@/lib/email"
 import fs from "fs"
 import path from "path"
 
-const prisma = new PrismaClient()
+// Create a singleton PrismaClient instance
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
+}
+
+const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma
+}
 
 type DMCStatus = "AWAITING_TRANSFER" | "VIEWED" | "AWAITING_INTERNAL_REVIEW" | "QUOTATION_RECEIVED" | "REJECTED"
 
@@ -64,12 +73,8 @@ function findPdfFile(pdfUrl: string, enquiryId: string): string | null {
   return null
 }
 
-
-
 // GET - Fetch all shared DMCs with their details
 export async function GET(request: NextRequest) {
-  let prismaConnected = false;
-  
   try {
     console.log("=== Shared DMC API GET Request Started ===")
     const { searchParams } = new URL(request.url)
@@ -78,10 +83,6 @@ export async function GET(request: NextRequest) {
     const locations = searchParams.get("locations")
     
     console.log("Request parameters:", { enquiryId, customerId, locations })
-    
-    await prisma.$connect()
-    prismaConnected = true
-    console.log("✅ Database connection established")
     
     const dmcWhereClause: Record<string, unknown> = { status: "ACTIVE" }
 
@@ -159,7 +160,6 @@ export async function GET(request: NextRequest) {
       console.log(`✅ Found ${sharedDMCs.length} shared DMCs`)
     } catch (error) {
       console.error("❌ Error fetching SharedDMC records:", error)
-      console.error("Error details:", error instanceof Error ? error.message : "Unknown error")
       sharedDMCs = []
     }
 
@@ -272,37 +272,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response)
   } catch (error) {
     console.error("=== Shared DMC API Error ===", error)
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace")
-    console.error("Error name:", error instanceof Error ? error.name : "Unknown")
-    console.error("Error message:", error instanceof Error ? error.message : "Unknown error")
     
     return NextResponse.json({ 
       error: "Failed to fetch shared DMCs", 
       details: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
       success: false 
     }, { status: 500 })
   } finally {
     console.log("=== Shared DMC API Request Completed ===")
-    if (prismaConnected) {
-      try {
-        await prisma.$disconnect()
-        console.log("✅ Database disconnected")
-      } catch (disconnectError) {
-        console.error("Error disconnecting from database:", disconnectError)
-      }
-    }
   }
 }
 
 // POST - Create new shared DMC entry and send email with PDF
 export async function POST(request: NextRequest) {
-  let prismaConnected = false;
-  
   try {
-    await prisma.$connect()
-    prismaConnected = true
-    
     console.log("=== POST Share DMC Started ===")
     
     const body = await request.json()
@@ -390,18 +373,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepare PDF attachment - UPDATED LOGIC
+    // Prepare PDF attachment
     let pdfFilePath: string | null = null
     
     console.log("\n=== PDF Attachment Preparation ===")
-    console.log("selectedItinerary:", selectedItinerary)
-    console.log("pdfPath:", pdfPath)
     
-    // Priority 1: Use activePdfUrl from selectedItinerary (NEW)
+    // Priority 1: Use activePdfUrl from selectedItinerary
     if (selectedItinerary?.activePdfUrl) {
       console.log("📄 PDF URL from selectedItinerary.activePdfUrl:", selectedItinerary.activePdfUrl)
       pdfFilePath = findPdfFile(selectedItinerary.activePdfUrl, enquiryId)
-    } 
+    }
     // Priority 2: Use pdfUrl from selectedItinerary
     else if (selectedItinerary?.pdfUrl) {
       console.log("📄 PDF URL from selectedItinerary.pdfUrl:", selectedItinerary.pdfUrl)
@@ -523,10 +504,9 @@ export async function POST(request: NextRequest) {
     // Create the shared DMC record in database
     console.log("\n=== Creating database records ===")
     
-    // Store the PDF URL properly - prefer activePdfUrl
     const storedPdfUrl = selectedItinerary?.activePdfUrl || selectedItinerary?.pdfUrl || pdfPath || null
     
-    // Parse dateGenerated - handle different formats
+    // Parse dateGenerated
     let parsedDate = new Date()
     if (dateGenerated) {
       try {
@@ -545,7 +525,6 @@ export async function POST(request: NextRequest) {
         } else {
           parsedDate = new Date(dateGenerated)
           if (isNaN(parsedDate.getTime())) {
-            console.warn("Invalid date format, using current date")
             parsedDate = new Date()
           }
         }
@@ -651,27 +630,18 @@ export async function POST(request: NextRequest) {
     console.error("\n=== Error in POST Share DMC ===")
     console.error("Error:", error)
     console.error("Stack:", error instanceof Error ? error.stack : "No stack trace")
-    
+
     return NextResponse.json({ 
       error: "Failed to create shared DMC",
       details: error instanceof Error ? error.message : "Unknown error",
       success: false 
     }, { status: 500 })
-  } finally {
-    if (prismaConnected) {
-      await prisma.$disconnect()
-    }
   }
 }
 
 // PUT - Update shared DMC
 export async function PUT(request: NextRequest) {
-  let prismaConnected = false;
-  
   try {
-    await prisma.$connect()
-    prismaConnected = true
-    
     const body = await request.json()
     const { id, action, ...updateData } = body
 
@@ -1017,21 +987,12 @@ export async function PUT(request: NextRequest) {
       details: error instanceof Error ? error.message : "Unknown error",
       success: false 
     }, { status: 500 })
-  } finally {
-    if (prismaConnected) {
-      await prisma.$disconnect()
-    }
   }
 }
 
 // DELETE - Remove shared DMC entry
 export async function DELETE(request: NextRequest) {
-  let prismaConnected = false;
-  
   try {
-    await prisma.$disconnect()
-    prismaConnected = true
-    
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
 
@@ -1061,9 +1022,5 @@ export async function DELETE(request: NextRequest) {
       details: error instanceof Error ? error.message : "Unknown error",
       success: false 
     }, { status: 500 })
-  } finally {
-    if (prismaConnected) {
-      await prisma.$disconnect()
-    }
   }
 }
