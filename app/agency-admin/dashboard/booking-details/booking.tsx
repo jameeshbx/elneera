@@ -1,19 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Calendar, X, Loader2, Plus, Save, Edit2, MapPin, Users, Phone, User } from "lucide-react";
 
-// Define Itinerary type based on usage
-interface Itinerary {
-  activeStatus?: boolean;
-  enquiryId?: string | null;
-  customerId?: string | null;
-  selectedDMCs?: Array<{
-    status: string;
-    dmc?: { name?: string };
-    dmcName?: string;
-  }>;
-}
-
-
 // Type definitions
 interface ProgressData {
   id: string;
@@ -31,13 +18,13 @@ interface Feedback {
   createdAt: string;
 }
 
-// Reminder interface is not used in the component
-
 interface Service {
   time: string;
   activity: string;
   type?: string;
   description?: string;
+  day?: number;
+  date?: Date;
 }
 
 interface ItineraryService {
@@ -77,139 +64,118 @@ interface NewFeedback {
 
 interface NewReminder {
   date: string;
-  time: string;
-  message: string;
-  status: 'pending' | 'completed' | 'dismissed';
-  note: string; // Made required since it's used in required fields
-}
-
-// Define interfaces for mock data structure
-interface MockServiceRow {
-  day: string | number;
-  time: string;
-  activity: string;
-  type?: string;
-  description?: string;
-}
-
-interface MockItineraryData {
-  quoteId: string;
-  name: string;
-  days: number;
-  nights: number;
-  startDate: string;
-  costINR: number;
-  costUSD: number;
-  guests: number;
-  adults: number;
-  kids: number;
-  services: MockServiceRow[];
-}
-
-interface EnquiryData {
-  data?: {
-    locations?: string;
-    assignedStaff?: string;
-  };
-}
-
-interface ShareDmcResponse {
-  data?: Array<{
-    enquiryId: string | null;
-    customerId: string | null;
-    activeStatus?: boolean;
-    selectedDMCs?: Array<{
-      status: string;
-      dmc?: { name?: string };
-      dmcName?: string;
-    }>;
-  }>;
-}
-
-interface DMCData {
-  name: string;
-}
-
-interface SelectedDMC {
-  dmc: DMCData;
+  note: string;
 }
 
 interface BookingItem {
   id: string;
   date: string;
   note: string;
-  selectedDMCs?: SelectedDMC[];
+}
+interface CsvMetaData {
+  quoteId: string;
+  name: string;
+  days: number;
+  nights: number;
+  startDate?: string;
+  costINR?: number;
+  costUSD?: number;
+  guests?: number;
+  adults?: number;
+  kids?: number;
 }
 
-interface NewRow {
-  date: string;
-  service: string;
-  customService?: string;
-  status: string;
-  dmc?: DMCData;
+interface CsvServiceRow {
+  day: string | number;
+  time: string;
+  activity: string;
+  type?: string;
+  description?: string;
 }
+interface ProgressItem {
+  id?: string;
+  date: string | Date;
+  service?: string;
+  status?: string;
+  dmcNotes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+interface ReminderItem {
+  id: string;
+  date: string;
+  note: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+interface CustomerItinerary {
+  activeStatus?: boolean;
+  enquiryId?: string;
+  customerId?: string;
+  selectedDMCs?: Array<{
+    status: string;
+    dmc?: {
+      name?: string;
+    };
+    dmcName?: string;
+  }>;
+}
+
 
 const statusOptions = ["PENDING", "CONFIRMED", "CANCELLED", "NOT_INCLUDED", "IN_PROGRESS", "COMPLETED"];
 
 const BookingProgressDashboard = () => {
-  // Get enquiry ID from URL params or use default
+  // Get enquiry ID from URL params
   const [itineraryId] = useState(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get('id') || 'KASH001'; // Default to KASH001 for demo
+      return urlParams.get('id') || 'KASH001';
     }
     return 'KASH001';
   });
+
   const [enquiryId] = useState(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       return urlParams.get('enquiryId');
     }
-    return null as string | null;
+    return null;
   });
+
   const [locationParam] = useState(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       return urlParams.get('location');
     }
-    return null as string | null;
+    return null;
   });
 
   const [progressData, setProgressData] = useState<ProgressData[]>([]);
   const [itineraryData, setItineraryData] = useState<ItineraryData | null>(null);
-  const [itineraryServices, setItineraryServices] = useState<ItineraryService[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [saving, setSaving] = useState<boolean>(false);
-  const [newRow, setNewRow] = useState<NewRow>({ date: "", service: "", status: "PENDING", dmcNotes: "", customService: "" });
-  const [showAddProgressModal, setShowAddProgressModal] = useState<boolean>(false);
-  const [editingRow, setEditingRow] = useState<string | null>(null);
-
-  // Store edited values separately to avoid losing focus
-  const [editingValues, setEditingValues] = useState<{ [key: string]: ProgressData }>({});
-
-  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
-  const [showAddNoteModal, setShowAddNoteModal] = useState<boolean>(false);
-  const [newFeedback, setNewFeedback] = useState<NewFeedback>({ note: "" });
-
-  // Reminder state
-  const [showReminderModal, setShowReminderModal] = useState<boolean>(false);
-  const [newReminder, setNewReminder] = useState<NewReminder>({
-    date: '',
-    time: '',
-    message: '',
-    status: 'pending',
-    note: '' // Initialize with empty string as required by the interface
+  const [, setItineraryServices] = useState<ItineraryService[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newRow, setNewRow] = useState<NewRow>({
+    date: "",
+    service: "",
+    status: "PENDING",
+    dmcNotes: ""
   });
-  const [reminders, setReminders] = useState<BookingItem[]>([] as BookingItem[]);
+  const [showAddProgressModal, setShowAddProgressModal] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const [editingValues, setEditingValues] = useState<{ [key: string]: ProgressData }>({});
+  const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [showAddNoteModal, setShowAddNoteModal] = useState(false);
+  const [newFeedback, setNewFeedback] = useState<NewFeedback>({ note: "" });
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [newReminder, setNewReminder] = useState<NewReminder>({ date: '', note: '' });
+  const [reminders, setReminders] = useState<BookingItem[]>([]);
+  const [selectedDmcName, setSelectedDmcName] = useState("");
+  const [csvItineraryId, setCsvItineraryId] = useState("");
+  const [availableServices, setAvailableServices] = useState<Service[]>([]);
+  const [showServiceDropdown, setShowServiceDropdown] = useState(false);
+  const [assignedStaffName, setAssignedStaffName] = useState("Not Assigned");
 
-  // Context persistence and overview extras
-  const [assignedStaffName, setAssignedStaffName] = useState<string>("");
-  const [selectedDmcName, setSelectedDmcName] = useState<string>("");
-  const [csvItineraryId, setCsvItineraryId] = useState<string>("");
-  const [, setFilteredServices] = useState<Service[]>([]);
-  // Error and retry state
-  const [, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState<number>(0);
 
   const getCsvFilenameForLocation = (loc: string): string => {
     const normalized = (loc || '').toLowerCase();
@@ -223,75 +189,81 @@ const BookingProgressDashboard = () => {
     if (normalized.includes('uttarakhand')) return 'UTT001.csv';
     if (normalized.includes('andaman')) return 'AND001.csv';
     if (normalized.includes('ladakh')) return 'LAD001.csv';
-    // Default fallback - try to find a matching CSV file
     console.warn(`No specific CSV mapping found for location: ${loc}, using default GOA001.csv`);
     return 'GOA001.csv';
   };
 
-  const parseCsvServices = (csvText: string): { meta: Partial<MockItineraryData>, services: MockServiceRow[] } => {
-    const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
-    const metaLine = lines[1];
-    const servicesHeaderIndex = lines.findIndex(l => l.toLowerCase().startsWith('day,time,activity'));
-    const serviceLines = servicesHeaderIndex >= 0 ? lines.slice(servicesHeaderIndex + 1) : [];
+  const parseCsvServices = (csvText: string) => {
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const metaLine = lines[1];
+  const servicesHeaderIndex = lines.findIndex(l => l.toLowerCase().startsWith('day,time,activity'));
+  const serviceLines = servicesHeaderIndex >= 0 ? lines.slice(servicesHeaderIndex + 1) : [];
 
-    let meta: Partial<MockItineraryData> = {};
-    try {
-      const metaValues = metaLine.split(',');
-      meta = {
-        quoteId: metaValues[0],
-        name: metaValues[1],
-        days: Number(metaValues[2]),
-        nights: Number(metaValues[3]),
-        startDate: metaValues[4],
-        costINR: Number(metaValues[5]),
-        costUSD: Number(metaValues[6]),
-        guests: Number(metaValues[7]),
-        adults: Number(metaValues[8]),
-        kids: Number(metaValues[9] || 0),
-      } as Partial<MockItineraryData>;
-    } catch {}
+  const meta: Partial<CsvMetaData> = {};
+  try {
+    const metaValues = metaLine.split(',');
+    Object.assign(meta, {
+      quoteId: metaValues[0],
+      name: metaValues[1],
+      days: Number(metaValues[2]),
+      nights: Number(metaValues[3]),
+      startDate: metaValues[4],
+      costINR: Number(metaValues[5]),
+      costUSD: Number(metaValues[6]),
+      guests: Number(metaValues[7]),
+      adults: Number(metaValues[8]),
+      kids: Number(metaValues[9] || 0),
+    });
+  } catch (error) {
+    console.error('Error parsing meta data:', error);
+  }
 
-    const services: MockServiceRow[] = serviceLines.map(line => {
+  const services = serviceLines
+    .map(line => {
       const [day, time, activity] = line.split(',');
-      return { day: day || '', time: time || '', activity: activity || '' };
-    }).filter(row => row.activity);
+      return { 
+        day: day || '', 
+        time: time || '', 
+        activity: activity || '',
+        type: 'activity' as const
+      };
+    })
+.filter((row): row is { day: string; time: string; activity: string; type: 'activity' } => Boolean(row.activity));
 
-    return { meta, services };
-  };
-
-  // Load itinerary/services from CSV using location from enquiry or URL
+  return { meta, services };
+};
   const loadItineraryFromMockData = useCallback(async () => {
     try {
-      // Determine location: explicit param > enquiry lookup > fallback
       let selectedLocation = locationParam || '';
       if (!selectedLocation && enquiryId) {
         try {
           const res = await fetch(`/api/enquiries/${enquiryId}`);
           if (res.ok) {
-            const json :EnquiryData  = await res.json();
+            const json = await res.json();
             selectedLocation = json?.data?.locations || '';
           }
-        } catch {}
+        } catch { }
       }
 
       const filename = getCsvFilenameForLocation(selectedLocation);
-      const csvFilenameId = filename.replace('.csv', ''); // Extract KASH001, GOA001, etc.
+      const csvFilenameId = filename.replace('.csv', '');
       setCsvItineraryId(csvFilenameId);
-      
+
       const resCsv = await fetch(`/Itinerary/${filename}`);
       const csvText = await resCsv.text();
       const parsed = parseCsvServices(csvText);
-      const data: MockItineraryData = {
+
+      const data = {
         quoteId: parsed.meta.quoteId || csvFilenameId,
         name: parsed.meta.name || (selectedLocation ? `${selectedLocation} Package` : 'Itinerary'),
-        days: (parsed.meta.days as number) || 3,
-        nights: (parsed.meta.nights as number) || Math.max(((parsed.meta.days as number) || 3) - 1, 0),
+        days: parsed.meta.days || 3,
+        nights: parsed.meta.nights || Math.max((parsed.meta.days || 3) - 1, 0),
         startDate: parsed.meta.startDate || new Date().toISOString().split('T')[0],
-        costINR: (parsed.meta.costINR as number) || 0,
-        costUSD: (parsed.meta.costUSD as number) || 0,
-        guests: (parsed.meta.guests as number) || 0,
-        adults: (parsed.meta.adults as number) || 0,
-        kids: (parsed.meta.kids as number) || 0,
+        costINR: parsed.meta.costINR || 0,
+        costUSD: parsed.meta.costUSD || 0,
+        guests: parsed.meta.guests || 0,
+        adults: parsed.meta.adults || 0,
+        kids: parsed.meta.kids || 0,
         services: parsed.services,
       };
 
@@ -316,22 +288,45 @@ const BookingProgressDashboard = () => {
 
       setItineraryData(itinerary);
 
-      // Create services data
+      // Create services data and extract for dropdown
       const servicesByDay: { [key: number]: Service[] } = {};
+      const allServices: Service[] = [];
 
-      data.services.forEach((row: MockServiceRow) => {
-        const day = typeof row.day === 'string' ? parseInt(row.day) : row.day;
-        if (!servicesByDay[day]) {
-          servicesByDay[day] = [];
-        }
+      data.services.forEach((row: CsvServiceRow) => {
+  const day = typeof row.day === 'string' ? parseInt(row.day) : Number(row.day);
+  if (!servicesByDay[day]) {
+    servicesByDay[day] = [];
+  }
 
-        servicesByDay[day].push({
+        const service = {
           time: row.time,
           activity: row.activity,
           type: row.type || 'activity',
           description: row.description || row.activity
-        });
+        };
+
+        servicesByDay[day].push(service);
+
+        // Filter out meals and add to available services
+        const activity = row.activity.toLowerCase();
+        const isMealService =
+          activity.includes('breakfast') ||
+          activity.includes('lunch') ||
+          activity.includes('dinner') ||
+          activity.includes('tea tasting') ||
+          activity.includes('meal') ||
+          activity.includes('food');
+
+        if (!isMealService) {
+          allServices.push({
+            ...service,
+            day,
+            date: new Date(startDate.getTime() + (day - 1) * 24 * 60 * 60 * 1000)
+          });
+        }
       });
+
+      setAvailableServices(allServices);
 
       // Convert to ItineraryService array
       const services: ItineraryService[] = [];
@@ -351,142 +346,52 @@ const BookingProgressDashboard = () => {
     } catch (error) {
       console.error('Error loading mock data:', error);
     }
-  }, [itineraryId, enquiryId, locationParam]);
+  }, [enquiryId, locationParam]);
 
-  // Load booking progress from API - filtered by customer
   const loadProgressData = useCallback(async () => {
-    let response: Response | null = null;
-    
     try {
-      setError(null);
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
-      
+
       const itineraryIdToUse = csvItineraryId || itineraryId;
-      if (!itineraryIdToUse) {
-        console.warn('No itinerary ID available to fetch progress data');
-        return;
-      }
+      if (!itineraryIdToUse) return;
 
-      setLoading(true);
-      console.log(`[${new Date().toISOString()}] Fetching booking progress for:`, { 
-        itineraryId: itineraryIdToUse, 
-        enquiryId,
-        retryCount 
-      });
-      
-      // Clear previous data while loading
-      setProgressData([]);
-      
-      response = await fetch(`/api/booking-progress/${itineraryIdToUse}?${params.toString()}`, {
+      const response = await fetch(`/api/booking-progress/${itineraryIdToUse}?${params.toString()}`, {
         headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store' // Prevent caching issues
+        cache: 'no-store'
       });
-      
-      console.log(`[${new Date().toISOString()}] Received response status:`, response.status);
-      
-      // Handle non-OK responses first
-      if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json().catch(() => ({}));
-        } catch {
-          const text = await response.text();
-          throw new Error(`HTTP ${response.status} - ${text || 'No error details'}`);
-        }
-        
-        console.error('API Error Response:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorData
-        });
-        
-        const errorMessage = errorData?.error || 
-                           errorData?.message || 
-                           `Server returned ${response.status} ${response.statusText}`;
-        
-        throw new Error(errorMessage);
-      }
-      
-      // Parse successful response
-      const result = await response.json().catch(() => {
-        throw new Error('Failed to parse server response');
-      });
-      
-      console.log('API Response:', result);
-      
-      // Validate response structure
-      if (!result || typeof result !== 'object') {
-        throw new Error('Invalid response format from server');
-      }
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Request failed');
-      }
-      
-      // Process data
-      const items = Array.isArray(result.data) ? result.data : [];
-      console.log(`Processing ${items.length} progress items`);
-      
-      const formattedData = items.map((item: ProgressData) => {
-        try {
-          return {
-            id: item.id || `temp-${Math.random().toString(36).substr(2, 9)}`,
-            date: item.date ? (typeof item.date === 'string' 
-              ? item.date.split('T')[0] // Extract just the date part
-              : new Date(item.date).toISOString().split('T')[0]) : '',
-            service: String(item.service || 'Unnamed Service').trim(),
-            status: item.status || 'PENDING',
-            dmcNotes: item.dmcNotes || null,
-            createdAt: item.createdAt || new Date().toISOString(),
-            updatedAt: item.updatedAt || new Date().toISOString()
-          };
-        } catch (error) {
-          console.error('Error formatting progress item:', error, 'Item:', item);
-          return null;
-        }
-      }).filter((item: ProgressData | null): item is ProgressData => item !== null);
-      
-      console.log(`Successfully processed ${formattedData.length} items`);
-      setProgressData(formattedData);
-      
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load booking progress';
-      console.error('Error in loadProgressData:', {
-        error: errorMessage,
-        url: response?.url,
-        status: response?.status,
-        retryCount
-      });
-      
-      setError(errorMessage);
-      setProgressData([]);
-      
-      // Auto-retry after 5 seconds (max 3 retries)
-      if (retryCount < 3) {
-        const nextRetry = retryCount + 1;
-        console.log(`Will retry in 5 seconds... (${nextRetry}/3)`);
-        
-        const retryTimer = setTimeout(() => {
-          console.log(`Retrying... Attempt ${nextRetry}/3`);
-          setRetryCount(nextRetry);
-        }, 5000);
-        
-        return () => clearTimeout(retryTimer);
-      } else {
-        console.error('Max retries reached, giving up');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [itineraryId, enquiryId, csvItineraryId, retryCount, setError, setLoading, setProgressData]);
 
-  // Load feedback data from API - filtered by customer
+      if (!response.ok) return;
+
+      const result = await response.json();
+
+      if (result.success && Array.isArray(result.data)) {
+       const formattedData = result.data.map((item: ProgressItem) => ({
+  id: item.id || `temp-${Math.random().toString(36).substr(2, 9)}`,
+  date: item.date 
+    ? (typeof item.date === 'string' 
+      ? item.date.split('T')[0] 
+      : new Date(item.date).toISOString().split('T')[0]) 
+    : '',
+  service: String(item.service || 'Unnamed Service').trim(),
+  status: item.status || 'PENDING',
+  dmcNotes: item.dmcNotes || null,
+  createdAt: item.createdAt || new Date().toISOString(),
+  updatedAt: item.updatedAt || new Date().toISOString()
+}));
+
+        setProgressData(formattedData);
+      }
+    } catch (error) {
+      console.error('Error loading progress data:', error);
+    }
+  }, [itineraryId, enquiryId, csvItineraryId]);
+
   const loadFeedbackData = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
-      
+
       const itineraryIdToUse = csvItineraryId || itineraryId;
       const response = await fetch(`/api/booking-feedback/${itineraryIdToUse}?${params.toString()}`);
       if (response.ok) {
@@ -500,18 +405,17 @@ const BookingProgressDashboard = () => {
     }
   }, [itineraryId, enquiryId, csvItineraryId]);
 
-  // Load reminder data from API - filtered by customer
   const loadReminderData = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
-      
+
       const itineraryIdToUse = csvItineraryId || itineraryId;
       const response = await fetch(`/api/booking-reminder/${itineraryIdToUse}?${params.toString()}`);
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
-          const transformedData = result.data.map((item: BookingItem) => ({
+const transformedData = result.data.map((item: ReminderItem) => ({
             ...item,
             date: new Date(item.date).toISOString().split('T')[0]
           }));
@@ -523,145 +427,181 @@ const BookingProgressDashboard = () => {
     }
   }, [itineraryId, enquiryId, csvItineraryId]);
 
-  useEffect(() => {
-    if (itineraryServices.length > 0) {
-      const relevantServices = itineraryServices.flatMap(day => 
-        day.services
-          .filter(service => {
-            const activity = service.activity.toLowerCase();
-            // Exclude meal-related services
-            const isMealService = 
-              activity.includes('breakfast') ||
-              activity.includes('lunch') ||
-              activity.includes('dinner') ||
-              activity.includes('tea tasting') ||
-              activity.includes('meal') ||
-              activity.includes('food');
-              
-            // Include only relevant service types that are not meals
-            return !isMealService && (
-              activity.includes('accommodation') || 
-              activity.includes('hotel') ||
-              activity.includes('stay') ||
-              activity.includes('activity') ||
-              activity.includes('tour') ||
-              activity.includes('sightseeing')
-            );
-          })
-          .map(service => ({
-            ...service,
-            day: day.day,
-            date: day.date
-          }))
-      );
-      setFilteredServices(relevantServices);
-    }
-  }, [itineraryServices]);
+  // In the BookingProgressDashboard component, update the useEffect that fetches the assigned staff:
 
-  // Load data on component mount and when dependencies change
+ const fetchStaffName = useCallback(async (staffId: string) => {
+  console.log('Fetching staff with ID:', staffId);
+  if (!staffId) {
+    console.log('No staff ID provided');
+    setAssignedStaffName("Not Assigned");
+    return;
+  }
+  try {
+    console.log(`Calling API: /api/auth/agency-add-user/${staffId}`);
+    const res = await fetch(`/api/auth/agency-add-user/${staffId}`);
+    const data = await res.json();
+    console.log('Staff API response status:', res.status);
+    console.log('Staff API response data:', data);
+    
+    if (res.ok) {
+      // Check different possible name fields in the response
+      const staffName = data.name || data.fullName || data.username || 'Staff Member';
+      console.log('Resolved staff name:', staffName);
+      setAssignedStaffName(staffName);
+    } else {
+      console.log('Error response from staff API:', data);
+      // Show a more user-friendly message with the ID
+      setAssignedStaffName(`Staff (${staffId.substring(0, 8)}...)`);
+    }
+  } catch (error) {
+    console.error('Error in fetchStaffName:', error);
+    // Show a shortened version of the ID if the API call fails
+    setAssignedStaffName(`Staff (${staffId.substring(0, 8)}...)`);
+  }
+}, []);
+
+useEffect(() => {
+  const fetchEnquiryData = async () => {
+    if (!enquiryId) {
+      console.log('No enquiry ID provided');
+      return;
+    }
+    
+    try {
+      console.log('Fetching enquiry data for ID:', enquiryId);
+      const res = await fetch(`/api/enquiries/${enquiryId}`);
+      const enquiryData = await res.json();
+      console.log('Full enquiry data:', enquiryData);
+      
+      if (res.ok) {
+        const staffId = enquiryData?.assignedStaff || 
+                       enquiryData?.data?.assignedStaff || 
+                       enquiryData?.staffId;
+        
+        console.log('Resolved staff ID:', staffId);
+        
+        if (staffId) {
+          console.log('Found staff ID:', staffId);
+          fetchStaffName(staffId);
+        } else {
+          console.log('No staff ID found in enquiry data');
+          console.log('Available enquiry data keys:', Object.keys(enquiryData));
+          if (enquiryData.data) {
+            console.log('Data object keys:', Object.keys(enquiryData.data));
+          }
+          setAssignedStaffName("Not Assigned");
+        }
+      } else {
+        console.log('Error response from enquiry API:', enquiryData);
+        setAssignedStaffName("Error loading staff");
+      }
+    } catch (error) {
+      console.error('Error in fetchEnquiryData:', error);
+      setAssignedStaffName("Error");
+    }
+  };
+
+  fetchEnquiryData();
+}, [enquiryId, fetchStaffName]);
+
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
 
-      try {
-        // Enhanced context persistence - restore from localStorage if URL lacks params
+      await loadItineraryFromMockData();
+      await Promise.all([
+        loadProgressData(),
+        loadFeedbackData(),
+        loadReminderData()
+      ]);
+
+      // Fetch assigned staff with improved logic matching itinerary-form
+      if (enquiryId) {
         try {
-          if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            let currentEnquiryId = enquiryId;
-            let currentItineraryId = itineraryId;
-            let currentLocation = locationParam;
+          // First try to get enquiry data
+          const enquiryRes = await fetch(`/api/enquiries?id=${enquiryId}`);
+          if (enquiryRes.ok) {
+            const enquiryData = await enquiryRes.json();
 
-            // Try to restore from localStorage if URL parameters are missing
-            if (!currentEnquiryId || !currentItineraryId) {
-              const stored = localStorage.getItem('bookingContext');
-              if (stored) {
-                const ctx = JSON.parse(stored);
-                currentEnquiryId = currentEnquiryId || ctx.enquiryId;
-                currentItineraryId = currentItineraryId || ctx.itineraryId;
-                currentLocation = currentLocation || ctx.location;
+            // Try to get itinerary data for this enquiry
+            let staffId = null;
+            try {
+              const itineraryResponse = await fetch(`/api/itineraries?enquiryId=${enquiryId}`);
+              if (itineraryResponse.ok) {
+                const itineraries = await itineraryResponse.json();
+                if (itineraries && itineraries.length > 0) {
+                  const existingItinerary = itineraries[0];
+                  // Prefer staff from itinerary's enquiry relationship
+                  staffId = existingItinerary?.enquiry?.assignedStaff || enquiryData?.assignedStaff;
+                }
               }
+            } catch (error) {
+              console.error('Error fetching itinerary for staff:', error);
+              staffId = enquiryData?.assignedStaff;
             }
 
-            // Update URL to reflect current context
-            if (currentEnquiryId && !params.get('enquiryId')) {
-              params.set('enquiryId', currentEnquiryId);
+            // If we have a staffId, fetch the staff name from userform
+            if (staffId) {
+              try {
+                const staffRes = await fetch(`/api/auth/agency-add-user/${staffId}`);
+                if (staffRes.ok) {
+                  const staffData = await staffRes.json();
+                  setAssignedStaffName(staffData.name || staffId);
+                } else {
+                  // If API call fails, use the staffId as fallback
+                  setAssignedStaffName(staffId);
+                }
+              } catch (error) {
+                console.error('Error fetching staff details:', error);
+                setAssignedStaffName(staffId);
+              }
+            } else {
+              setAssignedStaffName("Not Assigned");
             }
-            if (currentItineraryId && !params.get('id')) {
-              params.set('id', currentItineraryId);
-            }
-            if (currentLocation && !params.get('location')) {
-              params.set('location', currentLocation);
-            }
-            
-            if (params.toString() !== window.location.search.substring(1)) {
-              window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
-            }
-
-            // Save current context
-            localStorage.setItem('bookingContext', JSON.stringify({ 
-              enquiryId: currentEnquiryId, 
-              itineraryId: currentItineraryId, 
-              location: currentLocation 
-            }));
+          } else {
+            setAssignedStaffName("Not Assigned");
           }
-        } catch {}
+        } catch (error) {
+          console.error('Error fetching enquiry:', error);
+          setAssignedStaffName("Not Assigned");
+        }
 
-        await loadItineraryFromMockData();
-        await Promise.all([
-          loadProgressData(),
-          loadFeedbackData(),
-          loadReminderData()
-        ]);
-
-        // Fetch assigned staff and selected DMC for overview - customer specific
-        try {
-          if (enquiryId) {
-            const res = await fetch(`/api/enquiries/${enquiryId}`);
-            if (res.ok) {
-              const json = await res.json();
-              setAssignedStaffName(json?.data?.assignedStaff || "");
-            }
-          }
-        } catch {}
-
+        // Fetch selected DMC
         try {
           const params = new URLSearchParams();
           if (enquiryId) params.append('enquiryId', enquiryId);
           const sharedRes = await fetch(`/api/share-dmc?${params.toString()}`);
           if (sharedRes.ok) {
-            const data: ShareDmcResponse = await sharedRes.json();
-            console.log('Initial DMC data for customer:', data);
+            const data = await sharedRes.json();
             const list = Array.isArray(data?.data) ? data.data : [];
-            
-            // Find the active itinerary for this specific customer/enquiry
-            const customerItinerary = list.find((it) => 
-              it.activeStatus && 
-              (it.enquiryId === enquiryId || it.customerId === enquiryId)
-            ) || list.find((it) => 
-              it.enquiryId === enquiryId || it.customerId === enquiryId
-            );
-            
-            if (customerItinerary && customerItinerary.selectedDMCs && customerItinerary.selectedDMCs.length > 0) {
-              // Find the DMC with the highest status or first active one
-              const activeDmc = customerItinerary.selectedDMCs.find((dmc) => 
-                dmc.status === 'QUOTATION_RECEIVED' || dmc.status === 'CONFIRMED'
-              ) || customerItinerary.selectedDMCs[0];
-              
+
+           const customerItinerary = list.find((it: CustomerItinerary) =>
+  it.activeStatus && (it.enquiryId === enquiryId || it.customerId === enquiryId)
+) || list.find((it: CustomerItinerary) =>
+  it.enquiryId === enquiryId || it.customerId === enquiryId
+);
+
+          if (customerItinerary?.selectedDMCs?.length) {
+  const activeDmc = customerItinerary.selectedDMCs.find((dmc: { status: string }) =>
+    dmc.status === 'QUOTATION_RECEIVED' || dmc.status === 'CONFIRMED'
+  ) || customerItinerary.selectedDMCs[0];
+
               if (activeDmc) {
                 const name = activeDmc?.dmc?.name || activeDmc?.dmcName || 'Selected DMC';
                 setSelectedDmcName(name);
-                console.log('Initial selected DMC for customer:', name);
+              } else {
+                setSelectedDmcName('No DMC Selected');
               }
             } else {
               setSelectedDmcName('No DMC Selected');
             }
+          } else {
+            setSelectedDmcName('No DMC Selected');
           }
         } catch (error) {
-          console.error('Error fetching initial DMC data:', error);
+          console.error('Error fetching DMC:', error);
           setSelectedDmcName('DMC Info Unavailable');
         }
-      } catch (error) {
-        console.error('Error loading data:', error);
       }
 
       setLoading(false);
@@ -670,208 +610,67 @@ const BookingProgressDashboard = () => {
     fetchData();
   }, [enquiryId, itineraryId, locationParam, loadItineraryFromMockData, loadProgressData, loadFeedbackData, loadReminderData]);
 
-  // Add refresh functionality
-  const handleRefresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      await Promise.all([
-        loadItineraryFromMockData(),
-        loadProgressData(),
-        loadFeedbackData(),
-        loadReminderData()
-      ]);
-      
-      // Refresh assigned staff and DMC data
-      if (enquiryId) {
-        try {
-          const res = await fetch(`/api/enquiries/${enquiryId}`);
-          if (res.ok) {
-            const json = await res.json();
-            setAssignedStaffName(json?.data?.assignedStaff || "");
-          }
-        } catch {}
-
-        try {
-          const params = new URLSearchParams();
-          if (enquiryId) params.append('enquiryId', enquiryId);
-          const sharedRes = await fetch(`/api/share-dmc?${params.toString()}`);
-          if (sharedRes.ok) {
-            const data = await sharedRes.json();
-            console.log('DMC data for customer:', data);
-            const list = Array.isArray(data?.data) ? data.data : [];
-            
-            // Find the active itinerary for this specific customer/enquiry
-            const customerItinerary = list.find((it: Itinerary) => 
-              it.activeStatus && 
-              (it.enquiryId === enquiryId || it.customerId === enquiryId)
-            ) || list.find((it: Itinerary) => 
-              it.enquiryId === enquiryId || it.customerId === enquiryId
-            );
-
-            if (customerItinerary?.selectedDMCs?.length) {
-              // Find the DMC with the highest status or first active one
-              const activeDmc = customerItinerary.selectedDMCs.find((dmc: { status: string }) => 
-                dmc.status === 'QUOTATION_RECEIVED' || dmc.status === 'CONFIRMED'
-              ) || customerItinerary.selectedDMCs[0];
-              
-              if (activeDmc) {
-                const name = activeDmc?.dmc?.name || activeDmc?.dmcName || 'Selected DMC';
-                setSelectedDmcName(name);
-                console.log('Selected DMC for customer:', name);
-              }
-            } else {
-  setSelectedDmcName('No DMC Selected');
-}
-          }
-        } catch (error) {
-          console.error('Error fetching DMC data:', error);
-          setSelectedDmcName('DMC Info Unavailable');
-        }
-      }
-    } catch (error) {
-      console.error('Error refreshing data:', error);
-    }
-    setLoading(false);
-  }, [loadItineraryFromMockData, loadProgressData, loadFeedbackData, loadReminderData, enquiryId]);
-
-  // Listen for parameter changes and auto-refresh
-  useEffect(() => {
-    const handleParamChange = () => {
-      const currentParams = new URLSearchParams(window.location.search);
-      const newEnquiryId = currentParams.get("enquiryId");
-      const newItineraryId = currentParams.get("itineraryId");
-      
-      if ((newEnquiryId && newEnquiryId !== enquiryId) || 
-          (newItineraryId && newItineraryId !== itineraryId)) {
-        // Force refresh data when parameters change
-        setTimeout(() => {
-          handleRefresh();
-        }, 100);
-      }
-    };
-
-    window.addEventListener('popstate', handleParamChange);
-    return () => window.removeEventListener('popstate', handleParamChange);
-  }, [enquiryId, itineraryId, handleRefresh]);
-
-  // Add new progress row
   const handleAddProgress = async () => {
-    if (!newRow.date) {
-      setError('Date is required');
-      return;
-    }
-    
-    const serviceName = newRow.service === 'custom' ? (newRow.customService || '') : newRow.service;
-    if (!serviceName || !serviceName.trim()) {
-      setError('Service is required');
+    if (!newRow.date || !newRow.service.trim()) {
+      alert('Date and Service are required');
       return;
     }
 
     setSaving(true);
-    setError(null);
-    
+
     try {
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
-      
+
       const itineraryIdToUse = csvItineraryId || itineraryId;
       if (!itineraryIdToUse) {
         throw new Error('No valid itinerary ID found');
       }
 
-      console.log('Adding new progress:', {
-        date: newRow.date,
-        service: serviceName,
-        status: newRow.status,
-        itineraryId: itineraryIdToUse,
-        enquiryId
-      });
-
       const response = await fetch(`/api/booking-progress/${itineraryIdToUse}?${params.toString()}`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Cache-Control': 'no-cache'
         },
         body: JSON.stringify({
           date: newRow.date,
-          service: serviceName,
+          service: newRow.service,
           status: newRow.status || 'PENDING',
           dmcNotes: newRow.dmcNotes || null,
         })
       });
 
-      console.log('Add progress response status:', response.status);
-      
-      // Handle non-OK responses
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = await response.json();
-        } catch {
-          const text = await response.text();
-          throw new Error(`Server error: ${response.status} - ${text || 'No details'}`);
-        }
-        
-        const errorMessage = errorData?.error || 
-                           errorData?.message || 
-                           `Failed to add progress (${response.status})`;
-        
-        throw new Error(errorMessage);
+        throw new Error('Failed to add progress');
       }
 
-      // Parse successful response
-      const result = await response.json().catch(() => {
-        throw new Error('Failed to parse server response');
-      });
+      const result = await response.json();
 
-      console.log('Add progress result:', result);
-      
-      if (!result || !result.success) {
-        throw new Error(result?.error || 'Failed to add progress');
+      if (result.success) {
+        const newProgress = {
+          id: result.data?.id || `temp-${Date.now()}`,
+          date: result.data?.date || newRow.date,
+          service: newRow.service,
+          status: result.data?.status || newRow.status || 'PENDING',
+          dmcNotes: result.data?.dmcNotes || newRow.dmcNotes || null,
+          createdAt: result.data?.createdAt || new Date().toISOString(),
+          updatedAt: result.data?.updatedAt || new Date().toISOString()
+        };
+
+        setProgressData(prev => [...prev, newProgress]);
+        setNewRow({ date: "", service: "", status: "PENDING", dmcNotes: "" });
+        setShowAddProgressModal(false);
       }
 
-      // Format the new progress item
-      const newProgress = {
-        id: result.data?.id || `temp-${Date.now()}`,
-        date: result.data?.date || newRow.date,
-        service: serviceName,
-        status: result.data?.status || newRow.status || 'PENDING',
-        dmcNotes: result.data?.dmcNotes || newRow.dmcNotes || null,
-        createdAt: result.data?.createdAt || new Date().toISOString(),
-        updatedAt: result.data?.updatedAt || new Date().toISOString()
-      };
-      
-      // Update the UI
-      setProgressData(prev => [...prev, newProgress]);
-      
-      // Reset the form
-      setNewRow({ 
-        date: "", 
-        service: "", 
-        status: "PENDING", 
-        dmcNotes: "", 
-        customService: "" 
-      });
-      
-      // Close the modal
-      setShowAddProgressModal(false);
-      
     } catch (error) {
-      console.error('Error in handleAddProgress:', error);
-      setError(error instanceof Error ? error.message : 'Failed to add progress');
-      
-      // Auto-retry after 3 seconds
-      setTimeout(() => {
-        setError(null);
-      }, 5000);
-      
+      console.error('Error adding progress:', error);
+      alert('Failed to add progress. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  // Start editing - create a copy of the item to edit
   const handleStartEdit = (item: ProgressData) => {
     setEditingRow(item.id);
     setEditingValues({
@@ -880,7 +679,6 @@ const BookingProgressDashboard = () => {
     });
   };
 
-  // Update editing values
   const handleUpdateEditingValue = (id: string, field: string, value: string) => {
     setEditingValues(prev => ({
       ...prev,
@@ -891,7 +689,6 @@ const BookingProgressDashboard = () => {
     }));
   };
 
-  // Save progress row
   const handleSaveProgress = async (id: string) => {
     const editedItem = editingValues[id];
     if (!editedItem) return;
@@ -913,7 +710,6 @@ const BookingProgressDashboard = () => {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          // Update the main progress data with saved values
           setProgressData(prev => prev.map(p =>
             p.id === id ? {
               ...result.data,
@@ -921,23 +717,18 @@ const BookingProgressDashboard = () => {
             } : p
           ));
 
-          // Clear editing state
           setEditingRow(null);
           const newEditingValues = { ...editingValues };
           delete newEditingValues[id];
           setEditingValues(newEditingValues);
         }
-      } else {
-        console.error('Failed to save progress');
       }
-
     } catch (error) {
       console.error('Error saving progress:', error);
     }
     setSaving(false);
   };
 
-  // Cancel editing
   const handleCancelEdit = (id: string) => {
     setEditingRow(null);
     const newEditingValues = { ...editingValues };
@@ -945,7 +736,6 @@ const BookingProgressDashboard = () => {
     setEditingValues(newEditingValues);
   };
 
-  // Add new feedback
   const handleAddFeedback = async () => {
     if (!newFeedback.note.trim()) return;
 
@@ -953,7 +743,7 @@ const BookingProgressDashboard = () => {
     try {
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
-      
+
       const itineraryIdToUse = csvItineraryId || itineraryId;
       const response = await fetch(`/api/booking-feedback/${itineraryIdToUse}?${params.toString()}`, {
         method: 'POST',
@@ -968,8 +758,6 @@ const BookingProgressDashboard = () => {
           setNewFeedback({ note: "" });
           setShowAddNoteModal(false);
         }
-      } else {
-        console.error('Failed to add feedback');
       }
     } catch (error) {
       console.error('Error adding feedback:', error);
@@ -977,25 +765,21 @@ const BookingProgressDashboard = () => {
     setSaving(false);
   };
 
-  // Add new reminder
   const handleAddReminder = async () => {
-    if (!newReminder.date || !(newReminder.note || '').trim()) return;
+    if (!newReminder.date || !newReminder.note.trim()) return;
 
     setSaving(true);
     try {
       const params = new URLSearchParams();
       if (enquiryId) params.append('enquiryId', enquiryId);
-      
+
       const itineraryIdToUse = csvItineraryId || itineraryId;
       const response = await fetch(`/api/booking-reminder/${itineraryIdToUse}?${params.toString()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: newReminder.date,
-          time: newReminder.time || '',
-          message: newReminder.message || '',
-          status: newReminder.status || 'pending',
-          note: newReminder.note || ''
+          note: newReminder.note
         })
       });
 
@@ -1007,17 +791,9 @@ const BookingProgressDashboard = () => {
             date: new Date(result.data.date).toISOString().split('T')[0]
           };
           setReminders(prev => [...prev, formattedData]);
-          setNewReminder({
-            date: "",
-            time: "",
-            message: "",
-            status: 'pending',
-            note: ""
-          });
+          setNewReminder({ date: "", note: "" });
           setShowReminderModal(false);
         }
-      } else {
-        console.error('Failed to add reminder');
       }
     } catch (error) {
       console.error('Error adding reminder:', error);
@@ -1025,10 +801,14 @@ const BookingProgressDashboard = () => {
     setSaving(false);
   };
 
-  // Add Progress Modal Component
+  const selectService = (service: Service) => {
+    setNewRow(prev => ({ ...prev, service: service.activity }));
+    setShowServiceDropdown(false);
+  };
+
   const AddProgressModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-semibold text-gray-800">Add Progress</h2>
           <button
@@ -1052,35 +832,33 @@ const BookingProgressDashboard = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Service*</label>
-            <div className="flex space-x-2">
+            <div className="relative">
               <input
                 type="text"
-                className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Enter service name"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Select or type service name"
                 value={newRow.service}
                 onChange={e => setNewRow(prev => ({ ...prev, service: e.target.value }))}
+                onFocus={() => setShowServiceDropdown(true)}
                 disabled={saving}
-                required
               />
-              <button
-                type="button"
-                onClick={handleAddProgress}
-                className="px-4 bg-green-800 text-white rounded-lg hover:bg-green-900 disabled:bg-gray-400 flex items-center justify-center"
-                disabled={!newRow.service || saving}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+              {showServiceDropdown && availableServices.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {availableServices.map((service, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      onClick={() => selectService(service)}
+                    >
+                      <div className="font-medium text-sm text-gray-800">{service.activity}</div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Day {service.day} • {service.time}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {newRow.service === "custom" && (
-              <input
-                type="text"
-                className="w-full p-3 border border-gray-300 rounded-lg mt-2 focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Enter custom service"
-                value={newRow.customService}
-                onChange={e => setNewRow(prev => ({ ...prev, customService: e.target.value }))}
-                disabled={saving}
-              />
-            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Booking Status*</label>
@@ -1112,7 +890,7 @@ const BookingProgressDashboard = () => {
             className="w-full bg-green-800 text-white py-3 rounded-lg font-medium hover:bg-green-900 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             disabled={!newRow.date || !newRow.service || saving}
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             {saving ? 'Adding...' : 'Add Progress'}
           </button>
         </div>
@@ -1120,7 +898,6 @@ const BookingProgressDashboard = () => {
     </div>
   );
 
-  // Add Note Modal Component
   const AddNoteModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
@@ -1139,7 +916,7 @@ const BookingProgressDashboard = () => {
             className="w-full p-3 border border-gray-300 rounded-lg h-32 focus:ring-2 focus:ring-green-500 focus:border-transparent resize-vertical"
             placeholder="Enter customer feedback or notes..."
             value={newFeedback.note || ''}
-            onChange={e => setNewFeedback(prev => ({ ...prev, note: e.target.value }))}
+            onChange={e => setNewFeedback({ note: e.target.value })}
             disabled={saving}
           />
         </div>
@@ -1157,7 +934,6 @@ const BookingProgressDashboard = () => {
     </div>
   );
 
-  // Reminder Modal
   const AddReminderModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
@@ -1178,14 +954,7 @@ const BookingProgressDashboard = () => {
               type="date"
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               value={newReminder.date}
-              onChange={e => setNewReminder(prev => ({
-                ...prev,
-                date: e.target.value,
-                // Ensure required fields are preserved
-                time: prev.time || '',
-                message: prev.message || '',
-                status: prev.status || 'pending'
-              }))}
+              onChange={e => setNewReminder(prev => ({ ...prev, date: e.target.value }))}
               disabled={saving}
             />
           </div>
@@ -1195,14 +964,7 @@ const BookingProgressDashboard = () => {
               className="w-full p-3 border border-gray-300 rounded-lg h-24 focus:ring-2 focus:ring-green-500 focus:border-transparent resize-vertical"
               placeholder="Enter reminder details..."
               value={newReminder.note || ''}
-              onChange={e => setNewReminder(prev => ({
-                ...prev,
-                note: e.target.value,
-                // Ensure required fields are preserved
-                time: prev.time || '',
-                message: prev.message || '',
-                status: prev.status || 'pending'
-              }))}
+              onChange={e => setNewReminder(prev => ({ ...prev, note: e.target.value }))}
               disabled={saving}
             />
           </div>
@@ -1211,7 +973,7 @@ const BookingProgressDashboard = () => {
           <button
             onClick={handleAddReminder}
             className="w-full bg-green-800 text-white py-3 rounded-lg font-medium hover:bg-green-900 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            disabled={!newReminder.date || !(newReminder.note || '').trim() || saving}
+            disabled={!newReminder.date || !newReminder.note.trim() || saving}
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             {saving ? 'Setting...' : 'Set Reminder'}
@@ -1246,7 +1008,7 @@ const BookingProgressDashboard = () => {
             Booking Progress Dashboard
           </h1>
           <p className="text-gray-600">
-            {itineraryData?.package || 'Loading...'} - {itineraryData?.id || itineraryId}
+            {itineraryData?.package || 'Loading...'} - {csvItineraryId || itineraryId}
           </p>
         </div>
 
@@ -1299,7 +1061,6 @@ const BookingProgressDashboard = () => {
                       </tr>
                     ) : (
                       progressData.map((item) => {
-              
                         const isEditing = editingRow === item.id;
                         const editedItem = editingValues[item.id] || item;
 
@@ -1320,36 +1081,16 @@ const BookingProgressDashboard = () => {
                             </td>
                             <td className="px-6 py-4">
                               {isEditing ? (
-                                <div className="flex flex-col space-y-2">
-                                  <div className="flex space-x-2">
-                                    <input
-                                      type="text"
-                                      value={editedItem.service}
-                                      onChange={e => handleUpdateEditingValue(item.id, 'service', e.target.value)}
-                                      className="flex-1 p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                      placeholder="Enter service"
-                                      disabled={saving}
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => handleAddProgress()}
-                                      className="px-3 py-2 bg-green-800 text-white rounded hover:bg-green-900 disabled:bg-gray-400"
-                                      disabled={saving}
-                                    >
-                                      <Plus className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {editedItem.date && `Date: ${new Date(editedItem.date).toLocaleDateString()}`}
-                                  </div>
-                                </div>
+                                <input
+                                  type="text"
+                                  value={editedItem.service}
+                                  onChange={e => handleUpdateEditingValue(item.id, 'service', e.target.value)}
+                                  className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                  placeholder="Enter service"
+                                  disabled={saving}
+                                />
                               ) : (
-                                <div className="space-y-1">
-                                  <div className="font-medium">{item.service}</div>
-                                  <div className="text-xs text-gray-500">
-                                    {item.date && `Date: ${new Date(item.date).toLocaleDateString()}`}
-                                  </div>
-                                </div>
+                                <div className="font-medium">{item.service}</div>
                               )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
@@ -1497,7 +1238,6 @@ const BookingProgressDashboard = () => {
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
 
@@ -1513,15 +1253,17 @@ const BookingProgressDashboard = () => {
 
                 <div className="mb-4">
                   <div className="bg-green-800 text-white px-4 py-2 rounded-lg text-sm font-medium text-center">
-                    Start Date: {itineraryData?.startDate || 'Loading...'}
+                    Start Date: {itineraryData?.startDate ? new Date(itineraryData.startDate).toLocaleDateString() : 'Loading...'}
                   </div>
                 </div>
 
                 <div className="space-y-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                    <span className="text-gray-600 font-medium">Package:</span>
-                    <span className="text-gray-900">{itineraryData?.name || 'Loading...'}</span>
+                  <div className="flex items-start gap-2">
+                    <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="text-gray-600 font-medium">Package:</span>
+                      <div className="text-gray-900 mt-0.5">{itineraryData?.name || 'Loading...'}</div>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1540,37 +1282,36 @@ const BookingProgressDashboard = () => {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 flex-shrink-0">💰</div>
-                    <span className="text-gray-600 font-medium">Cost:</span>
-                    <span className="text-gray-900">
-                      {itineraryData ? `₹${itineraryData.costINR?.toLocaleString()} / ${itineraryData.costUSD}` : 'Loading...'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-yellow-400 rounded-full flex-shrink-0"></div>
-                    <span className="text-gray-600 font-medium">Status:</span>
-                    <span className="text-gray-900">Booking in progress</span>
+                  <div className="flex items-start gap-2">
+                    <div className="w-4 h-4 flex-shrink-0 mt-0.5">💰</div>
+                    <div className="flex-1">
+                      <span className="text-gray-600 font-medium">Cost:</span>
+                      <div className="text-gray-900 mt-0.5">
+                        {itineraryData ? `₹${itineraryData.costINR?.toLocaleString()} / ${itineraryData.costUSD}` : 'Loading...'}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <Phone className="w-4 h-4 text-gray-500 flex-shrink-0" />
                     <span className="text-gray-600 font-medium">Quote ID:</span>
-                    <span className="text-gray-900">{itineraryData?.id || 'Loading...'}</span>
+                    <span className="text-gray-900">{csvItineraryId || itineraryId}</span>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                    <span className="text-gray-600 font-medium">DMC:</span>
-                    <span className="text-gray-900">{selectedDmcName || '—'}</span>
+                  <div className="flex items-start gap-2">
+                    <User className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="text-gray-600 font-medium">DMC:</span>
+                      <div className="text-gray-900 mt-0.5">{selectedDmcName || 'Loading...'}</div>
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                    <span className="text-gray-600 font-medium">Staff:</span>
-                    <span className="text-gray-900">{assignedStaffName || '—'}</span>
-                  </div>
+                 <div className="flex items-center gap-2 mt-2">
+  <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
+  <div>
+    <span className="text-sm font-medium text-gray-600">Assigned Staff:</span>
+    <span className="text-sm text-gray-900 ml-1">{ assignedStaffName}</span>
+  </div>
+</div>
                 </div>
               </div>
             </div>
