@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 
+
 interface PaymentRecord {
   id: string
   paymentDate: string
@@ -23,7 +24,7 @@ interface PaymentRecord {
   currency?: string
 }
 
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Info, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -77,6 +78,7 @@ const DMCPaymentInterface: React.FC = () => {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [currency, setCurrency] = useState<string>("USD")
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const router = useRouter()
   const [paymentData, setPaymentData] = useState<PaymentData>(() => ({
     dmcName: "",
     itineraryReference: "",
@@ -568,6 +570,8 @@ const DMCPaymentInterface: React.FC = () => {
       if (fileInput) {
         fileInput.value = ""
       }
+        router.push(`/agency-admin/dashboard/booking-details?enquiryId=${enquiryId}`)
+
     } catch (error) {
       console.error("Error in payment submission:", error)
       const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred."

@@ -90,6 +90,8 @@ type DMCCreateData = {
   yearOfExperience?: string
 }
 
+
+
 export const createDMC = async (data: DMCCreateData) => {
   try {
     const response = await fetch('/api/dmc', {

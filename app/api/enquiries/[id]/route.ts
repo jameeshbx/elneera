@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth"
 
 const prisma = new PrismaClient()
 
+
 // GET - Fetch single enquiry by ID (only if it belongs to the user)
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -70,6 +71,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!existingEnquiry) {
       return NextResponse.json({ error: "Enquiry not found or not authorized" }, { status: 404 });
     }
+    
 
     const updatedEnquiry = await prisma.enquiries.update({
       where: { id },
