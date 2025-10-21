@@ -1,8 +1,7 @@
 // app/api/dmc-payment/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import { Prisma, PrismaClient } from "@prisma/client"
-import { writeFile, mkdir } from "fs/promises"
-import { join } from "path"
+import { S3Service } from "@/lib/s3-service"
 
 const prisma = new PrismaClient()
 
@@ -115,39 +114,43 @@ export async function POST(req: NextRequest) {
           const bytes = await file.arrayBuffer()
           const buffer = Buffer.from(bytes)
           
-          // Create uploads directory if it doesn't exist
-          const uploadsDir = join(process.cwd(), 'public/uploads/payments')
+          // Upload file to S3
           try {
-            await mkdir(uploadsDir, { recursive: true })
-          } catch {
-            console.log('Uploads directory already exists or cannot be created')
-          }
-          
-          // Save file to filesystem
-          const filePath = join(uploadsDir, uniqueFileName)
-          await writeFile(filePath, buffer)
-          
-          // Create URL for the file
-          const fileUrl = `/uploads/payments/${uniqueFileName}`
-          
-          // Save file record in database
-          const savedFile = await prisma.file.create({
-            data: {
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              url: fileUrl,
-            },
-          })
+            const fileInfo = await S3Service.uploadFile(
+              buffer,
+              uniqueFileName,
+              file.type,
+              'dmc-payments' // Store in dmc-payments folder in S3
+            )
+            
+            // Save file record in database
+            const savedFile = await prisma.file.create({
+              data: {
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                url: fileInfo.url,
+              },
+            })
 
-          receiptFileId = savedFile.id
-          receiptUrl = fileUrl
-          
-          console.log("File saved successfully:", { id: savedFile.id, url: savedFile.url })
-        } catch (fileError) {
-          console.error("Error saving file:", fileError)
+            receiptFileId = savedFile.id
+            receiptUrl = fileInfo.url
+            
+            console.log("File uploaded to S3 successfully:", { 
+              id: savedFile.id, 
+              url: fileInfo.url 
+            })
+          } catch (fileError) {
+            console.error("Error saving file to S3:", fileError)
+            return NextResponse.json(
+              { error: "Failed to save file to S3", details: String(fileError) },
+              { status: 500 }
+            )
+          }
+        } catch (error) {
+          console.error("Error processing file upload:", error)
           return NextResponse.json(
-            { error: "Failed to save file", details: String(fileError) },
+            { error: "Failed to process file upload", details: String(error) },
             { status: 500 }
           )
         }

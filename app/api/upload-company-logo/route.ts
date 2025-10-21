@@ -2,27 +2,26 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
-import { writeFile, mkdir } from "fs/promises"
-import path from "path"
-import { existsSync } from "fs"
+import { S3Service } from "@/lib/s3-service"
 
-// File upload helper
-async function saveFile(file: File, directory: string): Promise<string> {
-  const bytes = await file.arrayBuffer()
-  const buffer = Buffer.from(bytes)
-  
-  const uploadDir = path.join(process.cwd(), "public", "uploads", directory)
-  
-  if (!existsSync(uploadDir)) {
-    await mkdir(uploadDir, { recursive: true })
+// File upload helper for S3
+async function uploadToS3(file: File, directory: string): Promise<string> {
+  try {
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    const fileName = `${directory}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`
+    
+    const s3File = await S3Service.uploadFile(
+      fileBuffer,
+      fileName,
+      file.type || 'application/octet-stream',
+      directory
+    )
+    
+    return s3File.url
+  } catch (error) {
+    console.error(`Error uploading ${directory} to S3:`, error)
+    throw new Error(`Failed to upload ${directory} to S3`)
   }
-  
-  const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`
-  const filePath = path.join(uploadDir, fileName)
-  
-  await writeFile(filePath, buffer)
-  
-  return `/uploads/${directory}/${fileName}`
 }
 
 export async function POST(request: NextRequest) {
@@ -75,14 +74,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Save the new logo
-    let logoPath: string
+    // Upload the logo to S3
+    let logoUrl: string
     try {
-      logoPath = await saveFile(logoFile, "logos")
+      logoUrl = await uploadToS3(logoFile, "logos")
+      console.log("Logo uploaded to S3:", logoUrl)
     } catch (uploadError) {
-      console.error("File upload error:", uploadError)
+      console.error("S3 upload error:", uploadError)
       return NextResponse.json(
-        { error: "Failed to upload logo" },
+        { 
+          error: "Failed to upload logo to storage",
+          details: uploadError instanceof Error ? uploadError.message : "Unknown error"
+        },
         { status: 500 }
       )
     }
@@ -99,23 +102,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update the agency form with the new logo path
+    // Update the agency form with the new logo URL
     const updatedAgencyForm = await prisma.agencyForm.update({
       where: { id: agencyForm.id },
       data: {
-        logoPath,
+        logoPath: logoUrl,
         updatedAt: new Date(),
       }
     })
 
-    // Return success response
+    // Return success response with the S3 URL
     return NextResponse.json({
       success: true,
       message: "Company logo updated successfully",
-      logoUrl: logoPath,
+      logoUrl: logoUrl,
       data: {
         id: updatedAgencyForm.id,
-        logoUrl: logoPath,
+        logoUrl: logoUrl,
       }
     })
 

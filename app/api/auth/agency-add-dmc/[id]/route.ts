@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/prisma"
-import { unlink } from "fs/promises"
-import { join } from "path"
+import { S3Service } from "@/lib/s3-service"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -200,16 +199,20 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: "DMC not found" }, { status: 404 })
     }
 
-    // Delete payment method files and records
+    // Delete payment method files from S3 and records
     for (const paymentMethod of dmcRecord.paymentMethods) {
       if (paymentMethod.qrCode) {
         try {
-          const filePath = join(process.cwd(), "public", paymentMethod.qrCode.url)
-          await unlink(filePath)
+          // Extract the key from the S3 URL
+          const url = new URL(paymentMethod.qrCode.url)
+          // The key is the pathname without the leading slash
+          const key = url.pathname.substring(1)
+          await S3Service.deleteFile(key)
         } catch (fileError) {
-          console.warn("Could not delete QR code file:", fileError)
+          console.warn("Could not delete QR code file from S3:", fileError)
         }
 
+        // Delete the file record from database
         await prisma.file.delete({
           where: { id: paymentMethod.qrCodeId! },
         })
