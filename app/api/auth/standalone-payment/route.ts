@@ -1,7 +1,31 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient, PaymentMethodType } from "@prisma/client"
+import { S3Service } from "@/lib/s3-service"
 
 const prisma = new PrismaClient()
+
+// File upload helper for S3
+async function uploadToS3(file: File, directory: string): Promise<{ url: string; key: string }> {
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const fileName = `${directory}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`
+    
+    const fileInfo = await S3Service.uploadFile(
+      buffer,
+      fileName,
+      file.type || 'application/octet-stream',
+      directory
+    )
+    
+    return {
+      url: fileInfo.url,
+      key: fileName
+    }
+  } catch (error) {
+    console.error("Error uploading to S3:", error)
+    throw new Error(`Failed to upload file to S3: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
 
 type BankAccount = {
   accountHolderName: string
@@ -14,11 +38,6 @@ type BankAccount = {
   notes?: string
 }
 
-const fileToDataUrl = async (file: File): Promise<string> => {
-  const buf = Buffer.from(await file.arrayBuffer())
-  const base64 = buf.toString("base64")
-  return `data:${file.type || "application/octet-stream"};base64,${base64}`
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -140,40 +159,75 @@ export async function POST(request: NextRequest) {
 
     // QR Code
     if (qrFile) {
-      const dataUrl = await fileToDataUrl(qrFile)
-      const fileRow = await prisma.file.create({
-        data: {
-          url: dataUrl,
-          name: qrFile.name || "qr-code",
-          size: Number(qrFile.size || 0),
-          type: qrFile.type || "application/octet-stream",
-        },
-      })
-      const existing = await prisma.paymentMethod.findFirst({
-        where: { dmcId, type: PaymentMethodType.QR_CODE },
-      })
-      if (existing) {
-        await prisma.paymentMethod.update({
-          where: { id: existing.id },
+      try {
+        // Upload QR code to S3
+        const { url: fileUrl, key: fileKey } = await uploadToS3(qrFile, 'payment-qr-codes')
+        
+        // Create file record in the database with available fields
+        const fileRecord = await prisma.file.create({
           data: {
-            name: "QR Code",
-            qrCodeId: fileRow.id,
-            identifier: fileRow.id,
-            dmcId, // Ensure dmcId is updated
-            isActive: true,
+            name: qrFile.name || 'qr-code',
+            url: fileUrl,
+            size: qrFile.size,
+            type: qrFile.type || 'application/octet-stream',
           },
-        })
-      } else {
-        await prisma.paymentMethod.create({
-          data: {
-            type: PaymentMethodType.QR_CODE,
-            dmcId, // Ensure dmcId is stored
-            name: "QR Code",
-            qrCodeId: fileRow.id,
-            identifier: fileRow.id,
-            isActive: true,
+        });
+
+        // Check if QR code payment method already exists
+        const existingQr = await prisma.paymentMethod.findFirst({
+          where: { 
+            dmcId, 
+            type: PaymentMethodType.QR_CODE 
           },
-        })
+          include: { qrCode: true }
+        });
+
+        // Prepare payment method data
+        const paymentMethodData = {
+          name: "QR Code Payment",
+          identifier: fileKey,
+          qrCodeId: fileRecord.id,
+          isActive: true,
+        };
+
+        if (existingQr) {
+          // Delete old QR code file from S3 if it exists
+          if (existingQr.qrCode) {
+            try {
+              await S3Service.deleteFile(existingQr.qrCode.name);
+              await prisma.file.delete({
+                where: { id: existingQr.qrCode.id }
+              });
+            } catch (error) {
+              console.error("Error cleaning up old QR code:", error);
+              // Continue even if cleanup fails
+            }
+          }
+
+          // Update existing payment method
+          await prisma.paymentMethod.update({
+            where: { id: existingQr.id },
+            data: paymentMethodData,
+          });
+        } else {
+          // Create new payment method
+          await prisma.paymentMethod.create({
+            data: {
+              ...paymentMethodData,
+              type: PaymentMethodType.QR_CODE,
+              dmcId,
+            },
+          });
+        }
+      } catch (error) {
+        console.error("Error processing QR code:", error);
+        return NextResponse.json(
+          { 
+            error: "Failed to process QR code",
+            details: error instanceof Error ? error.message : 'Unknown error',
+          },
+          { status: 500 }
+        );
       }
     }
 
@@ -332,42 +386,108 @@ export async function PUT(request: NextRequest) {
     }
 
     if (qrFile) {
-      const dataUrl = await fileToDataUrl(qrFile)
-      const fileRow = await prisma.file.create({
-        data: {
-          url: dataUrl,
-          name: qrFile.name || "qr-code",
-          size: Number(qrFile.size || 0),
-          type: qrFile.type || "application/octet-stream",
-        },
-      })
-      const existing = await prisma.paymentMethod.findFirst({
-        where: { dmcId, type: PaymentMethodType.QR_CODE },
-      })
-      if (existing) {
-        await prisma.paymentMethod.update({
-          where: { id: existing.id },
+      try {
+        console.log('Starting QR code processing for dmcId:', dmcId);
+        
+        // Upload QR code to S3
+        const { url: fileUrl, key: fileKey } = await uploadToS3(qrFile, 'payment-qr-codes');
+        console.log('File uploaded to S3:', { fileUrl, fileKey });
+        
+        // Create file record in the database with available fields
+        const fileRecord = await prisma.file.create({
           data: {
-            name: "QR Code",
-            qrCodeId: fileRow.id,
-            identifier: fileRow.id,
-            dmcId,
-            isActive: true,
+            name: qrFile.name || 'qr-code',
+            url: fileUrl,
+            size: qrFile.size,
+            type: qrFile.type || 'application/octet-stream',
           },
-        })
-      } else {
-        await prisma.paymentMethod.create({
-          data: {
-            type: PaymentMethodType.QR_CODE,
-            dmcId,
-            name: "QR Code",
-            qrCodeId: fileRow.id,
-            identifier: fileRow.id,
-            isActive: true,
+        });
+        console.log('File record created:', fileRecord.id);
+
+        // Check if QR code payment method already exists
+        const existingQr = await prisma.paymentMethod.findFirst({
+          where: { 
+            dmcId, 
+            type: PaymentMethodType.QR_CODE 
           },
-        })
+          include: { qrCode: true }
+        });
+
+        console.log('Existing QR payment method:', existingQr ? 'found' : 'not found');
+
+        // Prepare payment method data
+        const paymentMethodData = {
+          name: "QR Code Payment",
+          identifier: fileKey,
+          qrCodeId: fileRecord.id,
+          isActive: true,
+          dmcId,  // Make sure dmcId is included
+        };
+
+        if (existingQr && existingQr.id) {
+          console.log('Updating existing payment method:', existingQr.id);
+          
+          // Delete old QR code file from S3 if it exists
+          if (existingQr.qrCode) {
+            try {
+              console.log('Cleaning up old QR code file:', existingQr.qrCode.id);
+              await S3Service.deleteFile(existingQr.qrCode.name);
+              await prisma.file.delete({
+                where: { id: existingQr.qrCode.id }
+              });
+              console.log('Old QR code file cleaned up successfully');
+            } catch (error) {
+              console.error("Error cleaning up old QR code:", error);
+              // Continue even if cleanup fails
+            }
+          }
+          
+          // Update existing payment method using upsert to handle race conditions
+          await prisma.paymentMethod.upsert({
+            where: { id: existingQr.id },
+            update: paymentMethodData,
+            create: {
+              ...paymentMethodData,
+              type: PaymentMethodType.QR_CODE,
+            },
+          });
+          console.log('Payment method updated successfully');
+        } else {
+          console.log('Creating new payment method');
+          // Create new payment method if none exists
+          await prisma.paymentMethod.create({
+            data: {
+              ...paymentMethodData,
+              type: PaymentMethodType.QR_CODE,
+            },
+          });
+          console.log('New payment method created');
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: "QR code processed successfully",
+          fileUrl
+        });
+
+      } catch (error) {
+        console.error("Error processing QR code:", error);
+        return NextResponse.json(
+          { 
+            success: false,
+            error: "Failed to process QR code",
+            details: error instanceof Error ? error.message : 'Unknown error',
+          },
+          { status: 500 }
+        );
       }
     }
+
+    // If no QR file was processed, return success
+    return NextResponse.json({
+      success: true,
+      message: "No QR code to process"
+    });
 
     return NextResponse.json({
       success: true,
