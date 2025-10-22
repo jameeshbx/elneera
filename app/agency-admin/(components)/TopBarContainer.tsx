@@ -11,8 +11,9 @@ export function TopBarContainer() {
   return (
     <TopBar 
       breadcrumbs={breadcrumbs} 
-      title={title} 
+      title={title}
       subtitle={subtitle}
+     
       // You can override the background image per route if needed
       backgroundImage={pathname.includes('dashboard') ? "/background/bg6.png" : "/background/bg6.png"}
     />

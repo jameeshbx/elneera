@@ -51,13 +51,13 @@ export async function GET() {
     }
 
     // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: {
-        profileImage: true,
-        agency: true,
-      },
-    })
+   const user = await prisma.user.findUnique({
+  where: { email: session.user.email },
+  include: {
+    profileImage: true,
+    agency: true,
+  },
+})
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
