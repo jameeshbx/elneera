@@ -213,11 +213,16 @@ export function StandaloneBankDetails({ isOpen, onClose, dmcId = null }: Standal
       if (!res.ok) throw new Error(data.error || "Failed to save/update payment methods")
 
       toast({
-        title: "Success",
-        description: isUpdating ? "Payment methods updated successfully" : "Payment methods saved successfully",
-      })
+        title: isUpdating ? "Success" : "Success",
+        description: isUpdating 
+          ? "Payment methods updated successfully" 
+          : "Payment methods saved successfully",
+        variant: "default",
+        duration: 3000, // 3 seconds
+        className: "bg-green-500 text-white",
+      });
 
-      onClose()
+      onClose();
     } catch (error) {
       toast({
         title: "Error",
