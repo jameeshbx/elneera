@@ -150,6 +150,7 @@ interface ItineraryData {
   editedContent?: string;
   pdfUrl?: string;
   enquiry: {
+    numberOfTravelers: number | undefined;
     id: string;
     name: string;
     phone: string;
@@ -617,21 +618,25 @@ function ItineraryViewContent(): React.ReactElement {
         status: itineraryData?.status ?? "",
         createdAt: itineraryData?.createdAt ?? "",
         updatedAt: itineraryData?.updatedAt ?? "",
-        enquiry: itineraryData?.enquiry ?? {
-          id: "",
-          name: "",
-          phone: "",
-          email: "",
-          locations: "",
-          tourType: "",
-          estimatedDates: "",
-          currency: "",
-          budget: 0,
-          enquiryDate: "",
-          assignedStaff: "",
-          pointOfContact: "",
-          notes: "",
-        },
+         enquiry: {
+    ...(itineraryData?.enquiry || {}),
+    // Ensure all required fields are included
+    id: itineraryData?.enquiry?.id ?? "",
+    name: itineraryData?.enquiry?.name ?? "",
+    phone: itineraryData?.enquiry?.phone ?? "",
+    email: itineraryData?.enquiry?.email ?? "",
+    locations: itineraryData?.enquiry?.locations ?? "",
+    tourType: itineraryData?.enquiry?.tourType ?? "",
+    estimatedDates: itineraryData?.enquiry?.estimatedDates ?? "",
+    currency: itineraryData?.enquiry?.currency ?? "INR",
+    budget: itineraryData?.enquiry?.budget ?? 0,
+    enquiryDate: itineraryData?.enquiry?.enquiryDate ?? new Date().toISOString(),
+    assignedStaff: itineraryData?.enquiry?.assignedStaff ?? null,
+    pointOfContact: itineraryData?.enquiry?.pointOfContact ?? null,
+    notes: itineraryData?.enquiry?.notes ?? null,
+    // Add the required numberOfTravelers with a default value if not present
+    numberOfTravelers: itineraryData?.enquiry?.numberOfTravelers ?? 1,
+  },
       };
 
       setItineraryData(updatedItinerary);
@@ -1165,29 +1170,38 @@ function ItineraryViewContent(): React.ReactElement {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               {/* Budget Estimation */}
               <div className="bg-white rounded-lg shadow">
-                <div className="p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <h3 className="font-semibold">Budget Estimation</h3>
-                    <span className="text-gray-400">ℹ️</span>
-                  </div>
-                  <div className="flex items-baseline text-3xl font-bold text-violet-600 mb-2">
-                    <span>₹</span>
-                    <span className="text-black ml-1">
-                      {displayData?.costINR.toLocaleString() ||
-                        fallbackData?.budgetEstimation.amount.toLocaleString() ||
-                        "0"}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-4">
-                    USD: ${" "}
-                    {displayData?.costUSD ||
-                      fallbackData?.budgetEstimation.amount ||
-                      0}
-                  </p>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Cost/Tourist: ${" "}
-                    {fallbackData?.budgetEstimation.costTourist || 32.3}
-                  </p>
+  <div className="p-6">
+    <div className="flex items-center gap-2 mb-4">
+      <h3 className="font-semibold">Budget Estimation</h3>
+      <span className="text-gray-400">ℹ️</span>
+    </div>
+    <div className="flex items-baseline text-3xl font-bold text-violet-600 mb-2">
+      <span>{itineraryData?.enquiry?.currency === 'USD' ? '$' : '₹'}</span>
+      <span className="text-black ml-1">
+        {itineraryData?.enquiry?.budget?.toLocaleString() || 
+         displayData?.costINR?.toLocaleString() ||
+         fallbackData?.budgetEstimation?.amount?.toLocaleString() ||
+         "0"}
+      </span>
+    </div>
+    {itineraryData?.enquiry?.currency === 'INR' && (
+      <p className="text-sm text-gray-600 mb-4">
+        USD: ${" "}
+        {itineraryData?.enquiry?.budget 
+          ? (itineraryData.enquiry.budget / 75).toFixed(2) 
+          : displayData?.costUSD || 
+            (fallbackData?.budgetEstimation?.amount && (fallbackData.budgetEstimation.amount / 75).toFixed(2)) ||
+            "0.00"}
+      </p>
+    )}
+    <p className="text-sm text-gray-600 mb-4">
+      Cost/Tourist: ${" "}
+      {itineraryData?.enquiry?.budget && itineraryData?.enquiry?.numberOfTravelers 
+        ? (itineraryData.enquiry.budget / (itineraryData.enquiry.numberOfTravelers * 75)).toFixed(2) 
+        : fallbackData?.budgetEstimation?.costTourist?.toFixed(2) || "0.00"}
+    </p>
+
+
 
                   {/* AI Assistant Section */}
                   <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">

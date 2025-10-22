@@ -431,6 +431,7 @@ model itineraries {
   under6                     Int?
   from7to12                  Int?
   flightsRequired            String?
+  numberOfTravellers         Int?
   pickupLocation             String?
   dropLocation               String?
   currency                   String?
