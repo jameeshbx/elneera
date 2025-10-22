@@ -258,7 +258,24 @@ export async function GET(request: NextRequest) {
           include: { qrCode: true },
           orderBy: { createdAt: "desc" },
         })
-      : []
+      : [];
+
+    // Generate fresh pre-signed URLs for QR codes
+    for (const method of methods) {
+      if (method.type === 'QR_CODE' && method.qrCode) {
+        try {
+          // Get the S3 key from the URL if it exists
+          const url = new URL(method.qrCode.url);
+          // The key is the path without the leading slash
+          const key = url.pathname.substring(1);
+          const freshUrl = await S3Service.getSignedUrl(key);
+          method.qrCode.url = freshUrl;
+        } catch (error) {
+          console.error('Error generating signed URL for QR code:', error);
+          // If there's an error, we'll just keep the existing URL
+        }
+      }
+    }
 
     return NextResponse.json({ success: true, data: { methods } })
   } catch (error) {
@@ -489,10 +506,6 @@ export async function PUT(request: NextRequest) {
       message: "No QR code to process"
     });
 
-    return NextResponse.json({
-      success: true,
-      message: "Payment methods updated successfully",
-    })
   } catch (error) {
     console.error("Error updating payment methods:", error)
     return NextResponse.json({ error: "Failed to update payment methods" }, { status: 500 })
