@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect , useRef} from "react"
 import Image from "next/image"
 import { ChevronDown, Minus, Plus, Calendar, Check, Edit, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -224,6 +224,7 @@ function ItineraryFormContent() {
   const [loading, setLoading] = useState(true)
   const [itineraryId, setItineraryId] = useState<string | null>(null)
   const [, setAgencyCancellationPolicies] = useState<AgencyCancellationPolicy[]>([])
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [formData, setFormData] = useState<TravelFormData>({
     destinations: [],
     startDate: "",
@@ -1233,58 +1234,65 @@ function ItineraryFormContent() {
                 </div>
 
                 {/* Hotel Preference */}
-                <div>
-                  <Label className="text-sm font-medium text-black mb-3 block text-lg font-semibold font-poppins">
-                    Hotel preference
-                  </Label>
-                  <div className="relative">
-                    <div
-                      className="w-full min-h-12 p-3 border border-gray-300 rounded-md bg-white cursor-pointer flex flex-wrap gap-2 items-center"
-                      onClick={() => setShowHotelDropdown(!showHotelDropdown)}
-                    >
-                      {formData.hotelPreferences.map((pref) => {
-                        const option = hotelOptions.find((opt) => opt.value === pref)
-                        return (
-                          <Badge
-                            key={pref}
-                            className="bg-orange-500 text-white px-3 py-1 text-xs flex items-center gap-1"
-                          >
-                            {option?.label}
-                            <X
-                              className="h-3 w-3 cursor-pointer hover:bg-orange-600 rounded-full"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                removeHotelPreference(pref)
-                              }}
-                            />
-                          </Badge>
-                        )
-                      })}
-                      <ChevronDown className="h-4 w-4 text-gray-400 ml-auto" />
-                    </div>
-                    {showHotelDropdown && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
-                        {hotelOptions.map((option) => (
-                          <div
-                            key={option.value}
-                            className={`p-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${
-                              formData.hotelPreferences.includes(option.value) ? "bg-green-50" : ""
-                            }`}
-                            onClick={() => toggleHotelPreference(option.value)}
-                          >
-                            <span>{option.label}</span>
-                            {formData.hotelPreferences.includes(option.value) && (
-                              <Check className="h-4 w-4 text-green-600" />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 font-poppins mt-2">
-                    *This helps us match your comfort expectations and budget
-                  </p>
-                </div>
+               <div>
+  <Label className="text-sm font-medium text-black mb-3 block text-lg font-semibold font-poppins">
+    Hotel preference
+  </Label>
+  <div className="relative">
+    <div
+      className="w-full min-h-12 p-3 border border-gray-300 rounded-md bg-white cursor-pointer flex flex-wrap gap-2 items-center"
+      onClick={() => setShowHotelDropdown(!showHotelDropdown)}
+    >
+      {formData.hotelPreferences.map((pref) => {
+        const option = hotelOptions.find((opt) => opt.value === pref)
+        return (
+          <Badge
+            key={pref}
+            className="bg-orange-500 text-white px-3 py-1 text-xs flex items-center gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {option?.label}
+            <X
+              className="h-3 w-3 cursor-pointer hover:bg-orange-600 rounded-full"
+              onClick={(e) => {
+                e.stopPropagation()
+                removeHotelPreference(pref)
+              }}
+            />
+          </Badge>
+        )
+      })}
+      <ChevronDown className="h-4 w-4 text-gray-400 ml-auto" />
+    </div>
+    {showHotelDropdown && (
+      <div 
+        className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg"
+        ref={dropdownRef}
+      >
+        {hotelOptions.map((option) => (
+          <div
+            key={option.value}
+            className={`p-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${
+              formData.hotelPreferences.includes(option.value) ? "bg-green-50" : ""
+            }`}
+            onClick={() => {
+              toggleHotelPreference(option.value);
+              setShowHotelDropdown(false);
+            }}
+          >
+            <span>{option.label}</span>
+            {formData.hotelPreferences.includes(option.value) && (
+              <Check className="h-4 w-4 text-green-600" />
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+  <p className="text-xs text-gray-500 font-poppins mt-2">
+    *This helps us match your comfort expectations and budget
+  </p>
+</div>
 
                 {/* Meal and Dietary Preferences */}
                 <div className="grid grid-cols-2 gap-6">
@@ -1380,7 +1388,7 @@ function ItineraryFormContent() {
                         key={transport.id}
                         variant="outline"
                         className={cn(
-                          "h-10 justify-center text-xs border-2",
+                          "h-10 justify-center text-xs border-2 bg-gray-400",
                           formData.transportPreferences.includes(transport.id)
                             ? transport.color
                             : "border-gray-200 hover:border-gray-300",

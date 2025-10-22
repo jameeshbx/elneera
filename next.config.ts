@@ -10,7 +10,8 @@ const nextConfig: NextConfig = {
       's.gravatar.com', 
       'localhost', 
       'trekkingb2b.vercel.app',
-      'flagcdn.com'
+      'flagcdn.com',
+      'trekkingmiles-generated-itinerary.s3.eu-north-1.amazonaws.com' 
     ],
   },
   

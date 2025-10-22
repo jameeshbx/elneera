@@ -22,6 +22,16 @@ type MenuItem = {
 type SidebarProps = {
   expanded?: boolean
   setExpanded?: (value: boolean) => void
+  onToggleExpanded?: () => void
+  profileData?: {
+    name: string
+    email: string
+    bio: string
+    fullName: string
+    mobile: string
+    location: string
+    image?: string
+  } | null
 }
 
 interface CompanyInformation {
@@ -30,7 +40,7 @@ interface CompanyInformation {
   landingPageColor: string
 }
 
-const Sidebar = ({ expanded }: SidebarProps) => {
+const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) => {
   const pathname = usePathname()
   const [reportsOpen, setReportsOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
@@ -38,8 +48,10 @@ const Sidebar = ({ expanded }: SidebarProps) => {
   const { data: session } = useSession()
   const [companyData, setCompanyData] = useState<CompanyInformation | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [logoKey, setLogoKey] = useState(Date.now()) // For forcing re-render
-  const [themeColor, setThemeColor] = useState("#4ECDC4") // Default theme color
+  const [logoKey, setLogoKey] = useState(Date.now())
+  const [themeColor, setThemeColor] = useState("#4ECDC4")
+  const [profileData, setProfileData] = useState(initialProfileData)
+  const [profileImageKey, setProfileImageKey] = useState(Date.now())
 
   useEffect(() => {
     const handleResize = () => {
@@ -67,6 +79,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
         console.log('Company Data:', data)
         console.log('Logo URL:', data?.companyInformation?.logo)
         console.log('Landing Page Color:', data?.companyInformation?.landingPageColor)
+        console.log('Profile Data:', data?.profileData)
         
         const companyInfo = {
           name: data?.companyInformation?.name || 'Agency',
@@ -77,14 +90,26 @@ const Sidebar = ({ expanded }: SidebarProps) => {
         setCompanyData(companyInfo)
         setThemeColor(companyInfo.landingPageColor)
 
+       // Update profile data from API
+if (data?.profileData) {
+  setProfileData({
+    name: data.profileData.name,
+    email: data.profileData.email,
+    bio: data.profileData.bio || '',
+    fullName: data.profileData.fullName,
+    mobile: data.profileData.mobile,
+    location: data.profileData.location,
+    image: data.profileData.avatarUrl
+  })
+}
+
         // Apply theme color to CSS custom property for global use
         document.documentElement.style.setProperty('--theme-color', companyInfo.landingPageColor)
-        document.documentElement.style.setProperty('--theme-color-light', companyInfo.landingPageColor + '20') // 20% opacity
+        document.documentElement.style.setProperty('--theme-color-light', companyInfo.landingPageColor + '20')
         document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(companyInfo.landingPageColor, -20))
         
       } catch (error) {
         console.error('Failed to fetch company data:', error)
-        // Set fallback data
         setCompanyData({
           name: 'Agency',
           logoUrl: null,
@@ -99,7 +124,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
     if (session) {
       fetchCompanyData()
     }
-  }, [session, logoKey]) // Added logoKey as dependency
+  }, [session, logoKey])
 
   // Listen for logo updates from profile page AND agency form
   useEffect(() => {
@@ -110,7 +135,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           ...prev,
           logoUrl: event.detail.logoUrl
         } : null)
-        setLogoKey(Date.now()) // Force re-render
+        setLogoKey(Date.now())
       }
     }
 
@@ -123,24 +148,39 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           landingPageColor: event.detail.color
         } : null)
         
-        // Update CSS custom properties
         document.documentElement.style.setProperty('--theme-color', event.detail.color)
         document.documentElement.style.setProperty('--theme-color-light', event.detail.color + '20')
         document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(event.detail.color, -20))
       }
     }
 
-    // Listen for both logo and theme updates
+    const handleProfileUpdate = (event: CustomEvent) => {
+  console.log('Profile updated event received:', event.detail)
+  if (event.detail?.profileData) {
+    setProfileData({
+      name: event.detail.profileData.name,
+      email: event.detail.profileData.email,
+      bio: event.detail.profileData.bio || '',
+      fullName: event.detail.profileData.fullName,
+      mobile: event.detail.profileData.mobile,
+      location: event.detail.profileData.location,
+      image: event.detail.profileData.avatarUrl
+    })
+    setProfileImageKey(Date.now())
+  }
+}
+
     window.addEventListener('logoUpdated', handleLogoUpdate as EventListener)
     window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
+    window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
     
     return () => {
       window.removeEventListener('logoUpdated', handleLogoUpdate as EventListener)
       window.removeEventListener('themeUpdated', handleThemeUpdate as EventListener)
+      window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
     }
   }, [])
 
-  // Helper function to adjust color brightness
   const adjustBrightness = (hex: string, percent: number): string => {
     const num = parseInt(hex.replace("#", ""), 16)
     const amt = Math.round(2.55 * percent)
@@ -240,17 +280,18 @@ const Sidebar = ({ expanded }: SidebarProps) => {
 
   const accountItems = [
     {
-      title: "Lisa Ray",
+      title: profileData?.name || session?.user?.name || "Profile",
       href: "/agency-admin/dashboard/profile",
-      icon: (
-        <Image
-          src="/avatar/Image (3).png"
-          alt="Profile"
-          width={20}
-          height={20}
-          className="min-w-[20px]"
-        />
-      ),
+     icon: (
+  <Image
+    key={`profile-${profileImageKey}`}
+    src={profileData?.image || session?.user?.image || "/avatar/Image (3).png"}
+    alt="Profile"
+    width={20}
+    height={20}
+    className="min-w-[20px] rounded-full object-cover"
+  />
+),
     },
     {
       title: "Settings",
@@ -286,21 +327,17 @@ const Sidebar = ({ expanded }: SidebarProps) => {
 
   const isCollapsed = isMobile ? true : !expanded
 
-  // Helper function to get full logo URL (same as profile page)
   const getLogoUrl = (logoPath: string | null | undefined) => {
     if (!logoPath) return null
     
-    // If it's already a full URL, return as is
     if (logoPath.startsWith('http')) {
       return logoPath
     }
     
-    // If it starts with /, it's a relative path from public
     if (logoPath.startsWith('/')) {
       return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${logoPath}`
     }
     
-    // Otherwise, assume it's a path that needs /uploads/ prefix
     return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${logoPath}`
   }
 

@@ -91,8 +91,7 @@ export default function ClientLayout({
     <div className="relative flex min-h-screen bg-gray-50">
       {accessStatus === 'GRANTED' ? (
         <>
-          <Sidebar expanded={sidebarExpanded} setExpanded={setSidebarExpanded} />
-          <main className={`flex-1 transition-all duration-300 ${sidebarExpanded ? 'lg:ml-64' : 'lg:ml-20'} ml-16`}>
+<Sidebar expanded={sidebarExpanded} onToggleExpanded={() => setSidebarExpanded(!sidebarExpanded)} />          <main className={`flex-1 transition-all duration-300 ${sidebarExpanded ? 'lg:ml-64' : 'lg:ml-20'} ml-16`}>
             <div className="p-4 md:p-6 lg:p-8">
               {children}
             </div>
