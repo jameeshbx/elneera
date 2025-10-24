@@ -98,62 +98,67 @@ export default function ProfilePage() {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
 
   const handleProfileImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const file = event.target.files?.[0]
+  if (!file) return
 
-    // Clear previous messages
-    setUploadError(null)
-    setUploadSuccess(null)
+  // Clear previous messages
+  setUploadError(null)
+  setUploadSuccess(null)
 
-    // Validate file type and size
-    const validImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-    if (!validImageTypes.includes(file.type)) {
-      setUploadError("Please select a valid image file (JPEG, PNG, GIF, WEBP)")
-      return
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      // 5MB limit
-      setUploadError("Image size must be less than 5MB")
-      return
-    }
-
-    setIsUploading(true)
-
-    try {
-      const formData = new FormData()
-      formData.append("profileImage", file)
-
-      const response = await fetch("/api/upload-profile-image", {
-        method: "POST",
-        body: formData,
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to upload image")
-      }
-
-      // Update the profile data with the new image URL
-      setProfileData((prev) => ({
-        ...prev,
-        avatarUrl: data.imageUrl,
-      }))
-
-      setUploadSuccess("Profile image updated successfully!")
-
-      // Clear success message after 3 seconds
-      setTimeout(() => setUploadSuccess(null), 3000)
-    } catch (error) {
-      console.error("Error uploading profile image:", error)
-      setUploadError(error instanceof Error ? error.message : "Failed to upload image. Please try again.")
-    } finally {
-      setIsUploading(false)
-      // Clear the file input
-      event.target.value = ""
-    }
+  // Validate file type and size
+  const validImageTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+  if (!validImageTypes.includes(file.type)) {
+    setUploadError("Please select a valid image file (JPEG, PNG, GIF, WEBP)")
+    return
   }
+
+  if (file.size > 5 * 1024 * 1024) { // 5MB limit
+    setUploadError("Image size must be less than 5MB")
+    return
+  }
+
+  setIsUploading(true)
+
+  try {
+    const formData = new FormData()
+    formData.append("profileImage", file)
+
+    const response = await fetch("/api/upload-profile-image", {
+      method: "POST",
+      body: formData,
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to upload image")
+    }
+
+    // Update the profile data with the new image URL
+    const newProfileData = {
+      ...profileData,
+      avatarUrl: data.imageUrl,
+    }
+    setProfileData(newProfileData)
+
+    // Dispatch event to update sidebar
+    window.dispatchEvent(new CustomEvent('profileUpdated', { 
+      detail: { 
+        profileData: newProfileData 
+      } 
+    }))
+
+    setUploadSuccess("Profile image updated successfully!")
+    setTimeout(() => setUploadSuccess(null), 3000)
+
+  } catch (error) {
+    console.error("Error uploading profile image:", error)
+    setUploadError(error instanceof Error ? error.message : "Failed to upload image. Please try again.")
+  } finally {
+    setIsUploading(false)
+    event.target.value = ""
+  }
+}
 
   // Handle company logo upload
   const handleCompanyLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
