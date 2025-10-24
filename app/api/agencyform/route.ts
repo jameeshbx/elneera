@@ -357,9 +357,9 @@ export async function POST(request: NextRequest) {
       console.log("Created new form:", agencyForm.id);
     }
 
-    // Send approval email to admin (anusree@buyexchange.in)
+    // Send approval email to admin (anand@buyexchange.in)
     try {
-      const adminEmail = "anusree@buyexchange.in";
+      const adminEmail = "anand@buyexchange.in";
       
       console.log("Sending approval email to:", adminEmail);
       console.log("SMTP Config:", {
@@ -367,6 +367,29 @@ export async function POST(request: NextRequest) {
         port: process.env.SMTP_PORT,
         user: process.env.SMTP_USER ? "***" : "not set"
       });
+
+      // Prepare attachments array
+      const attachments = [];
+      
+      // Add business license as attachment if available
+      if (businessLicensePath) {
+        const filename = businessLicensePath.split('/').pop() || 'business-license';
+        attachments.push({
+          filename,
+          path: businessLicensePath,
+          cid: 'businessLicense'
+        });
+      }
+
+      // Add logo as attachment if available
+      if (logoPath) {
+        const filename = logoPath.split('/').pop() || 'logo';
+        attachments.push({
+          filename,
+          path: logoPath,
+          cid: 'logo'
+        });
+      }
 
       const mailOptions = {
         from: `"Elneera" <${process.env.SMTP_USER}>`,
@@ -376,14 +399,30 @@ export async function POST(request: NextRequest) {
           agencyId: agencyForm.id,
           agencyName: name,
           contactPerson,
+          designation: designation || '',
           email,
           phoneNumber,
-          agencyType: agencyType || "OTHER",
-          panNumber: panNumber || "",
+          phoneCountryCode: phoneCountryCode || '+91',
+          ownerName,
+          companyPhone,
+          companyPhoneCode: companyPhoneCode || '+91',
+          website,
+          landingPageColor: landingPageColor || '#4ECDC4',
+          gstRegistered,
+          yearOfRegistration,
+          panNumber: panNumber || '',
+          panType: panType || '',
+          gstNumber: gstNumber || '',
           headquarters,
+          country: country || 'INDIA',
+          yearsOfOperation,
+          agencyType: agencyType || 'OTHER',
           registrationDate: new Date().toISOString(),
-          status: "PENDING",
+          status: 'PENDING',
+          businessLicenseUrl: businessLicensePath || '',
+          logoUrl: logoPath || ''
         }),
+        attachments: attachments.length > 0 ? attachments : undefined
       };
 
       const info = await transporter.sendMail(mailOptions);

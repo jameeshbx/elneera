@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ChangeEvent, useEffect } from "react";
+import { useState, type ChangeEvent } from "react";
 import Image from "next/image";
 import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,7 @@ export default function AgencyForm() {
     // Inside your component:
     
     // State hooks
-    const [isLoading, setIsLoading] = useState(true);
+    
     const [color, setColor] = useState("#4ECDC4");
     const [tempColor, setTempColor] = useState("#4ECDC4");
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -82,36 +82,9 @@ export default function AgencyForm() {
         }
     });
 
-    // Check if the user has already submitted the form
-    useEffect(() => {
-        const checkExistingForm = async () => {
-            try {
-                const response = await fetch('/api/agencyform');
-                const result = await response.json();
-                
-                if (result.data) {
-                    // If form exists, redirect to profile
-                    router.push('/agency-admin/dashboard/profile');
-                } else {
-                    setIsLoading(false);
-                }
-            } catch (error) {
-                console.error('Error checking existing form:', error);
-                setIsLoading(false);
-            }
-        };
+   
 
-        checkExistingForm();
-    }, [router]);
-
-    // Show loading state while checking
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900"></div>
-            </div>
-        );
-    }
+    
 
     const validateFile = (file: File, maxSize: number = 3 * 1024 * 1024): boolean => {
         if (file.size > maxSize) {

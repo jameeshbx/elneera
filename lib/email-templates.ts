@@ -2,15 +2,28 @@ export interface AgencyApprovalEmailProps {
   agencyId: string;
   agencyName: string;
   contactPerson: string;
+  designation: string;
   email: string;
   phoneNumber: string;
-  agencyType: string;
+  phoneCountryCode: string;
+  ownerName: string;
+  companyPhone: string;
+  companyPhoneCode: string;
   website?: string;
-  gstNumber?: string;
+  landingPageColor: string;
+  gstRegistered: boolean;
+  yearOfRegistration: string;
   panNumber: string;
+  panType?: string;
+  gstNumber?: string;
   headquarters: string;
+  country: string;
+  yearsOfOperation: string;
+  agencyType: string;
   registrationDate: string;
-  status?: string;
+  status: string;
+  businessLicenseUrl?: string;
+  logoUrl?: string;
 }
 
 export interface DmcPaymentEmailProps {
@@ -32,43 +45,85 @@ export const agencyApprovalEmailTemplate = ({
   agencyId,
   agencyName,
   contactPerson,
+  designation,
   email,
   phoneNumber,
-  agencyType,
+  phoneCountryCode,
+  ownerName,
+  companyPhone,
+  companyPhoneCode,
   website,
-  gstNumber,
+  landingPageColor,
+  gstRegistered,
+  yearOfRegistration,
   panNumber,
+  panType,
+  gstNumber,
   headquarters,
+  country,
+  yearsOfOperation,
+  agencyType,
   registrationDate,
-  status = 'PENDING'
+  status,
+  businessLicenseUrl,
+  logoUrl
 }: AgencyApprovalEmailProps) => `
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Agency Registration - Action Required</title>
+  <title>New Agency Registration: ${agencyName}</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       line-height: 1.6;
       color: #333;
-      max-width: 600px;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 700px;
       margin: 0 auto;
-      padding: 20px;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     }
     .header {
-      background-color: #f8f9fa;
+      background-color: #4ECDC4;
+      color: white;
       padding: 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
+      text-align: center;
     }
     .content {
-      background-color: #fff;
-      border: 1px solid #dee2e6;
-      border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 20px;
+      padding: 25px;
     }
-    .btn {
+    h3 {
+      color: #2c3e50;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+      margin-top: 25px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+    table, th, td {
+      border: 1px solid #e0e0e0;
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      vertical-align: top;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    tr:hover {
+      background-color: #f1f1f1;
+    }
+      .btn {
       display: inline-block;
       padding: 10px 20px;
       margin: 10px 10px 10px 0;
@@ -87,65 +142,129 @@ export const agencyApprovalEmailTemplate = ({
       background-color: #dc3545;
       color: white;
     }
-    .footer {
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 1px solid #dee2e6;
-      color: #6c757d;
-      font-size: 14px;
+    .details {
+      background: #f9f9f9;
+      border-left: 4px solid #4ECDC4;
+      padding: 15px;
+      margin: 20px 0;
     }
-    #statusMessage {
-      margin-top: 20px;
-      padding: 10px;
+    .status {
+      display: inline-block;
+      padding: 3px 8px;
       border-radius: 4px;
-      display: none;
+      font-weight: bold;
+      font-size: 12px;
+      text-transform: uppercase;
     }
-    .success {
+    .status.pending {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    .status.approved {
       background-color: #d4edda;
       color: #155724;
     }
-    .error {
+    .status.rejected {
       background-color: #f8d7da;
       color: #721c24;
     }
+    .actions {
+      text-align: center;
+      margin: 30px 0 20px;
+    }
+    .button {
+      display: inline-block;
+      background-color: #4ECDC4;
+      color: white;
+      text-decoration: none;
+      padding: 12px 25px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 16px;
+      transition: background-color 0.3s;
+    }
+    .button:hover {
+      background-color: #3dbeb5;
+    }
+    .footer {
+      text-align: center;
+      padding: 15px;
+      font-size: 12px;
+      color: #777;
+      background-color: #f5f5f5;
+      border-top: 1px solid #e0e0e0;
+    }
   </style>
 </head>
-<body>
-  <div class="header">
-    <h1>Agency Registration - Action Required</h1>
-  </div>
-  
-  <div class="content">
-    <h2 style="color: #2c3e50; margin-top: 0;">New Agency Registration</h2>
-    
-    <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
-      <p style="margin: 5px 0;"><strong>Status:</strong> 
-        <span style="display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; background-color: ${status === 'ACTIVE' ? '#d4edda' : status === 'REJECTED' ? '#f8d7da' : '#fff3cd'}; color: ${status === 'ACTIVE' ? '#155724' : status === 'REJECTED' ? '#721c24' : '#856404'};">
-          ${status}
-        </span>
-      </p>
-      <p style="margin: 5px 0;"><strong>Registration ID:</strong> ${agencyId}</p>
-      <p style="margin: 5px 0;"><strong>Registration Date:</strong> ${new Date(registrationDate).toLocaleDateString()}</p>
-    </div>
-    
-    <h3 style="color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 15px;">Agency Details</h3>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-      <div>
-        <p style="margin: 8px 0;"><strong>Agency Name:</strong><br>${agencyName}</p>
-        <p style="margin: 8px 0;"><strong>Contact Person:</strong><br>${contactPerson}</p>
-        <p style="margin: 8px 0;"><strong>Email:</strong><br>${email}</p>
-        <p style="margin: 8px 0;"><strong>Phone:</strong><br>${phoneNumber}</p>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>New Agency Registration: ${agencyName}</h1>
+        <p style="margin: 10px 0 0; font-size: 16px; opacity: 0.9;">Action Required: Please review this agency registration</p>
       </div>
-      <div>
-        <p style="margin: 8px 0;"><strong>Agency Type:</strong><br>${agencyType}</p>
-        ${website ? `<p style="margin: 8px 0;"><strong>Website:</strong><br><a href="${website.startsWith('http') ? website : 'https://' + website}" target="_blank">${website}</a></p>` : ''}
-        <p style="margin: 8px 0;"><strong>PAN Number:</strong><br>${panNumber}</p>
-        ${gstNumber ? `<p style="margin: 8px 0;"><strong>GST Number:</strong><br>${gstNumber}</p>` : ''}
-        <p style="margin: 8px 0;"><strong>Headquarters:</strong><br>${headquarters}</p>
-      </div>
-    </div>
-    
-    <div style="margin: 30px 0 20px; text-align: center;">
+      
+      <div class="content">
+        <p>Hello Admin,</p>
+        
+        <p>A new agency has registered and requires your approval. Below are the details:</p>
+        
+        <div class="details">
+          <h3> Basic Information</h3>
+          <table>
+            <tr><td><strong>Agency ID:</strong></td><td>${agencyId}</td></tr>
+            <tr><td><strong>Agency Name:</strong></td><td>${agencyName}</td></tr>
+            <tr><td><strong>Owner Name:</strong></td><td>${ownerName}</td></tr>
+            <tr><td><strong>Contact Person:</strong></td><td>${contactPerson}</td></tr>
+            <tr><td><strong>Designation:</strong></td><td>${designation || 'N/A'}</td></tr>
+            <tr><td><strong>Email:</strong></td><td><a href="mailto:${email}">${email}</a></td></tr>
+            <tr><td><strong>Phone:</strong></td><td>${phoneCountryCode || '+91'} ${phoneNumber}</td></tr>
+            <tr><td><strong>Company Phone:</strong></td><td>${companyPhoneCode || '+91'} ${companyPhone}</td></tr>
+            <tr><td><strong>Website:</strong></td><td>${website ? `<a href="${website.startsWith('http') ? '' : 'https://'}${website}" target="_blank">${website}</a>` : 'N/A'}</td></tr>
+            <tr><td><strong>Landing Page Color:</strong></td><td>${landingPageColor} <span style="display: inline-block; width: 20px; height: 20px; background-color: ${landingPageColor}; border: 1px solid #ddd; vertical-align: middle; margin-left: 10px;"></span></td></tr>
+          </table>
+
+          <h3> Business Details</h3>
+          <table>
+            <tr><td><strong>Agency Type:</strong></td><td>${agencyType || 'N/A'}</td></tr>
+            <tr><td><strong>Years of Operation:</strong></td><td>${yearsOfOperation || 'N/A'}</td></tr>
+            <tr><td><strong>Year of Registration:</strong></td><td>${yearOfRegistration || 'N/A'}</td></tr>
+            <tr><td><strong>GST Registered:</strong></td><td>${gstRegistered ? 'Yes' : 'No'}</td></tr>
+            ${gstNumber ? `<tr><td><strong>GST Number:</strong></td><td>${gstNumber}</td></tr>` : ''}
+            <tr><td><strong>PAN Type:</strong></td><td>${panType || 'N/A'}</td></tr>
+            <tr><td><strong>PAN Number:</strong></td><td>${panNumber || 'N/A'}</td></tr>
+          </table>
+
+          <h3> Address</h3>
+          <table>
+            <tr><td><strong>Headquarters:</strong></td><td>${headquarters || 'N/A'}</td></tr>
+            <tr><td><strong>Country:</strong></td><td>${country || 'N/A'}</td></tr>
+          </table>
+
+          <h3> Attachments</h3>
+          <table>
+            <tr>
+              <td><strong>Business License:</strong></td>
+              <td>${businessLicenseUrl ?
+    `<a href="${businessLicenseUrl}" target="_blank" style="color: #4ECDC4; text-decoration: none; font-weight: bold;">View Document</a>` :
+    'Not provided'}
+              </td>
+            </tr>
+            <tr>
+              <td><strong>Logo:</strong></td>
+              <td>${logoUrl ?
+    `<a href="${logoUrl}" target="_blank" style="color: #4ECDC4; text-decoration: none; font-weight: bold;">View Logo</a>` :
+    'Not provided'}
+              </td>
+            </tr>
+          </table>
+
+          <div style="margin-top: 25px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; border-left: 4px solid #4ECDC4;">
+            <p style="margin: 0; font-weight: 500; color: #2c3e50;">Registration Date: ${new Date(registrationDate).toLocaleString()}</p>
+            <p style="margin: 5px 0 0; font-weight: 500;">Status: <span class="status ${status.toLowerCase()}">${status}</span></p>
+          </div>
+        </div>
+        
+            <div style="margin: 30px 0 20px; text-align: center;">
       <h3 style="color: #2c3e50; margin-bottom: 15px;">Action Required</h3>
       <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
         <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/approve?agencyId=${agencyId}" class="btn btn-approve text-white" style="min-width: 120px; text-decoration: none;">
@@ -168,9 +287,8 @@ export const agencyApprovalEmailTemplate = ({
   <div class="footer">
     <p>This is an automated notification. Please do not reply to this email.</p>
   </div>
-
-  <!-- JavaScript removed as email clients don't support it -->
-</body>
+    
+  </body>
 </html>
 `;
 

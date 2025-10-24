@@ -21,7 +21,7 @@ export default function Page() {
   const [stats, setStats] = useState({
     totalRequests: 0,
     pendingRequests: 0,
-    approvedRequests: 0,
+    activeRequests: 0,
     rejectedRequests: 0,
   })
 
@@ -36,9 +36,11 @@ export default function Page() {
     return managers[index % managers.length]
   }
 
-  // Function to assign random status for demo (since status field doesn't exist yet)
-  const getRandomStatus = (index: number): "Pending" | "Approved" => {
-    return index % 3 === 0 ? "Approved" : "Pending"
+  // Function to get status from form data
+  const getStatus = (status: string | undefined): string => {
+    if (!status) return "Pending" // Default to Pending if status is not set
+    // Convert to title case for display
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
   }
 
 
@@ -76,16 +78,22 @@ export default function Page() {
           throw new Error("Invalid JSON response from server")
         }
 
-        // Calculate stats
+        // Calculate stats from actual data
         const totalRequests = data.length
-        const pendingRequests = Math.floor(totalRequests * 0.6) // Mock 60% pending
-        const approvedRequests = totalRequests - pendingRequests
-        const rejectedRequests = 0 // No rejected for now
+        const pendingRequests = data.filter((item: { status?: string }) => 
+          !item.status || item.status.toLowerCase() === 'pending'
+        ).length
+        const activeRequests = data.filter((item: { status?: string }) => 
+          item.status?.toLowerCase() === 'active'
+        ).length
+        const rejectedRequests = data.filter((item: { status?: string }) => 
+          item.status?.toLowerCase() === 'rejected'
+        ).length
 
         setStats({
           totalRequests,
           pendingRequests,
-          approvedRequests,
+          activeRequests,
           rejectedRequests,
         })
 
@@ -100,6 +108,7 @@ export default function Page() {
               phoneCountryCode: string
               phoneNumber: string
               email: string
+              status: string
               companyPhone?: string
               companyPhoneCode?: string
               createdAt: string
@@ -115,7 +124,7 @@ export default function Page() {
               : `${form.phoneCountryCode || ""} ${form.phoneNumber || ""}`.trim(),
             email: form.email,
             company: form.companyName,
-            status: getRandomStatus(index),
+            status: getStatus(form.status),
             requestedOn: new Date(form.createdAt).toLocaleDateString("en-GB", {
               day: "2-digit",
               month: "2-digit",
@@ -191,11 +200,11 @@ export default function Page() {
 
             <div className="flex items-center gap-3">
               <div className="text-xl font-semibold text-white">
-                {stats.totalRequests > 0 ? Math.round((stats.approvedRequests / stats.totalRequests) * 100) : 0}%
+                {stats.totalRequests > 0 ? Math.round((stats.activeRequests / stats.totalRequests) * 100) : 0}%
               </div>
               <Badge variant="secondary" className="bg-[#D2FFE6] text-emerald-700 hover:bg-emerald-50">
                 <TrendingUp className="h-3.5 w-3.5 mr-1" />
-                {stats.approvedRequests} Approved
+                {stats.activeRequests} Active
               </Badge>
               <span className="ml-auto mt-2 text-xs text-muted-foreground text-[#B8C0CC]">
                 {stats.rejectedRequests} Rejected
@@ -205,9 +214,9 @@ export default function Page() {
               <div
                 className="h-1 rounded-full bg-[#00C7F2]"
                 style={{
-                  width: `${stats.totalRequests > 0 ? (stats.approvedRequests / stats.totalRequests) * 100 : 0}%`,
+                  width: `${stats.totalRequests > 0 ? (stats.activeRequests / stats.totalRequests) * 100 : 0}%`,
                 }}
-                aria-label="approval progress"
+                aria-label="active progress"
               />
             </div>
           </Card>
@@ -231,7 +240,7 @@ export default function Page() {
                     <div>
                       <div className="font-semibold font-Helvetica">Agency Requests</div>
                       <div className="text-xs text-[#6F7175] inline-flex items-center gap-1">
-                        <span className="text-emerald-600 font-bold">(+{stats.approvedRequests})</span> approved
+                        <span className="text-emerald-600 font-bold">(+{stats.activeRequests})</span> active
                       </div>
                     </div>
                   </div>
@@ -253,10 +262,10 @@ export default function Page() {
                         <div className="size-10 rounded-lg bg-[#183F30] text-emerald-700 flex items-center justify-center">
                           <Image src="/dashboard/sharp.svg" alt="Approved" width={20} height={20} />
                         </div>
-                        <div className="font-semibold">{stats.approvedRequests}</div>
+                        <div className="font-semibold">{stats.activeRequests}</div>
                       </div>
                       <div className="pb-6">
-                        <div className="text-xs text-muted-foreground">Approved</div>
+                        <div className="text-xs text-muted-foreground">Active</div>
                       </div>
                     </div>
                     <div className="flex l items-center gap-2">
