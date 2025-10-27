@@ -2,17 +2,20 @@
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Clock, XCircle, RefreshCw } from "lucide-react"
+import { Clock, XCircle, RefreshCw, Edit } from "lucide-react"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 interface AccessDeniedModalProps {
   isOpen: boolean
-  status: 'PENDING' | 'REJECTED'
+  status: 'PENDING' | 'REJECTED' | 'MODIFY'
   onRetry?: () => void
+  onModify?: () => void
 }
 
 export default function AccessDeniedModal({ isOpen, status, onRetry }: AccessDeniedModalProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const router = useRouter()
 
   const handleRetry = async () => {
     setIsRefreshing(true)
@@ -20,6 +23,10 @@ export default function AccessDeniedModal({ isOpen, status, onRetry }: AccessDen
       await onRetry()
     }
     setTimeout(() => setIsRefreshing(false), 1000)
+  }
+
+  const handleModify = () => {
+    router.push('/agency-admin/agency-form')
   }
 
   return (
@@ -30,7 +37,7 @@ export default function AccessDeniedModal({ isOpen, status, onRetry }: AccessDen
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <DialogTitle className="sr-only">
-            {status === 'PENDING' ? 'Application Under Review' : 'Application Status'}
+            {status === 'PENDING' ? 'Application Under Review' : status === 'REJECTED' ? 'Application Status' : 'Modification Required'}
           </DialogTitle>
           <div className="flex flex-col items-center justify-center p-6 text-center">
             {status === 'PENDING' ? (
@@ -70,50 +77,82 @@ export default function AccessDeniedModal({ isOpen, status, onRetry }: AccessDen
                 </div>
               </>
             ) : (
-              <>
-                <div className="mb-4 rounded-full bg-red-100 p-3">
-                  <XCircle className="h-8 w-8 text-red-600" />
-                </div>
-                <h2 className="mb-2 text-xl font-semibold text-gray-900">
-                  Application Rejected
-                </h2>
-                <p className="mb-6 text-sm text-gray-600">
-                  Your agency registration has been rejected. Please contact support for more information.
-                </p>
-                <div className="flex flex-col gap-2 w-full">
-                  <Button 
-                    onClick={handleRetry} 
-                    disabled={isRefreshing}
-                    className="w-full"
-                    variant="outline"
-                  >
-                    {isRefreshing ? (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                        Checking Status...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Check Status
-                      </>
-                    )}
-                  </Button>
-                  <Button 
-                    asChild
-                    variant="default"
-                    className="w-full mt-2"
-                  >
-                    <a href="mailto:support@buyexchange.in">
-                      Contact Support
-                    </a>
-                  </Button>
-                </div>
-              </>
+              status === 'REJECTED' ? (
+                <>
+                  <div className="mb-4 rounded-full bg-red-100 p-3">
+                    <XCircle className="h-8 w-8 text-red-600" />
+                  </div>
+                  <h2 className="mb-2 text-xl font-semibold text-gray-900">
+                    Application Rejected
+                  </h2>
+                  <p className="mb-6 text-sm text-gray-600">
+                    Your agency registration has been rejected. Please contact support for more information.
+                  </p>
+                  <div className="flex flex-col gap-2 w-full">
+                    <Button 
+                      onClick={handleRetry} 
+                      disabled={isRefreshing}
+                      className="w-full"
+                      variant="outline"
+                    >
+                      {isRefreshing ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          Checking Status...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Check Status
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                // MODIFY status
+                <>
+                  <div className="mb-4 rounded-full bg-yellow-100 p-3">
+                    <Edit className="h-8 w-8 text-yellow-600" />
+                  </div>
+                  <h2 className="mb-2 text-xl font-semibold text-gray-900">
+                    Modification Required
+                  </h2>
+                  <p className="mb-6 text-sm text-gray-600">
+                    Your agency registration requires some modifications. Please update the required details and resubmit for review.
+                  </p>
+                  <div className="flex flex-col gap-2 w-full">
+                    <Button 
+                      onClick={handleModify}
+                      className="w-full bg-yellow-500 hover:bg-yellow-600 text-white"
+                    >
+                      <Edit className="mr-2 h-4 w-4" />
+                      Modify Details
+                    </Button>
+                    <Button 
+                      onClick={handleRetry} 
+                      disabled={isRefreshing}
+                      className="w-full mt-2"
+                      variant="outline"
+                    >
+                      {isRefreshing ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          Checking Status...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Check Status
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              )
             )}
           </div>
         </DialogContent>
       </Dialog>
-  
   )
 }

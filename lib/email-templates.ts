@@ -67,11 +67,11 @@ export const agencyApprovalEmailTemplate = ({
   status,
   businessLicenseUrl,
   logoUrl
-}: AgencyApprovalEmailProps) => `
+}: AgencyApprovalEmailProps, isUpdate: boolean = false) => `
 <!DOCTYPE html>
 <html>
 <head>
-  <title>New Agency Registration: ${agencyName}</title>
+  <title>${isUpdate ? 'Updated' : 'New'} Agency ${isUpdate ? 'Details' : 'Registration'}: ${agencyName}</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -142,6 +142,10 @@ export const agencyApprovalEmailTemplate = ({
       background-color: #dc3545;
       color: white;
     }
+    .btn-modify {
+      background-color: #ffc107;
+      color: #000;
+    }
     .details {
       background: #f9f9f9;
       border-left: 4px solid #4ECDC4;
@@ -199,7 +203,7 @@ export const agencyApprovalEmailTemplate = ({
   <body>
     <div class="container">
       <div class="header">
-        <h1>New Agency Registration: ${agencyName}</h1>
+        <h1>${isUpdate ? 'Updated Agency Details' : 'New Agency Registration'}: ${agencyName}</h1>
         <p style="margin: 10px 0 0; font-size: 16px; opacity: 0.9;">Action Required: Please review this agency registration</p>
       </div>
       
@@ -264,19 +268,11 @@ export const agencyApprovalEmailTemplate = ({
           </div>
         </div>
         
-            <div style="margin: 30px 0 20px; text-align: center;">
-      <h3 style="color: #2c3e50; margin-bottom: 15px;">Action Required</h3>
-      <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/approve?agencyId=${agencyId}" class="btn btn-approve text-white" style="min-width: 120px; text-decoration: none;">
-          Approve
-        </a>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/reject?agencyId=${agencyId}" class="btn btn-reject text-white" style="min-width: 120px; text-decoration: none;">
-          Reject
-        </a>
-      </div>
-      <p style="font-size: 12px; color: #6c757d; margin-top: 10px;">
-        Clicking a button will update the agency's status in our system.
-      </p>
+            <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/approve?agencyId=${agencyId}" class="btn btn-approve" style="margin-right: 10px;">Approve</a>
+          <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/modify?agencyId=${agencyId}" class="btn btn-modify" style="margin-right: 10px;">Modify</a>
+          <a href="${process.env.NEXT_PUBLIC_APP_URL}/api/agencyform/reject?agencyId=${agencyId}" class="btn btn-reject">Reject</a>
+        </div>
     </div>
     
     <div style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-radius: 5px; display: none;" id="statusMessage">

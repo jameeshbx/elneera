@@ -12,7 +12,7 @@ export default function ClientLayout({
   children: React.ReactNode;
 }) {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  const [accessStatus, setAccessStatus] = useState<'LOADING' | 'GRANTED' | 'PENDING' | 'REJECTED'>('LOADING');
+  const [accessStatus, setAccessStatus] = useState<'LOADING' | 'GRANTED' | 'PENDING' | 'REJECTED' | 'MODIFY'>('LOADING');
 
   const router = useRouter();
 
@@ -34,6 +34,8 @@ export default function ClientLayout({
             setAccessStatus('PENDING');
           } else if (agency.status === 'REJECTED') {
             setAccessStatus('REJECTED');
+          } else if (agency.status === 'MODIFY') {
+            setAccessStatus('MODIFY');
           }
         } else {
           // No agency found, redirect to form
@@ -99,9 +101,10 @@ export default function ClientLayout({
         </>
       ) : (
         <AccessDeniedModal 
-          isOpen={accessStatus === 'PENDING' || accessStatus === 'REJECTED'}
-          status={accessStatus as 'PENDING' | 'REJECTED'}
-          onRetry={checkAccess} // Add retry button to modal
+          isOpen={accessStatus === 'PENDING' || accessStatus === 'REJECTED' || accessStatus === 'MODIFY'}
+          status={accessStatus as 'PENDING' | 'REJECTED' | 'MODIFY'}
+          onRetry={checkAccess} // Add retry button to    
+          onModify={checkAccess} // Add modify button to modal
         />
       )}
     </div>
