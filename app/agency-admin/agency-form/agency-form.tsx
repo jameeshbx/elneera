@@ -5,8 +5,6 @@ import { HexColorPicker } from "react-colorful";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
     Select,
@@ -21,8 +19,7 @@ import { agencyFormSchemaBase, type AgencyFormValues } from "@/lib/agency";
 import type { z } from "zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useColorIntegration } from '@/hooks/useColorIntegration'
-
+import { useColorIntegration } from '@/hooks/useColorIntegration';
 
 // Add type for agency type options
 type AgencyType =
@@ -33,13 +30,46 @@ type AgencyType =
 // Extract PanType from the schema
 type PanType = z.infer<typeof agencyFormSchemaBase>["panType"];
 
+interface AgencyFormResponse {
+    exists: boolean;
+    data: ({
+        id: string;
+        name: string;
+        contactPerson: string;
+        designation: string;
+        phoneNumber: string;
+        phoneCountryCode: string;
+        ownerName: string;
+        email: string;
+        companyPhone: string;
+        companyPhoneCode: string;
+        website: string;
+        landingPageColor: string;
+        gstRegistered: boolean;
+        gstNumber?: string;
+        yearOfRegistration: string;
+        panNumber: string;
+        panType?: string;
+        headquarters: string;
+        country: string;
+        yearsOfOperation: string;
+        status: string;
+        agencyType?: string;
+        logoPath?: string;
+        businessLicensePath?: string;
+        createdAt: string;
+        updatedAt: string;
+    } & {
+        [key: string]: string | number | boolean | Date | null | undefined;
+    }) | null;
+}
+
 export default function AgencyForm() {
-    // All hooks must be called at the top level
     const router = useRouter();
-    // Inside your component:
-    
-    // State hooks
+    const [isEditMode, setIsEditMode] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+
+    // State hooks
     const [color, setColor] = useState("#4ECDC4");
     const [tempColor, setTempColor] = useState("#4ECDC4");
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -72,6 +102,80 @@ export default function AgencyForm() {
         },
     });
 
+    // Check if agency form exists and load data
+    useEffect(() => {
+        const checkAgencyForm = async () => {
+            try {
+                setIsLoading(true);
+                const response = await fetch('/api/agencyform');
+                const data: AgencyFormResponse = await response.json();
+
+                if (data.exists && data.data) {
+                    setIsEditMode(true);
+                    const formData = data.data;
+                    
+                    console.log('Loading existing agency data:', formData);
+
+                    // Set basic form values
+                    const fieldsToSet: (keyof AgencyFormValues)[] = [
+                        'name', 'contactPerson', 'designation', 'phoneNumber', 'phoneCountryCode',
+                        'ownerName', 'email', 'companyPhone', 'companyPhoneCode', 'website',
+                        'gstRegistered', 'gstNumber', 'yearOfRegistration', 'panNumber',
+                        'panType', 'headquarters', 'country', 'yearsOfOperation', 'agencyType'
+                    ];
+
+                    fieldsToSet.forEach((field) => {
+                        const value = formData[field as keyof typeof formData];
+                        if (value !== undefined && value !== null) {
+                            setValue(field, value as never, { shouldValidate: true });
+                        }
+                    });
+
+                    // Handle agency type with proper type casting
+                    if (formData.agencyType) {
+                        const agencyType = formData.agencyType as 'PRIVATE_LIMITED' | 'PROPRIETORSHIP' | 'PARTNERSHIP' | 'PUBLIC_LIMITED' | 'LLP';
+                        setValue('agencyType', agencyType, { shouldValidate: true });
+                    }
+
+                    // Handle special fields
+                    if (formData.landingPageColor) {
+                        setColor(formData.landingPageColor);
+                        setTempColor(formData.landingPageColor);
+                        setValue('landingPageColor', formData.landingPageColor, { shouldValidate: true });
+                    }
+
+                    // Handle file previews
+                    if (formData.logoPath) {
+                        setLogoUploaded(true);
+                        // Create a dummy file object for preview
+                        const logoFile = new File([], 'logo.png', { type: 'image/png' });
+                        setLogoFile(logoFile);
+                        // Set a custom property to store the path
+                        Object.defineProperty(logoFile, 'path', { value: formData.logoPath });
+                    }
+
+                    if (formData.businessLicensePath) {
+                        setLicenseUploaded(true);
+                        // Create a dummy file object for preview
+                        const licenseFile = new File([], 'license.pdf', { type: 'application/pdf' });
+                        setLicenseFile(licenseFile);
+                        // Set a custom property to store the path
+                        Object.defineProperty(licenseFile, 'path', { value: formData.businessLicensePath });
+                    }
+
+                    console.log('Form data loaded successfully');
+                }
+            } catch (error) {
+                console.error('Error loading agency form data:', error);
+                toast.error('Failed to load agency data');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        checkAgencyForm();
+    }, [setValue]);
+
     // Watch form values
     const gstRegistered = watch("gstRegistered");
 
@@ -81,37 +185,6 @@ export default function AgencyForm() {
             console.log('Color updated in agency form:', color);
         }
     });
-
-    // Check if the user has already submitted the form
-    useEffect(() => {
-        const checkExistingForm = async () => {
-            try {
-                const response = await fetch('/api/agencyform');
-                const result = await response.json();
-                
-                if (result.data) {
-                    // If form exists, redirect to profile
-                    router.push('/agency-admin/dashboard/profile');
-                } else {
-                    setIsLoading(false);
-                }
-            } catch (error) {
-                console.error('Error checking existing form:', error);
-                setIsLoading(false);
-            }
-        };
-
-        checkExistingForm();
-    }, [router]);
-
-    // Show loading state while checking
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gray-900"></div>
-            </div>
-        );
-    }
 
     const validateFile = (file: File, maxSize: number = 3 * 1024 * 1024): boolean => {
         if (file.size > maxSize) {
@@ -143,8 +216,6 @@ export default function AgencyForm() {
         }
     };
 
-
-
     const handleLicenseUpload = async (e: ChangeEvent<HTMLInputElement>) => {
         e.preventDefault();
         e.stopPropagation();
@@ -168,7 +239,6 @@ export default function AgencyForm() {
     };
 
     const onSubmit: SubmitHandler<AgencyFormValues> = async (data) => {
-
         console.log('Form submission started');
         console.log('Form data:', data);
         console.log('Form errors:', errors);
@@ -182,50 +252,67 @@ export default function AgencyForm() {
         setIsSubmitting(true);
 
         try {
-            // Validate files are selected
-            if (!logoFile) {
-                toast.error("Please upload a logo");
-                return;
-            }
+            // Only validate files for new submissions
+            if (!isEditMode) {
+                if (!logoFile) {
+                    toast.error("Please upload a logo");
+                    setIsSubmitting(false);
+                    return;
+                }
 
-            if (!licenseFile) {
-                toast.error("Please upload a business license");
-                return;
+                if (!licenseFile) {
+                    toast.error("Please upload a business license");
+                    setIsSubmitting(false);
+                    return;
+                }
             }
 
             // Create FormData object
             const formData = new FormData();
+            
+            console.log('Preparing form data for submission...');
+            console.log('Form values:', data);
+            console.log('Logo file:', logoFile);
+            console.log('License file:', licenseFile);
 
             // Add all form fields to FormData
-            Object.entries(data).forEach(([key, value]) => {
-                if (value !== undefined && value !== null) {
-                    if (typeof value === 'boolean') {
-                        formData.append(key, String(value));
-                        console.log(`Adding boolean field: ${key}=${value}`);
-                    }
-                    else if (value instanceof File) {
-                        // Files are handled separately below
-                        console.log(`Skipping file field in data: ${key}`);
-                    }
-                    else {
-                        formData.append(key, String(value));
-                        console.log(`Adding field: ${key}=${value}`);
-                    }
-                }
+            (Object.entries(data) as [keyof AgencyFormValues, unknown][]).forEach(([key, value]) => {
+                if (value === undefined || value === null) return;
+                
+                // Skip file fields as they're handled separately
+                if (key === 'logo' || key === 'businessLicense') return;
+                
+                const stringValue = typeof value === 'boolean' ? String(value) : String(value);
+                formData.append(key, stringValue);
+                console.log(`Added field: ${key}=${stringValue}`);
             });
+
+            // Handle file uploads
+            if (logoFile) {
+                console.log(`Adding logo file: ${logoFile.name} (${logoFile.size} bytes)`);
+                formData.append('logo', logoFile);
+            } else if (isEditMode && !logoFile && !logoUploaded) {
+                // If in edit mode and no new file is selected, keep existing one
+                console.log('No new logo file selected, keeping existing one');
+            }
+
+            if (licenseFile) {
+                console.log(`Adding license file: ${licenseFile.name} (${licenseFile.size} bytes)`);
+                formData.append('businessLicense', licenseFile);
+            } else if (isEditMode && !licenseFile && !licenseUploaded) {
+                // If in edit mode and no new file is selected, keep existing one
+                console.log('No new license file selected, keeping existing one');
+            }
+
+            // Update the color in the UI
             await updateColor(data.landingPageColor || "#4ECDC4");
 
-            // Add files explicitly
-            formData.append('logo', logoFile);
-            formData.append('businessLicense', licenseFile);
-
-            console.log("Sending form data to API...");
-
             const apiUrl = "/api/agencyform";
-            console.log(`Making POST request to: ${apiUrl}`);
+            const method = isEditMode ? 'PUT' : 'POST';
+            console.log(`Making ${method} request to: ${apiUrl}`);
 
             const response = await fetch(apiUrl, {
-                method: "POST",
+                method,
                 body: formData,
             });
 
@@ -242,12 +329,27 @@ export default function AgencyForm() {
 
             if (!response.ok) {
                 console.error("API error response:", responseData);
-                throw new Error(
-                    responseData.details ||
-                    responseData.error ||
-                    responseData.message ||
-                    `Failed to submit form: ${response.status} ${response.statusText}`
-                );
+                // Create a more detailed error message
+                let errorMessage = 'Failed to submit form';
+                
+                if (response.status === 500) {
+                    errorMessage = 'Server error. Please try again later.';
+                    if (responseData.error) {
+                        errorMessage = responseData.error;
+                    }
+                    if (responseData.details) {
+                        errorMessage += `: ${responseData.details}`;
+                    }
+                } else if (response.status === 400) {
+                    errorMessage = responseData.message || 'Invalid form data. Please check your inputs.';
+                } else if (response.status === 401) {
+                    errorMessage = 'Session expired. Please log in again.';
+                    router.push('/login');
+                } else if (response.status === 404) {
+                    errorMessage = 'Resource not found. Please refresh the page and try again.';
+                }
+                
+                throw new Error(errorMessage);
             }
 
             console.log("API success response:", responseData);
@@ -260,10 +362,25 @@ export default function AgencyForm() {
 
         } catch (error: unknown) {
             console.error('Submission error:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Failed to submit form';
-            toast.error(errorMessage);
+            let errorMessage = 'Failed to submit form';
+            
+            if (error instanceof Error) {
+                errorMessage = error.message;
+                // Handle network errors specifically
+                if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Network error. Please check your connection and try again.';
+                }
+            }
+            
+            toast.error(errorMessage, {
+                duration: 5000, // Show for 5 seconds
+                action: {
+                    label: 'Retry',
+                    onClick: () => onSubmit(data)
+                }
+            });
         } finally {
-            setIsSubmitting(false); // FIXED: This was set to true before
+            setIsSubmitting(false);
         }
     };
 
@@ -274,7 +391,20 @@ export default function AgencyForm() {
         console.log('Form errors:', errors);
         console.log('Logo file:', logoFile);
         console.log('License file:', licenseFile);
+        console.log('Form values:', watch());
     };
+
+    // Show loading state while checking for existing data
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gray-100">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                    <p className="mt-4 text-lg font-medium text-gray-700">Loading your agency information...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="relative w-full overflow-hidden py-6 px-4 sm:px-6 lg:px-8 bg-custom-green z-[10] min-h-screen bg-custom-green flex items-center justify-center p-4 h-auto">
@@ -355,6 +485,7 @@ export default function AgencyForm() {
                                                 onValueChange={(value) =>
                                                     setValue("agencyType", value as AgencyType, { shouldValidate: true })
                                                 }
+                                                value={watch('agencyType')}
                                             >
                                                 <SelectTrigger
                                                     id="agency-type"
@@ -543,7 +674,9 @@ export default function AgencyForm() {
                                                 <div className="bg-white rounded-l-md border border-gray-300 border-r-0 flex-grow h-12 flex items-center px-3 text-sm">
                                                     {logoFile
                                                         ? `${logoFile.name.substring(0, 15)}${logoFile.name.length > 15 ? "..." : ""}`
-                                                        : "No file selected"}
+                                                        : isEditMode && watch('logo')
+                                                            ? 'Current logo (click to change)'
+                                                            : "No file selected"}
                                                 </div>
                                                 <div className="flex">
                                                     <Button
@@ -767,6 +900,7 @@ export default function AgencyForm() {
                                             onValueChange={(value) =>
                                                 setValue("panType", value as PanType, { shouldValidate: true })
                                             }
+                                            value={watch('panType')}
                                         >
                                             <SelectTrigger className="h-12 border border-gray-300 focus:border-gray-400 focus:ring-0 focus:bg-white font-poppins">
                                                 <SelectValue placeholder="Select PAN type" />
@@ -802,7 +936,7 @@ export default function AgencyForm() {
                                         <Label htmlFor="country">Country*</Label>
                                         <Select
                                             onValueChange={(value) => setValue("country", value, { shouldValidate: true })}
-                                            defaultValue="INDIA"
+                                            value={watch('country') || 'INDIA'}
                                         >
                                             <SelectTrigger className="h-12 border border-gray-300 focus:border-gray-400 focus:ring-0 focus:bg-white font-poppins">
                                                 <SelectValue placeholder="Select country" />
@@ -835,9 +969,10 @@ export default function AgencyForm() {
                                         <div className="mt-1 flex items-center relative">
                                             <div className="bg-white rounded-l-md border border-gray-300 border-r-0 flex-grow h-12 flex items-center px-3 text-sm font-poppins">
                                                 {licenseFile
-                                                    ? `${licenseFile.name.substring(0, 15)}${licenseFile.name.length > 15 ? "..." : ""
-                                                    }`
-                                                    : "No file selected"}
+                                                    ? `${licenseFile.name.substring(0, 15)}${licenseFile.name.length > 15 ? "..." : ""}`
+                                                    : isEditMode && watch('businessLicense')
+                                                        ? 'Current license (click to change)'
+                                                        : "No file selected"}
                                             </div>
                                             <div className="flex">
                                                 <Button
@@ -896,7 +1031,7 @@ export default function AgencyForm() {
                                         style={{ zIndex: 9999, position: 'relative' }}
                                         className="w-full sm:w-[356px] mx-auto rounded-full bg-red-500 px-4 py-3 h-12 font-medium text-white"
                                     >
-                                        {isSubmitting ? "Submitting..." : "Let's get started"}
+                                        {isSubmitting ? "Submitting..." : isEditMode ? "Update Details" : "Let's get started"}
                                     </Button>
                                 </div>
                             </div>
