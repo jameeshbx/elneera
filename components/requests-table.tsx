@@ -15,7 +15,7 @@ export type RequestRow = {
   phone: string
   email: string
   company: string
-  status: "Pending" | "Approved"
+  status: "Pending" | "Active" | "Rejected"
   requestedOn?: string
   managedBy?: string
 }
@@ -71,7 +71,13 @@ export function RequestsTable({
                   <TableCell>
                     <Badge 
                       variant="outline" 
-                      className={`border-0 ${row.status === 'Approved' ? 'bg-[#D2FFE6] text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                      className={`border-0 ${
+                        row.status === 'Active' 
+                          ? 'bg-emerald-50 text-emerald-700' 
+                          : row.status === 'Rejected'
+                            ? 'bg-red-50 text-red-700'
+                            : 'bg-[#FEF9C3] text-amber-700'
+                      }`}
                     >
                       {row.status}
                     </Badge>
@@ -79,7 +85,7 @@ export function RequestsTable({
                   <TableCell className="text-right">
                     <RowActions 
                       id={row.rawId} 
-                      currentStatus={row.status.toUpperCase() as "PENDING" | "APPROVED" | "REJECTED"}
+                      currentStatus={(row.status === 'Active' ? 'APPROVED' : row.status.toUpperCase()) as "PENDING" | "APPROVED" | "REJECTED"}
                       onStatusUpdate={onStatusUpdate}
                     />
                   </TableCell>

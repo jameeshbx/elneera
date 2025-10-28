@@ -1,21 +1,10 @@
 "use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AgencyApprovedPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    // Force a full page refresh to ensure latest data
-    const timer = setTimeout(() => {
-      window.location.href = '/agency-admin/dashboard';
-    }, 2000); // Redirect after 2 seconds
-
-    return () => clearTimeout(timer);
-  }, [router]);
+ 
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
