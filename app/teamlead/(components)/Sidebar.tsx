@@ -261,19 +261,7 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
         },
       ],
     },
-    {
-      title: "Add Users", 
-      href: "/teamlead/dashboard/add-users",
-      icon: (
-        <Image
-          src="/people.png"
-          alt="Add Users"
-          width={20}
-          height={20}
-          className="min-w-[20px]"
-        />
-      ),
-    },
+    
     {
       title: "Add DMC",
       href: "/teamlead/dashboard/add-dmc",
