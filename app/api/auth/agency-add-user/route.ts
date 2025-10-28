@@ -1,22 +1,22 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
-import {  PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
-
-
+import { getNewUserWelcomeEmail } from "@/emails/new-user-welcome";
+import { UserType } from "@prisma/client";
 
 // Create a single Prisma Client and reuse it
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
-// Initialize Prisma Client
 const prisma = globalForPrisma.prisma || new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error']
 });
-// In development, prevent creating new instances on HMR
+
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
+
 // Type guard for Prisma errors
 interface PrismaError extends Error {
   code?: string;
@@ -24,12 +24,14 @@ interface PrismaError extends Error {
     target?: string[];
   };
 }
+
 function isPrismaError(error: unknown): error is PrismaError {
   return typeof error === 'object' && error !== null && 'code' in error;
 }
+
 async function ensureTablesExist() {
   try {
-    // Check if file table exists, create if not
+    // Check if file table exists
     try {
       await prisma.$executeRaw`SELECT 1 FROM "file" LIMIT 1`;
     } catch (fileTableError) {
@@ -50,11 +52,14 @@ async function ensureTablesExist() {
         throw fileTableError;
       }
     }
-    // Check if user_form table exists, create if not
+
+    // Check if user_form table exists
     try {
       await prisma.$executeRaw`SELECT 1 FROM "user_form" LIMIT 1`;
+      console.log("✅ user_form table exists");
     } catch (userFormError) {
       if (isPrismaError(userFormError) && userFormError.code === 'P2021') {
+        // Create table with agencyId from the start
         await prisma.$executeRaw`
           CREATE TABLE "user_form" (
             id TEXT PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -67,6 +72,7 @@ async function ensureTablesExist() {
             "userType" TEXT NOT NULL DEFAULT 'TEAM_LEAD',
             "profileImageId" TEXT,
             status TEXT NOT NULL DEFAULT 'ACTIVE',
+            "agencyId" TEXT,
             "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
             "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW(),
             "createdBy" TEXT NOT NULL,
@@ -75,22 +81,72 @@ async function ensureTablesExist() {
             CONSTRAINT fk_profile_image
               FOREIGN KEY ("profileImageId")
               REFERENCES "file"(id)
+              ON DELETE SET NULL,
+            CONSTRAINT fk_agency
+              FOREIGN KEY ("agencyId")
+              REFERENCES "User"(id)
               ON DELETE SET NULL
           );
           
           CREATE INDEX "user_form_email_idx" ON "user_form"(email);
           CREATE INDEX "user_form_username_idx" ON "user_form"(username);
+          CREATE INDEX "user_form_agencyId_idx" ON "user_form"("agencyId");
         `;
-        console.log("✅ Created user_form table");
+        console.log("✅ Created user_form table with agencyId");
       } else {
         throw userFormError;
       }
+    }
+
+    // Ensure agencyId column exists (for existing tables)
+    try {
+      // Check if agencyId column exists
+      const columnCheck = await prisma.$queryRaw<Array<{ column_name: string }>>`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'user_form' 
+        AND column_name = 'agencyId'
+      `;
+
+      if (columnCheck.length === 0) {
+        console.log("⚠️ agencyId column missing, adding it now...");
+        
+        // Add the column
+        await prisma.$executeRaw`
+          ALTER TABLE "user_form" 
+          ADD COLUMN "agencyId" TEXT;
+        `;
+        console.log("✅ Added agencyId column");
+
+        // Add foreign key constraint
+        await prisma.$executeRaw`
+          ALTER TABLE "user_form"
+          ADD CONSTRAINT fk_agency
+          FOREIGN KEY ("agencyId")
+          REFERENCES "User"(id)
+          ON DELETE SET NULL;
+        `;
+        console.log("✅ Added foreign key constraint");
+
+        // Add index
+        await prisma.$executeRaw`
+          CREATE INDEX "user_form_agencyId_idx" 
+          ON "user_form"("agencyId");
+        `;
+        console.log("✅ Added agencyId index");
+      } else {
+        console.log("✅ agencyId column already exists");
+      }
+    } catch (alterError) {
+      console.error("❌ Error checking/adding agencyId column:", alterError);
+      // Don't throw - column might already exist with constraint
     }
   } catch (error) {
     console.error("❌ Error ensuring tables exist:", error);
     throw error;
   }
 }
+
 interface User {
   id: string;
   name: string | null;
@@ -98,8 +154,9 @@ interface User {
   phoneExtension: string;
   email: string | null;
   username: string | null;
-  userType: string | null;  // Changed from string to string | null
+  userType: string | null;
   status: string;
+  agencyId: string | null;
   createdAt: Date;
   profileImage: {
     id: string;
@@ -111,7 +168,7 @@ interface User {
     updatedAt: Date;
   } | null;
 }
-import { getNewUserWelcomeEmail } from "@/emails/new-user-welcome";
+
 export async function POST(req: Request) {
   try {
     console.log("=== Starting user creation process ===");
@@ -119,9 +176,9 @@ export async function POST(req: Request) {
     // Test database connection first
     try {
       await prisma.$queryRaw`SELECT 1`;
+      console.log("✅ Database connection successful");
     } catch (dbError) {
       console.error('❌ Database connection error:', dbError);
-      // Try to reconnect
       try {
         await prisma.$connect();
       } catch (reconnectError) {
@@ -130,7 +187,7 @@ export async function POST(req: Request) {
           success: false,
           error: "Database connection error. Please try again later.",
           details: process.env.NODE_ENV === 'development' ? String(reconnectError) : undefined
-        }, { status: 503 }); // Service Unavailable
+        }, { status: 503 });
       }
     }
     
@@ -143,12 +200,39 @@ export async function POST(req: Request) {
       }, { status: 401 });
     }
     console.log("✅ Session found for user:", session.user.id);
+
+    // Get the agency admin ID from session
+    const agencyAdminId = session.user.id;
+    console.log("🏢 Agency Admin ID:", agencyAdminId);
+
+    // Verify the user is an agency admin
+    const agencyAdmin = await prisma.user.findUnique({
+      where: { id: agencyAdminId },
+      select: { 
+        id: true, 
+        userType: true,
+        businessType: true 
+      }
+    });
+
+    if (!agencyAdmin || agencyAdmin.userType !== 'AGENCY_ADMIN') {
+      console.log("❌ User is not an agency admin");
+      return NextResponse.json({
+        success: false,
+        error: "Only agency admins can create users"
+      }, { status: 403 });
+    }
+
+    console.log("✅ Verified agency admin status");
+    
     // Ensure tables exist before proceeding
     await ensureTablesExist();
     console.log("✅ Database tables verified");
+    
     // Parse form data
     const formData = await req.formData();
     console.log("Form data received:", Object.fromEntries(formData.entries()));
+    
     // Validate required fields
     const requiredFields = ['name', 'email', 'password', 'userType'];
     const missingFields = requiredFields.filter(field => !formData.get(field)?.toString()?.trim());
@@ -159,6 +243,7 @@ export async function POST(req: Request) {
         error: `Missing required fields: ${missingFields.join(', ')}`
       }, { status: 400 });
     }
+    
     // Extract form data with proper type checking
     const name = formData.get('name')!.toString().trim();
     const phoneNumber = formData.get('phoneNumber')?.toString()?.trim() || '';
@@ -168,8 +253,7 @@ export async function POST(req: Request) {
     console.log("🔍 User type from form:", userType);
 
     // Validate the user type
-    // Validate the user type - Updated to handle all possible user types
-    const validUserTypes = ['MANAGER', 'EXECUTIVE', 'TEAM_LEAD', 'TL', 'AGENCY_ADMIN'];
+    const validUserTypes = ['MANAGER', 'EXECUTIVE', 'TEAM_LEAD', 'TL'];
     if (!userType || !validUserTypes.includes(userType)) {
       console.error("❌ Invalid user type received:", userType);
       return NextResponse.json(
@@ -203,8 +287,6 @@ export async function POST(req: Request) {
       console.log("❌ Email format validation failed");
       return NextResponse.json({ error: "Please enter a valid email address" }, { status: 400 });
     }
-
-
     if (!password || password.length < 8) {
       console.log("❌ Password validation failed");
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
@@ -212,44 +294,40 @@ export async function POST(req: Request) {
 
     console.log("✅ All validations passed");
 
-   
     // Check if user already exists in user_form table
     const existingUserForm = await prisma.userForm.findUnique({
       where: { email },
     });
-
     
     // Check if user already exists in main user table
     const existingUser = await prisma.user.findUnique({
       where: { email },
     });
 
-
     if (existingUserForm || existingUser) {
       console.log("ℹ️ User already exists with email:", email);
 
-      // Generate reset token using a secure method
+      // Generate reset token
       const resetToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
+      const resetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-      const resetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-        // Generate unique filename
-       
       let updatedUser;
 
-        // Save file
-        
       if (existingUserForm) {
-        // Update existing user_form entry
+        console.log("🔄 Updating existing user_form with agencyId:", agencyAdminId);
+
+        // Update existing user_form entry and ensure agency relation is connected
         updatedUser = await prisma.userForm.update({
           where: { email },
           data: {
             name: name || existingUserForm.name,
             phoneNumber: phoneNumber || existingUserForm.phoneNumber,
             userType: userType,
-            password: await hash(password, 10), // Update password
+            password: await hash(password, 10),
+            // Use relation connect to reliably set the foreign key
+            agency: { connect: { id: agencyAdminId } },
             updatedAt: new Date(),
             resetToken,
             resetTokenExpiry
@@ -260,13 +338,15 @@ export async function POST(req: Request) {
             email: true,
             userType: true,
             phoneNumber: true,
+            agencyId: true,
             createdAt: true,
             updatedAt: true,
           }
         });
+
+        console.log("✅ User updated with agencyId:", updatedUser.agencyId);
       } else if (existingUser) {
-        // If user exists in main table but not in user_form, handle accordingly
-        // Create password reset for main user
+        // Update main user table
         await prisma.passwordReset.upsert({
           where: { userId: existingUser.id },
           update: {
@@ -282,14 +362,13 @@ export async function POST(req: Request) {
           }
         });
 
-     
         updatedUser = await prisma.user.update({
           where: { email },
           data: {
             name: name || existingUser.name,
             phone: phoneNumber || existingUser.phone,
-            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL' | 'AGENCY_ADMIN',
-            password: await hash(password, 10), // Update password
+            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL',
+            password: await hash(password, 10),
             updatedAt: new Date(),
             businessType: 'AGENCY'
           },
@@ -310,7 +389,6 @@ export async function POST(req: Request) {
         const loginUrl = new URL('/login', process.env.NEXTAUTH_URL || 'http://localhost:3000');
         loginUrl.searchParams.set('email', email);
 
-        
         await sendEmail({
           to: email,
           subject: 'Account Updated - New Login Credentials',
@@ -350,10 +428,8 @@ export async function POST(req: Request) {
             </div>
           `,
         });
-
       } catch (emailError) {
         console.error('Error sending update email:', emailError);
-        // Continue even if email fails
       }
 
       return NextResponse.json({
@@ -363,106 +439,159 @@ export async function POST(req: Request) {
           id: updatedUser!.id,
           name: updatedUser!.name,
           email: updatedUser!.email,
-          userType: updatedUser!.userType
+          userType: updatedUser!.userType,
+          agencyId: 'agencyId' in updatedUser! ? updatedUser!.agencyId : null
         }
       });
     }
 
-
-
     // Create new user if not exists
-    console.log("🔧 Creating new user...");
+    console.log("🔧 Creating new user with agency ID:", agencyAdminId);
 
-    // Generate password reset token using crypto.getRandomValues for browser compatibility
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    const resetToken = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-    const resetTokenExpiry = new Date();
-    resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 24); // 24 hours from now
+  // Generate password reset token and hash password once for reuse
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  const resetToken = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  const resetTokenExpiry = new Date();
+  resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 24);
 
-    // Create new user with hashed password in user_form table
+  const hashedPassword = await hash(password, 10);
+
+    // Create a unique username derived from email to avoid P2002 (unique constraint) on username
+    // Prefer a sanitized local-part of the email then append numeric suffixes until unique.
+    const emailLocalPart = (email.split('@')[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '') || `user${Date.now().toString().slice(-5)}`;
+    let candidateUsername = emailLocalPart;
+    let suffix = 0;
+
+    // Loop to find a username that doesn't already exist in either userForm or main User table.
+    while (true) {
+      const existsInUserForm = await prisma.userForm.findFirst({ where: { username: candidateUsername } });
+      if (!existsInUserForm) break;
+      suffix += 1;
+      candidateUsername = `${emailLocalPart}${suffix}`;
+    }
+
+    console.log('✅ Resolved unique username:', candidateUsername);
+
+    // Verify agencyId is valid before creating
+    const agencyExists = await prisma.user.findUnique({
+      where: { id: agencyAdminId },
+      select: { id: true }
+    });
+
+    if (!agencyExists) {
+      console.error("❌ Agency admin ID not found in User table:", agencyAdminId);
+      return NextResponse.json({
+        success: false,
+        error: "Invalid agency admin ID"
+      }, { status: 400 });
+    }
+
+    console.log("✅ Agency exists, proceeding with user creation");
+
+    // Create new user with agencyId - using explicit field mapping
+    console.log("📝 Creating user for agency:", agencyAdminId);
+
     const newUser = await prisma.userForm.create({
       data: {
         name,
         phoneNumber,
+        phoneExtension: '+91',
         email,
-       
-        username: email, // Using email as username
-        password: await hash(password, 10), // Hash password for security
+        // Use the resolved unique username
+        username: candidateUsername,
+        password: hashedPassword,
         userType,
-        status: 'ACTIVE',
-        createdBy: session.user.id,
+        status: 'ACTIVE' as const,
+        createdBy: agencyAdminId,
+        // Ensure agencyId is explicitly set so the FK column is populated
+        agencyId: agencyAdminId,
+        // NOTE: The generated Prisma types for this model don't expose the relation field
+        // on create input, so we can't use `agency: { connect: ... }` here — remove it.
         resetToken,
         resetTokenExpiry
       },
-     
       select: {
         id: true,
         name: true,
         email: true,
         userType: true,
-        createdAt: true
+        agencyId: true,
+        phoneNumber: true,
+        phoneExtension: true,
+        status: true,
+        createdAt: true,
+        profileImage: true
       }
     });
 
-
     console.log("✅ User created successfully:", newUser);
+    console.log("✅ Agency ID stored:", newUser.agencyId);
 
-    // Send welcome email with login credentials
+    // Verify the agencyId was actually stored
+    const verifyUser = await prisma.userForm.findUnique({
+      where: { id: newUser.id },
+      select: { id: true, agencyId: true, name: true }
+    });
+
+    console.log("🔍 Verification - User in DB:", verifyUser);
+
+    if (!verifyUser?.agencyId) {
+      console.error("⚠️ WARNING: agencyId is NULL in database after creation!");
+      console.error("This indicates a schema mismatch or constraint issue");
+    }
+
+    // Send welcome email
     const loginUrl = new URL('/login', process.env.NEXTAUTH_URL || 'http://localhost:3000');
     loginUrl.searchParams.set('email', email);
 
     const emailContent = getNewUserWelcomeEmail({
       name,
       email,
-      password: password, // The plain password before hashing
+      password: password,
       userType,
       loginUrl: loginUrl.toString()
     });
 
     try {
-      // Send welcome email with credentials
-      
-
       await sendEmail({
         to: email,
         subject: emailContent.subject,
         html: emailContent.html
       });
-
-      // Send notification to admin for AGENCY_ADMIN signup
-      if (userType === 'AGENCY_ADMIN') {
-        const adminEmail = 'anusree@buyexchange.in';
-        const adminSubject = 'New Agency Admin Registration';
-        const adminHtml = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #dc2626;">New Agency Admin Registration</h2>
-            <p>A new agency admin has been registered in the system:</p>
-            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <p><strong>Name:</strong> ${name}</p>
-              <p><strong>Email:</strong> ${email}</p>
-              <p><strong>Phone:</strong> ${phoneNumber}</p>
-              <p><strong>Registration Date:</strong> ${new Date().toLocaleString()}</p>
-            </div>
-            <p>Please review their registration in the admin panel and ensure appropriate permissions are set.</p>
-          </div>
-        `;
-
-        await sendEmail({
-          to: adminEmail,
-          subject: adminSubject,
-          html: adminHtml
-        });
-      }
-
     } catch (emailError) {
-
       console.error('Error sending email:', emailError);
-      // Continue even if email fails
     }
 
-    // Return user data without password
-   
+    // Also create or update the main `User` record so the created user can sign in immediately.
+    try {
+      const upsertedUser = await prisma.user.upsert({
+        where: { email },
+        update: {
+          name: name || undefined,
+          password: hashedPassword,
+          userType: userType as UserType,  // Add type assertion
+          agencyId: agencyAdminId,
+          updatedAt: new Date(),
+          status: 'ACTIVE'
+        },
+        create: {
+          email,
+          password: hashedPassword,
+          name: name || '',
+          companyName: name || '',
+          businessType: 'AGENCY',
+         userType: userType as UserType,  // Add type assertion
+          agencyId: agencyAdminId,
+          status: 'ACTIVE'
+        },
+      });
+
+      console.log('✅ Upserted main User record for login:', { id: upsertedUser.id, email: upsertedUser.email });
+    } catch (upsertErr) {
+      console.error('❌ Failed to upsert main User record:', upsertErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'User created successfully. Login credentials sent to email.',
@@ -470,23 +599,47 @@ export async function POST(req: Request) {
     });
 
   } catch (error: unknown) {
-    console.error("❌ Error deleting user:", error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
+    console.error("❌ Error creating user:", error);
+    
+    // More detailed error logging
+    if (isPrismaError(error)) {
+      console.error("Prisma error code:", error.code);
+      console.error("Prisma error meta:", error.meta);
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : 'Failed to create user';
     return NextResponse.json({
-      error: errorMessage
+      success: false,
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? String(error) : undefined
     }, { status: 500 });
   } finally {
     await prisma.$disconnect();
   }
 }
+
 export async function GET() {
   try {
     console.log("📄 Fetching users list...");
     
-    // Ensure table exists before proceeding
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ 
+        success: false, 
+        error: "Unauthorized" 
+      }, { status: 401 });
+    }
+
+    const agencyAdminId = session.user.id;
+    console.log("🏢 Fetching users for agency:", agencyAdminId);
+    
     await ensureTablesExist();
     
+    // Fetch only users belonging to this agency
     const users = await prisma.userForm.findMany({
+      where: {
+        agencyId: agencyAdminId
+      },
       include: {
         profileImage: true
       },
@@ -495,7 +648,16 @@ export async function GET() {
       }
     });
     
-    console.log(`✅ Found ${users.length} users`);
+    console.log(`✅ Found ${users.length} users for agency ${agencyAdminId}`);
+    
+    // Log sample to verify agencyId
+    if (users.length > 0) {
+      console.log("📊 Sample user:", {
+        id: users[0].id,
+        name: users[0].name,
+        agencyId: users[0].agencyId
+      });
+    }
     
     return NextResponse.json({
       success: true,
@@ -506,8 +668,9 @@ export async function GET() {
         phoneExtension: user.phoneExtension,
         email: user.email,
         username: user.username,
-        userType: user.userType || 'TEAM_LEAD',  // Provide default if null
-        status: user.status,      
+        userType: user.userType || 'TEAM_LEAD',
+        status: user.status,
+        agencyId: user.agencyId,
         createdAt: user.createdAt,
         profileImage: user.profileImage,
         maskedPassword: "•••••••"
@@ -523,32 +686,45 @@ export async function GET() {
     await prisma.$disconnect();
   }
 }
+
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     
     if (!id) {
       return NextResponse.json({ error: "User ID is required" }, { status: 400 });
     }
+
     console.log("🗑️ Deleting user with ID:", id);
-    // Check if user exists
+
+    // Verify user belongs to this agency
     const user = await prisma.userForm.findUnique({
       where: { id },
       include: { profileImage: true }
     });
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    // Delete user (this will also handle the foreign key relationship)
+
+    if (user.agencyId !== session.user.id) {
+      return NextResponse.json({ 
+        error: "You can only delete users from your own agency" 
+      }, { status: 403 });
+    }
+
     await prisma.userForm.delete({
       where: { id }
     });
+
     console.log("✅ User deleted successfully");
+
     return NextResponse.json({
       success: true,
       message: "User deleted successfully"
@@ -564,37 +740,45 @@ export async function DELETE(req: Request) {
   }
 }
 
-    export async function PATCH(req: Request) {
-      try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user) {
-          return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-        }
-        const { id } = await req.json();
-        
-        if (!id) {
-          return NextResponse.json({ error: "User ID is required" }, { status: 400 });
-        }
-        console.log("👁️ Revealing password for user ID:", id);
-        // Verify user exists and get password
-        const user = await prisma.userForm.findUnique({
-          where: { id },
-          select: {
-            id: true,
-            password: true,
-            name: true
-          }
-        });
-        if (!user) {
-          return NextResponse.json({ error: "User not found" }, { status: 404 });
-        }
+export async function PATCH(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    // For security, we'll return a placeholder since the password is hashed
-    // In a real scenario, you'd implement proper password reset functionality
+    const { id } = await req.json();
+    
+    if (!id) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+    }
+
+    console.log("👁️ Revealing password for user ID:", id);
+
+    const user = await prisma.userForm.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        password: true,
+        name: true,
+        agencyId: true
+      }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    if (user.agencyId !== session.user.id) {
+      return NextResponse.json({ 
+        error: "You can only view passwords for users in your agency" 
+      }, { status: 403 });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
-        password: "••••••••" // Hashed password - return masked version
+        password: "••••••••"
       }
     });
 
@@ -608,31 +792,41 @@ export async function DELETE(req: Request) {
     await prisma.$disconnect();
   }
 }
+
 export async function PUT(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     const body = await req.json();
     const { id, status } = body;
     
     if (!id || !status) {
       return NextResponse.json({ error: "ID and status are required" }, { status: 400 });
     }
-    // Validate status
+
     if (!["ACTIVE", "INACTIVE"].includes(status)) {
       return NextResponse.json({ error: "Invalid status value" }, { status: 400 });
     }
+
     console.log(`🔄 Updating user ${id} status to ${status}`);
-    // Check if user exists
+
     const user = await prisma.userForm.findUnique({
       where: { id }
     });
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    // Update user status
+
+    if (user.agencyId !== session.user.id) {
+      return NextResponse.json({ 
+        error: "You can only update users from your own agency" 
+      }, { status: 403 });
+    }
+
     const updatedUser = await prisma.userForm.update({
       where: { id },
       data: { 
@@ -643,13 +837,15 @@ export async function PUT(req: Request) {
         profileImage: true
       }
     });
+
     console.log("✅ User status updated successfully");
+
     return NextResponse.json({
       success: true,
       message: `User status changed to ${status}`,
       data: {
         ...updatedUser,
-        password: undefined // Don't send password in response
+        password: undefined
       }
     });
   } catch (error: unknown) {

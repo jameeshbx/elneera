@@ -1,10 +1,9 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Bell, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { BreadcrumbItem } from "@/data/navigation"
 import { Breadcrumbs } from "@/app/agency-admin/(components)/Breadcrumbs"
-import { useColor } from "@/context/color-context"
 
 interface TopBarProps {
   breadcrumbs: BreadcrumbItem[]
@@ -22,72 +21,77 @@ export function TopBar({
   backgroundImage = "/background/bg6.png?height=200&width=1920",
 }: TopBarProps) {
   const [showNotifications, setShowNotifications] = useState(false)
-  const { landingPageColor, isLightColor } = useColor()
+  const [themeColor, setThemeColor] = useState("#4ECDC4")
+  const [isLightColor, setIsLightColor] = useState(false)
 
-  // Keep a local color state that falls back to the CSS var when context is not updated
-  const getCssThemeColor = () => {
-    try {
-      return getComputedStyle(document.documentElement).getPropertyValue('--theme-color') || landingPageColor
-    } catch {
-      return landingPageColor
-    }
+  const adjustBrightness = (hex: string, percent: number): string => {
+    const num = parseInt(hex.replace("#", ""), 16)
+    const amt = Math.round(2.55 * percent)
+    const R = (num >> 16) + amt
+    const G = (num >> 8 & 0x00FF) + amt
+    const B = (num & 0x0000FF) + amt
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+      (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+      (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1)
   }
 
-  const [currentColor, setCurrentColor] = useState<string>(() => getCssThemeColor() || "#4ECDC4")
-
-
-  // Keep local color updated when context or CSS var changes (listen to themeUpdated events)
+  // Listen for theme updates from Sidebar
   useEffect(() => {
-    setCurrentColor(landingPageColor || getCssThemeColor() || "#4ECDC4")
-  }, [landingPageColor])
+    const handleThemeUpdate = (event: CustomEvent) => {
+      console.log('TopBar - Theme updated event received:', event.detail);
+      if (event.detail?.color) {
+        const newColor = event.detail.color;
+        setThemeColor(newColor);
+        checkIfLightColor(newColor);
+        
+        // Update CSS variables to match the new theme
+        document.documentElement.style.setProperty('--theme-color', newColor);
+        document.documentElement.style.setProperty('--theme-color-light', `${newColor}20`);
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(newColor, -20));
+      }
+    };
 
-  useEffect(() => {
-    const handleThemeUpdate = (event: Event) => {
-      // prefer event.detail.color, fall back to CSS var
-      const detail = (event as CustomEvent)?.detail
-      const colorFromEvent = detail?.color
-      const newColor = colorFromEvent || getCssThemeColor() || landingPageColor || "#4ECDC4"
-      setCurrentColor(newColor.trim())
+    // Add event listener for theme updates
+    window.addEventListener('theme-updated', handleThemeUpdate as EventListener);
+
+    // Initial theme setup from CSS variable or default
+    const initialColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--theme-color')
+      .trim() || "#4ECDC4";
+    
+    if (initialColor !== "#4ECDC4") {
+      setThemeColor(initialColor);
+      checkIfLightColor(initialColor);
     }
 
-    window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
-    return () => window.removeEventListener('themeUpdated', handleThemeUpdate as EventListener)
-  }, [landingPageColor])
+    return () => {
+      window.removeEventListener('theme-updated', handleThemeUpdate as EventListener);
+    };
+  }, []);
+
+  const checkIfLightColor = (hexColor: string) => {
+    // Remove # if present
+    const hex = hexColor.replace('#', '')
+    
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16)
+    const g = parseInt(hex.substring(2, 4), 16)
+    const b = parseInt(hex.substring(4, 6), 16)
+    
+    // Calculate relative luminance
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    
+    // If luminance is greater than 0.5, it's a light color
+    setIsLightColor(luminance > 0.5)
+  }
 
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications)
   }
 
   // Create a gradient overlay with the selected color
-  // Helper: convert 6-digit hex (#RRGGBB) to rgba string with alpha
-  const hexToRgba = (hex: string, alpha = 1) => {
-    try {
-      const cleaned = hex.replace('#', '').trim()
-      if (cleaned.length === 3) {
-        // expand shorthand like #abc -> #aabbcc
-        const r = cleaned[0] + cleaned[0]
-        const g = cleaned[1] + cleaned[1]
-        const b = cleaned[2] + cleaned[2]
-        const full = r + g + b
-        const intVal = parseInt(full, 16)
-        const rVal = (intVal >> 16) & 255
-        const gVal = (intVal >> 8) & 255
-        const bVal = intVal & 255
-        return `rgba(${rVal}, ${gVal}, ${bVal}, ${alpha})`
-      }
-      const intVal = parseInt(cleaned.substring(0, 6), 16)
-      const rVal = (intVal >> 16) & 255
-      const gVal = (intVal >> 8) & 255
-      const bVal = intVal & 255
-      return `rgba(${rVal}, ${gVal}, ${bVal}, ${alpha})`
-    } catch  {
-      // fallback: if landingPageColor isn't a hex string, return it as-is (with opacity applied via CSS if supported)
-      return landingPageColor
-    }
-  }
-
   const overlayStyle = {
-    background: `linear-gradient(135deg, ${hexToRgba(currentColor, 0.9)} 0%, ${hexToRgba(currentColor, 0.8)} 50%, ${hexToRgba(currentColor, 0.7)} 100%)`,
+    background: `linear-gradient(135deg, ${themeColor}E6 0%, ${themeColor}CC 50%, ${themeColor}B3 100%)`,
   }
 
   // Dynamic text colors based on background
@@ -152,13 +156,11 @@ export function TopBar({
                   <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                 </span>
               </button>
-
-            
             </div>
           </div>
         </div>
 
-        {/* Title section - removing duplicate */}
+        {/* Title section */}
         <div className={cn("px-4 sm:px-6 pb-5 pt-2", textColor)}>
           {title && (
             <h1 className="text-xl sm:text-2xl font-bold font-Nunito" data-cy="page-title">

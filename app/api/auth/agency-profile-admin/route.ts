@@ -63,16 +63,10 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const isAuthorized = user.userType === "AGENCY_ADMIN" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
-
-    if (!isAuthorized) {
-      return NextResponse.json(
-        {
-          error: `Access denied. User type: ${user.userType}, Role: ${user.role}`,
-        },
-        { status: 403 },
-      )
-    }
+    // Determine whether the current requester is an agency admin or an admin-type role.
+    // We do NOT deny access entirely here — non-admin users should be able to fetch
+    // their own profile and agency form info. Only admin users will receive the
+    // teamMembers list (the users created by that agency admin).
 
     // Helper function to check if user_form table exists
     const ensureUserFormTableExists = async () => {
