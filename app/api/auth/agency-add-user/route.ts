@@ -59,7 +59,6 @@ async function ensureTablesExist() {
       console.log("✅ user_form table exists");
     } catch (userFormError) {
       if (isPrismaError(userFormError) && userFormError.code === 'P2021') {
-        // Create table with agencyId from the start
         await prisma.$executeRaw`
           CREATE TABLE "user_form" (
             id TEXT PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -100,7 +99,6 @@ async function ensureTablesExist() {
 
     // Ensure agencyId column exists (for existing tables)
     try {
-      // Check if agencyId column exists
       const columnCheck = await prisma.$queryRaw<Array<{ column_name: string }>>`
         SELECT column_name 
         FROM information_schema.columns 
@@ -111,14 +109,12 @@ async function ensureTablesExist() {
       if (columnCheck.length === 0) {
         console.log("⚠️ agencyId column missing, adding it now...");
         
-        // Add the column
         await prisma.$executeRaw`
           ALTER TABLE "user_form" 
           ADD COLUMN "agencyId" TEXT;
         `;
         console.log("✅ Added agencyId column");
 
-        // Add foreign key constraint
         await prisma.$executeRaw`
           ALTER TABLE "user_form"
           ADD CONSTRAINT fk_agency
@@ -128,7 +124,6 @@ async function ensureTablesExist() {
         `;
         console.log("✅ Added foreign key constraint");
 
-        // Add index
         await prisma.$executeRaw`
           CREATE INDEX "user_form_agencyId_idx" 
           ON "user_form"("agencyId");
@@ -139,7 +134,6 @@ async function ensureTablesExist() {
       }
     } catch (alterError) {
       console.error("❌ Error checking/adding agencyId column:", alterError);
-      // Don't throw - column might already exist with constraint
     }
   } catch (error) {
     console.error("❌ Error ensuring tables exist:", error);
@@ -169,6 +163,7 @@ interface User {
   } | null;
 }
 
+// POST - Create new user
 export async function POST(req: Request) {
   try {
     console.log("=== Starting user creation process ===");
@@ -201,7 +196,6 @@ export async function POST(req: Request) {
     }
     console.log("✅ Session found for user:", session.user.id);
 
-    // Get the agency admin ID from session
     const agencyAdminId = session.user.id;
     console.log("🏢 Agency Admin ID:", agencyAdminId);
 
@@ -225,11 +219,9 @@ export async function POST(req: Request) {
 
     console.log("✅ Verified agency admin status");
     
-    // Ensure tables exist before proceeding
     await ensureTablesExist();
     console.log("✅ Database tables verified");
     
-    // Parse form data
     const formData = await req.formData();
     console.log("Form data received:", Object.fromEntries(formData.entries()));
     
@@ -244,7 +236,6 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
     
-    // Extract form data with proper type checking
     const name = formData.get('name')!.toString().trim();
     const phoneNumber = formData.get('phoneNumber')?.toString()?.trim() || '';
     const email = formData.get('email')!.toString().toLowerCase().trim();
@@ -294,12 +285,11 @@ export async function POST(req: Request) {
 
     console.log("✅ All validations passed");
 
-    // Check if user already exists in user_form table
+    // Check if user already exists
     const existingUserForm = await prisma.userForm.findUnique({
       where: { email },
     });
     
-    // Check if user already exists in main user table
     const existingUser = await prisma.user.findUnique({
       where: { email },
     });
@@ -318,7 +308,6 @@ export async function POST(req: Request) {
       if (existingUserForm) {
         console.log("🔄 Updating existing user_form with agencyId:", agencyAdminId);
 
-        // Update existing user_form entry and ensure agency relation is connected
         updatedUser = await prisma.userForm.update({
           where: { email },
           data: {
@@ -326,7 +315,6 @@ export async function POST(req: Request) {
             phoneNumber: phoneNumber || existingUserForm.phoneNumber,
             userType: userType,
             password: await hash(password, 10),
-            // Use relation connect to reliably set the foreign key
             agency: { connect: { id: agencyAdminId } },
             updatedAt: new Date(),
             resetToken,
@@ -346,7 +334,6 @@ export async function POST(req: Request) {
 
         console.log("✅ User updated with agencyId:", updatedUser.agencyId);
       } else if (existingUser) {
-        // Update main user table
         await prisma.passwordReset.upsert({
           where: { userId: existingUser.id },
           update: {
@@ -445,25 +432,22 @@ export async function POST(req: Request) {
       });
     }
 
-    // Create new user if not exists
+    // Create new user
     console.log("🔧 Creating new user with agency ID:", agencyAdminId);
 
-  // Generate password reset token and hash password once for reuse
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  const resetToken = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-  const resetTokenExpiry = new Date();
-  resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 24);
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    const resetToken = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    const resetTokenExpiry = new Date();
+    resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 24);
 
-  const hashedPassword = await hash(password, 10);
+    const hashedPassword = await hash(password, 10);
 
-    // Create a unique username derived from email to avoid P2002 (unique constraint) on username
-    // Prefer a sanitized local-part of the email then append numeric suffixes until unique.
+    // Generate unique username
     const emailLocalPart = (email.split('@')[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '') || `user${Date.now().toString().slice(-5)}`;
     let candidateUsername = emailLocalPart;
     let suffix = 0;
 
-    // Loop to find a username that doesn't already exist in either userForm or main User table.
     while (true) {
       const existsInUserForm = await prisma.userForm.findFirst({ where: { username: candidateUsername } });
       if (!existsInUserForm) break;
@@ -473,7 +457,7 @@ export async function POST(req: Request) {
 
     console.log('✅ Resolved unique username:', candidateUsername);
 
-    // Verify agencyId is valid before creating
+    // Verify agencyId is valid
     const agencyExists = await prisma.user.findUnique({
       where: { id: agencyAdminId },
       select: { id: true }
@@ -488,8 +472,6 @@ export async function POST(req: Request) {
     }
 
     console.log("✅ Agency exists, proceeding with user creation");
-
-    // Create new user with agencyId - using explicit field mapping
     console.log("📝 Creating user for agency:", agencyAdminId);
 
     const newUser = await prisma.userForm.create({
@@ -498,16 +480,12 @@ export async function POST(req: Request) {
         phoneNumber,
         phoneExtension: '+91',
         email,
-        // Use the resolved unique username
         username: candidateUsername,
         password: hashedPassword,
         userType,
         status: 'ACTIVE' as const,
         createdBy: agencyAdminId,
-        // Ensure agencyId is explicitly set so the FK column is populated
         agencyId: agencyAdminId,
-        // NOTE: The generated Prisma types for this model don't expose the relation field
-        // on create input, so we can't use `agency: { connect: ... }` here — remove it.
         resetToken,
         resetTokenExpiry
       },
@@ -528,7 +506,7 @@ export async function POST(req: Request) {
     console.log("✅ User created successfully:", newUser);
     console.log("✅ Agency ID stored:", newUser.agencyId);
 
-    // Verify the agencyId was actually stored
+    // Verify the agencyId was stored
     const verifyUser = await prisma.userForm.findUnique({
       where: { id: newUser.id },
       select: { id: true, agencyId: true, name: true }
@@ -538,7 +516,6 @@ export async function POST(req: Request) {
 
     if (!verifyUser?.agencyId) {
       console.error("⚠️ WARNING: agencyId is NULL in database after creation!");
-      console.error("This indicates a schema mismatch or constraint issue");
     }
 
     // Send welcome email
@@ -563,14 +540,14 @@ export async function POST(req: Request) {
       console.error('Error sending email:', emailError);
     }
 
-    // Also create or update the main `User` record so the created user can sign in immediately.
+    // Also create main User record for login
     try {
       const upsertedUser = await prisma.user.upsert({
         where: { email },
         update: {
           name: name || undefined,
           password: hashedPassword,
-          userType: userType as UserType,  // Add type assertion
+          userType: userType as UserType,
           agencyId: agencyAdminId,
           updatedAt: new Date(),
           status: 'ACTIVE'
@@ -581,7 +558,7 @@ export async function POST(req: Request) {
           name: name || '',
           companyName: name || '',
           businessType: 'AGENCY',
-         userType: userType as UserType,  // Add type assertion
+          userType: userType as UserType,
           agencyId: agencyAdminId,
           status: 'ACTIVE'
         },
@@ -601,7 +578,6 @@ export async function POST(req: Request) {
   } catch (error: unknown) {
     console.error("❌ Error creating user:", error);
     
-    // More detailed error logging
     if (isPrismaError(error)) {
       console.error("Prisma error code:", error.code);
       console.error("Prisma error meta:", error.meta);
@@ -618,6 +594,7 @@ export async function POST(req: Request) {
   }
 }
 
+// GET - Fetch all users for the agency
 export async function GET() {
   try {
     console.log("📄 Fetching users list...");
@@ -680,6 +657,7 @@ export async function GET() {
     console.error("❌ Error fetching users:", error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch users';
     return NextResponse.json({
+      success: false,
       error: errorMessage
     }, { status: 500 });
   } finally {
@@ -687,70 +665,24 @@ export async function GET() {
   }
 }
 
-export async function DELETE(req: Request) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
-    
-    if (!id) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 });
-    }
-
-    console.log("🗑️ Deleting user with ID:", id);
-
-    // Verify user belongs to this agency
-    const user = await prisma.userForm.findUnique({
-      where: { id },
-      include: { profileImage: true }
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    if (user.agencyId !== session.user.id) {
-      return NextResponse.json({ 
-        error: "You can only delete users from your own agency" 
-      }, { status: 403 });
-    }
-
-    await prisma.userForm.delete({
-      where: { id }
-    });
-
-    console.log("✅ User deleted successfully");
-
-    return NextResponse.json({
-      success: true,
-      message: "User deleted successfully"
-    });
-  } catch (error: unknown) {
-    console.error("❌ Error deleting user:", error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to delete user';
-    return NextResponse.json({
-      error: errorMessage
-    }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
-  }
-}
-
+// PATCH - Reveal password (returns masked for security)
 export async function PATCH(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ 
+        success: false,
+        error: "Unauthorized" 
+      }, { status: 401 });
     }
 
     const { id } = await req.json();
     
     if (!id) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+      return NextResponse.json({ 
+        success: false,
+        error: "User ID is required" 
+      }, { status: 400 });
     }
 
     console.log("👁️ Revealing password for user ID:", id);
@@ -766,11 +698,15 @@ export async function PATCH(req: Request) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ 
+        success: false,
+        error: "User not found" 
+      }, { status: 404 });
     }
 
     if (user.agencyId !== session.user.id) {
       return NextResponse.json({ 
+        success: false,
         error: "You can only view passwords for users in your agency" 
       }, { status: 403 });
     }
@@ -778,7 +714,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        password: "••••••••"
+        password: "••••••••" // For security, never return actual password
       }
     });
 
@@ -786,72 +722,7 @@ export async function PATCH(req: Request) {
     console.error("❌ Error revealing password:", error);
     const errorMessage = error instanceof Error ? error.message : 'Failed to reveal password';
     return NextResponse.json({
-      error: errorMessage
-    }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
-  }
-}
-
-export async function PUT(req: Request) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const body = await req.json();
-    const { id, status } = body;
-    
-    if (!id || !status) {
-      return NextResponse.json({ error: "ID and status are required" }, { status: 400 });
-    }
-
-    if (!["ACTIVE", "INACTIVE"].includes(status)) {
-      return NextResponse.json({ error: "Invalid status value" }, { status: 400 });
-    }
-
-    console.log(`🔄 Updating user ${id} status to ${status}`);
-
-    const user = await prisma.userForm.findUnique({
-      where: { id }
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    if (user.agencyId !== session.user.id) {
-      return NextResponse.json({ 
-        error: "You can only update users from your own agency" 
-      }, { status: 403 });
-    }
-
-    const updatedUser = await prisma.userForm.update({
-      where: { id },
-      data: { 
-        status,
-        updatedAt: new Date()
-      },
-      include: {
-        profileImage: true
-      }
-    });
-
-    console.log("✅ User status updated successfully");
-
-    return NextResponse.json({
-      success: true,
-      message: `User status changed to ${status}`,
-      data: {
-        ...updatedUser,
-        password: undefined
-      }
-    });
-  } catch (error: unknown) {
-    console.error("❌ Error updating user status:", error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to update user status';
-    return NextResponse.json({
+      success: false,
       error: errorMessage
     }, { status: 500 });
   } finally {

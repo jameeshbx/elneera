@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import { signOut, useSession } from "next-auth/react"
+import { Session } from "next-auth"
 
 type MenuItem = {
   title: string
@@ -52,6 +53,7 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
   const [themeColor, setThemeColor] = useState("#4ECDC4")
   const [profileData, setProfileData] = useState(initialProfileData)
   const [profileImageKey, setProfileImageKey] = useState(Date.now())
+  const [logoError, setLogoError] = useState(false)
 
   useEffect(() => {
     const handleResize = () => {
@@ -62,72 +64,191 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
     return () => window.removeEventListener("resize", handleResize)
   }, [])
 
- useEffect(() => {
+ 
+  useEffect(() => {
   const fetchCompanyData = async () => {
     try {
-      
-      const currentUserResponse = await fetch('/api/auth/agency-profile-admin', {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-      });
-
-      if (!currentUserResponse.ok) {
-        throw new Error(`HTTP error! status: ${currentUserResponse.status}`);
+      // Wait for session to be available
+      if (!session) {
+        console.log('No session available yet')
+        return
       }
 
-      const currentUserData = await currentUserResponse.json();
-      console.log('Team Lead Sidebar - Current User Data:', currentUserData);
+let userId = (session.user as Session['user'] & { id?: string })?.id;
 
-      // Extract landing page color directly from the response
-      const landingPageColor = currentUserData?.companyInformation?.landingPageColor || "#4ECDC4";
-      
-      console.log('Setting theme color to:', landingPageColor);
-      
-      // Set the theme color
-      setThemeColor(landingPageColor);
-      
-      // Update CSS variables
-      document.documentElement.style.setProperty('--theme-color', landingPageColor);
-      document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`);
-      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20));
+      // If session didn't include id, ask server for it
+      if (!userId) {
+        try {
+          const whoami = await fetch('/api/auth/whoami', { credentials: 'include' })
+          if (whoami.ok) {
+            const body = await whoami.json()
+            if (body?.success && body?.id) {
+              userId = body.id
+            }
+          } else {
+            console.warn('whoami lookup failed:', whoami.status)
+          }
+        } catch{
+          console.warn('whoami fetch error')
+        }
+      }
 
-      // Update company data if needed
+      if (!userId) {
+        // Fallback: Try to fetch company data without userId
+        const fallbackRes = await fetch('/api/auth/agency-profile-admin', {
+          credentials: 'include'
+        })
+        
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json()
+          const landingPageColor = fallbackData?.companyInformation?.landingPageColor || '#4ECDC4'
+          setThemeColor(landingPageColor)
+          document.documentElement.style.setProperty('--theme-color', landingPageColor)
+          document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+          document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+            // Notify other components about the theme change
+            try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch{}
+            // Notify other components about logo (if present)
+            try { window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: fallbackData?.companyInformation?.logo || null, name: fallbackData?.companyInformation?.name || null } })) } catch  {}
+          
+          const logoUrl = fallbackData?.companyInformation?.logo || null
+          setCompanyData({ 
+            name: fallbackData?.companyInformation?.name || 'Team Lead', 
+            logoUrl: logoUrl, 
+            landingPageColor 
+          })
+          setLogoError(false)
+          
+          if (fallbackData?.profileData) {
+            setProfileData({
+              name: fallbackData.profileData.name,
+              email: fallbackData.profileData.email,
+              bio: fallbackData.profileData.bio || '',
+              fullName: fallbackData.profileData.fullName,
+              mobile: fallbackData.profileData.mobile,
+              location: fallbackData.profileData.location,
+              image: fallbackData.profileData.avatarUrl
+            })
+          }
+        }
+        setIsLoading(false)
+        return
+      }
+
+      // 1) Fetch team lead details to get agencyId
+      const teamLeadRes = await fetch(`/api/auth/agency-add-user/${userId}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!teamLeadRes.ok) {
+        throw new Error(`Team lead fetch failed: ${teamLeadRes.status}`)
+      }
+
+      const teamLead = await teamLeadRes.json()
+
+      // Expecting agencyId in the returned payload
+      const agencyId = teamLead.agencyId || teamLead.data?.agencyId
+      
+      if (!agencyId) {
+        console.warn('No agencyId found for team lead, falling back to session-based agency-profile-admin')
+        const fbRes = await fetch('/api/auth/agency-profile-admin', { credentials: 'include' })
+        if (!fbRes.ok) throw new Error(`Fallback profile fetch failed: ${fbRes.status}`)
+        const fallbackData = await fbRes.json()
+        const landingPageColor = fallbackData?.companyInformation?.landingPageColor || '#4ECDC4'
+        setThemeColor(landingPageColor)
+        document.documentElement.style.setProperty('--theme-color', landingPageColor)
+        document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+        
+        const logoUrl = fallbackData?.companyInformation?.logo || null
+        setCompanyData({ 
+          name: fallbackData?.companyInformation?.name || 'Team Lead', 
+          logoUrl: logoUrl, 
+          landingPageColor 
+        })
+        setLogoError(false)
+        
+        if (fallbackData?.profileData) {
+          setProfileData({
+            name: fallbackData.profileData.name,
+            email: fallbackData.profileData.email,
+            bio: fallbackData.profileData.bio || '',
+            fullName: fallbackData.profileData.fullName,
+            mobile: fallbackData.profileData.mobile,
+            location: fallbackData.profileData.location,
+            image: fallbackData.profileData.avatarUrl
+          })
+        }
+        setIsLoading(false)
+        return
+      }
+
+      // 2) Fetch agency admin details using agencyId
+      const agencyRes = await fetch(`/api/auth/agency-profile-admin?agencyId=${agencyId}`, {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!agencyRes.ok) {
+        throw new Error(`Agency profile fetch failed: ${agencyRes.status}`)
+      }
+
+      const agencyData = await agencyRes.json()
+
+      const landingPageColor = agencyData?.companyInformation?.landingPageColor || "#4ECDC4"
+      setThemeColor(landingPageColor)
+      document.documentElement.style.setProperty('--theme-color', landingPageColor)
+      document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+      // Notify other components about the theme change
+      try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch {}
+
+      const companyLogo = agencyData?.companyInformation?.logo || null
       setCompanyData({
-        name: currentUserData?.companyInformation?.name || 'Team Lead',
-        logoUrl: currentUserData?.companyInformation?.logo || null,
+        name: agencyData?.companyInformation?.name || 'Team Lead',
+        logoUrl: companyLogo,
         landingPageColor
-      });
+      })
+      setLogoError(false) // Reset error state when new logo is loaded
+      
+      // Broadcast logo and theme updates so header and other components can react
+      try { window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: companyLogo, name: agencyData?.companyInformation?.name || null } })) } catch  {}
+      try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch {}
 
-      // Update profile data if available
-      if (currentUserData?.profileData) {
+      if (agencyData?.profileData) {
         setProfileData({
-          name: currentUserData.profileData.name,
-          email: currentUserData.profileData.email,
-          bio: currentUserData.profileData.bio || '',
-          fullName: currentUserData.profileData.fullName,
-          mobile: currentUserData.profileData.mobile,
-          location: currentUserData.profileData.location,
-          image: currentUserData.profileData.avatarUrl
-        });
+          name: agencyData.profileData.name,
+          email: agencyData.profileData.email,
+          bio: agencyData.profileData.bio || '',
+          fullName: agencyData.profileData.fullName,
+          mobile: agencyData.profileData.mobile,
+          location: agencyData.profileData.location,
+          image: agencyData.profileData.avatarUrl
+        })
       }
 
-    } catch (error) {
-      console.error('Error fetching company data:', error);
+    } catch  {
+      // Silently handle errors without console.error to prevent unhandled error warnings
       // Fallback to default color
-      const fallbackColor = "#4ECDC4";
-      setThemeColor(fallbackColor);
-      document.documentElement.style.setProperty('--theme-color', fallbackColor);
-      document.documentElement.style.setProperty('--theme-color-light', `${fallbackColor}20`);
-      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(fallbackColor, -20));
+      const fallbackColor = "#4ECDC4"
+      setThemeColor(fallbackColor)
+      document.documentElement.style.setProperty('--theme-color', fallbackColor)
+      document.documentElement.style.setProperty('--theme-color-light', `${fallbackColor}20`)
+      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(fallbackColor, -20))
+      // Notify other components about the theme change
+      try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: fallbackColor } })) } catch {}
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
-  // Only run once when the component mounts
-  fetchCompanyData();
-}, []); // Empty dependency array means this runs once on mount
+  // Only run when session is available
+  if (session) {
+    fetchCompanyData()
+  }
+}, [session])
+
 
   // Listen for logo updates from profile page AND agency form
   useEffect(() => {
@@ -139,6 +260,7 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
           logoUrl: event.detail.logoUrl
         } : null)
         setLogoKey(Date.now())
+        setLogoError(false)
       }
     }
 
@@ -261,25 +383,21 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
         },
       ],
     },
-    {
-      title: "Add Users", 
-      href: "/teamlead/dashboard/add-users",
-      icon: (
-        <Image
-          src="/people.png"
-          alt="Add Users"
-          width={20}
-          height={20}
-          className="min-w-[20px]"
-        />
-      ),
-    },
+    
     {
       title: "Add DMC",
       href: "/teamlead/dashboard/add-dmc",
       icon: <Image src="/Vector.svg" alt="Add DMC" width={20} height={20} className="min-w-[20px]" />,
     },
   ]
+
+  // Resolve image path (handles absolute, prefixed, and uploads)
+  const resolveImage = (path: string | null | undefined) => {
+    if (!path) return undefined
+    if (path.startsWith('http')) return path
+    if (path.startsWith('/')) return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${path}`
+    return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${path}`
+  }
 
   const accountItems = [
     {
@@ -288,7 +406,7 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
       icon: (
         <Image
           key={`profile-${profileImageKey}`}
-          src={profileData?.image || session?.user?.image || "/avatar/Image (3).png"}
+          src={resolveImage(profileData?.image) || resolveImage(session?.user?.image) || "/avatar/Image (3).png"}
           alt="Profile"
           width={20}
           height={20}
@@ -330,20 +448,6 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
 
   const isCollapsed = isMobile ? true : !expanded
 
-  const getLogoUrl = (logoPath: string | null | undefined) => {
-    if (!logoPath) return null
-    
-    if (logoPath.startsWith('http')) {
-      return logoPath
-    }
-    
-    if (logoPath.startsWith('/')) {
-      return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${logoPath}`
-    }
-    
-    return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${logoPath}`
-  }
-
   return (
     <aside
       className={`fixed inset-y-0 left-0 z-40 h-full bg-white shadow-lg transition-all duration-300 ${
@@ -359,42 +463,41 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
               <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
             ) : (
               <>
-                {companyData?.logoUrl ? (
+                {companyData?.logoUrl && !logoError ? (
+                  <div className="flex items-center w-full">
+                    {/* Use regular img tag for S3 URLs to avoid Next.js Image restrictions */}
+                    <img
+                      key={`logo-${logoKey}`}
+                      src={companyData.logoUrl}
+                      alt="Company Logo"
+                      style={{
+                        width: isCollapsed ? '32px' : '120px',
+                        height: '32px',
+                        objectFit: 'contain',
+                        maxWidth: '100%'
+                      }}
+                      onError={() => {
+                        // Silently handle error and show fallback
+                        setLogoError(true);
+                      }}
+                    />
+                  </div>
+                ) : (
                   <div className="flex items-center w-full">
                     <Image
-                      key={`${logoKey}-${companyData.logoUrl}`}
-                      src={getLogoUrl(companyData.logoUrl) || '/placeholder.svg?height=32&width=120'}
-                      alt="Company Logo"
+                      src={process.env.NEXT_PUBLIC_BASE_URL ? `${process.env.NEXT_PUBLIC_BASE_URL}/logo/elneeraw.png` : '/logo/elneeraw.png'}
+                      alt="Default Logo"
                       width={isCollapsed ? 32 : 120}
                       height={isCollapsed ? 32 : 32}
                       className="object-contain max-w-full h-8"
                       priority
-                      onError={(e) => {
-                        console.error('Error loading logo:', companyData.logoUrl)
-                        e.currentTarget.style.display = 'none'
-                        const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback')
-                        if (fallback) fallback.classList.remove('hidden')
-                      }}
                     />
-                    <div className="logo-fallback hidden">
-                      <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
-                        <span className="text-xs font-medium text-gray-500">
-                          {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
-                        </span>
-                      </div>
-                    </div>
+                    {!isCollapsed && (
+                      <span className="ml-2 text-lg font-semibold">
+                        {companyData?.name || 'Agency'}
+                      </span>
+                    )}
                   </div>
-                ) : (
-                  <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
-                    <span className="text-xs font-medium text-gray-500">
-                      {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
-                    </span>
-                  </div>
-                )}
-                {!isCollapsed && !companyData?.logoUrl && (
-                  <span className="ml-2 text-lg font-semibold">
-                    {companyData?.name || 'Agency'}
-                  </span>
                 )}
               </>
             )}

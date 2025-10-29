@@ -4,6 +4,7 @@ import { Bell, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { BreadcrumbItem } from "@/data/navigation"
 import { Breadcrumbs } from "@/app/agency-admin/(components)/Breadcrumbs"
+import { useSession } from "next-auth/react"
 
 interface TopBarProps {
   breadcrumbs: BreadcrumbItem[]
@@ -11,6 +12,12 @@ interface TopBarProps {
   subtitle?: string
   className?: string
   backgroundImage?: string
+}
+
+interface CompanyInformation {
+  name: string
+  logoUrl: string | null
+  landingPageColor: string
 }
 
 export function TopBar({
@@ -23,6 +30,9 @@ export function TopBar({
   const [showNotifications, setShowNotifications] = useState(false)
   const [themeColor, setThemeColor] = useState("#4ECDC4")
   const [isLightColor, setIsLightColor] = useState(false)
+  const [, setIsLoading] = useState(true)
+  const { data: session } = useSession()
+  const [, setCompanyData] = useState<CompanyInformation | null>(null)
 
   const adjustBrightness = (hex: string, percent: number): string => {
     const num = parseInt(hex.replace("#", ""), 16)
@@ -35,55 +45,186 @@ export function TopBar({
       (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1)
   }
 
-  // Listen for theme updates from Sidebar
-  useEffect(() => {
-    const handleThemeUpdate = (event: CustomEvent) => {
-      console.log('TopBar - Theme updated event received:', event.detail);
-      if (event.detail?.color) {
-        const newColor = event.detail.color;
-        setThemeColor(newColor);
-        checkIfLightColor(newColor);
-        
-        // Update CSS variables to match the new theme
-        document.documentElement.style.setProperty('--theme-color', newColor);
-        document.documentElement.style.setProperty('--theme-color-light', `${newColor}20`);
-        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(newColor, -20));
-      }
-    };
-
-    // Add event listener for theme updates
-    window.addEventListener('theme-updated', handleThemeUpdate as EventListener);
-
-    // Initial theme setup from CSS variable or default
-    const initialColor = getComputedStyle(document.documentElement)
-      .getPropertyValue('--theme-color')
-      .trim() || "#4ECDC4";
-    
-    if (initialColor !== "#4ECDC4") {
-      setThemeColor(initialColor);
-      checkIfLightColor(initialColor);
-    }
-
-    return () => {
-      window.removeEventListener('theme-updated', handleThemeUpdate as EventListener);
-    };
-  }, []);
-
   const checkIfLightColor = (hexColor: string) => {
-    // Remove # if present
     const hex = hexColor.replace('#', '')
-    
-    // Convert to RGB
     const r = parseInt(hex.substring(0, 2), 16)
     const g = parseInt(hex.substring(2, 4), 16)
     const b = parseInt(hex.substring(4, 6), 16)
-    
-    // Calculate relative luminance
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    
-    // If luminance is greater than 0.5, it's a light color
     setIsLightColor(luminance > 0.5)
   }
+
+  // Fetch company data - exact same logic as Sidebar
+  useEffect(() => {
+    const fetchCompanyData = async () => {
+      try {
+        // Wait for session to be available
+        if (!session) {
+          console.log('No session available yet')
+          return
+        }
+
+         let userId = session.user.id;
+        // If session didn't include id, ask server for it
+        if (!userId) {
+          try {
+            const whoami = await fetch('/api/auth/whoami', { credentials: 'include' })
+            if (whoami.ok) {
+              const body = await whoami.json()
+              if (body?.success && body?.id) {
+                userId = body.id
+              }
+            } else {
+              console.warn('whoami lookup failed:', whoami.status)
+            }
+          } catch {
+            console.warn('whoami fetch error')
+          }
+        }
+
+        if (!userId) {
+          console.error('User ID not found in session nor via whoami. Session data:', session)
+          // Fallback: Try to fetch company data without userId
+          const fallbackRes = await fetch('/api/auth/agency-profile-admin', {
+            credentials: 'include'
+          })
+          
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json()
+            const landingPageColor = fallbackData?.companyInformation?.landingPageColor || '#4ECDC4'
+            setThemeColor(landingPageColor)
+            checkIfLightColor(landingPageColor)
+            document.documentElement.style.setProperty('--theme-color', landingPageColor)
+            document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+            document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+            // Notify other components about the theme change
+            try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch  {}
+            
+            setCompanyData({ 
+              name: fallbackData?.companyInformation?.name || 'Team Lead', 
+              logoUrl: fallbackData?.companyInformation?.logo || null, 
+              landingPageColor 
+            })
+          }
+          setIsLoading(false)
+          return
+        }
+
+        console.log('Fetching data for userId:', userId)
+
+        // 1) Fetch team lead details to get agencyId
+        const teamLeadRes = await fetch(`/api/auth/agency-add-user/${userId}`, {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        if (!teamLeadRes.ok) {
+          throw new Error(`Team lead fetch failed: ${teamLeadRes.status}`)
+        }
+
+        const teamLead = await teamLeadRes.json()
+        console.log('Team Lead details:', teamLead)
+
+        // Expecting agencyId in the returned payload
+        const agencyId = teamLead.agencyId || teamLead.data?.agencyId
+        
+        if (!agencyId) {
+          console.warn('No agencyId found for team lead, falling back to session-based agency-profile-admin')
+          const fbRes = await fetch('/api/auth/agency-profile-admin', { credentials: 'include' })
+          if (!fbRes.ok) throw new Error(`Fallback profile fetch failed: ${fbRes.status}`)
+          const fallbackData = await fbRes.json()
+          const landingPageColor = fallbackData?.companyInformation?.landingPageColor || '#4ECDC4'
+          setThemeColor(landingPageColor)
+          checkIfLightColor(landingPageColor)
+          document.documentElement.style.setProperty('--theme-color', landingPageColor)
+          document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+          document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+          // Notify other components about the theme change
+          try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch  {}
+          
+          setCompanyData({ 
+            name: fallbackData?.companyInformation?.name || 'Team Lead', 
+            logoUrl: fallbackData?.companyInformation?.logo || null, 
+            landingPageColor 
+          })
+          setIsLoading(false)
+          return
+        }
+
+        // 2) Fetch agency admin details using agencyId
+        const agencyRes = await fetch(`/api/auth/agency-profile-admin?agencyId=${agencyId}`, {
+          method: 'GET',
+          credentials: 'include'
+        })
+
+        if (!agencyRes.ok) {
+          throw new Error(`Agency profile fetch failed: ${agencyRes.status}`)
+        }
+
+        const agencyData = await agencyRes.json()
+        console.log('Agency admin data:', agencyData)
+
+        const landingPageColor = agencyData?.companyInformation?.landingPageColor || "#4ECDC4"
+        setThemeColor(landingPageColor)
+        checkIfLightColor(landingPageColor)
+        document.documentElement.style.setProperty('--theme-color', landingPageColor)
+        document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+        // Notify other components about the theme change
+        try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch{}
+
+        setCompanyData({
+          name: agencyData?.companyInformation?.name || 'Team Lead',
+          logoUrl: agencyData?.companyInformation?.logo || null,
+          landingPageColor
+        })
+
+      } catch {
+        console.error('Error fetching company data:')
+        // Fallback to default color
+        const fallbackColor = "#4ECDC4"
+        setThemeColor(fallbackColor)
+        checkIfLightColor(fallbackColor)
+        document.documentElement.style.setProperty('--theme-color', fallbackColor)
+        document.documentElement.style.setProperty('--theme-color-light', `${fallbackColor}20`)
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(fallbackColor, -20))
+        // Notify other components about the theme change
+        try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: fallbackColor } })) } catch  {}
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    // Only run when session is available
+    if (session) {
+      fetchCompanyData()
+    }
+  }, [session])
+
+  // Listen for theme updates from Sidebar or other components
+  useEffect(() => {
+    const handleThemeUpdate = (event: CustomEvent) => {
+      console.log('TopBar: themeUpdated event received:', event.detail)
+      if (event.detail?.color) {
+        setThemeColor(event.detail.color)
+        checkIfLightColor(event.detail.color)
+        setCompanyData(prev => prev ? {
+          ...prev,
+          landingPageColor: event.detail.color
+        } : null)
+        
+        document.documentElement.style.setProperty('--theme-color', event.detail.color)
+        document.documentElement.style.setProperty('--theme-color-light', event.detail.color + '20')
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(event.detail.color, -20))
+      }
+    }
+
+    window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
+    
+    return () => {
+      window.removeEventListener('themeUpdated', handleThemeUpdate as EventListener)
+    }
+  }, [])
 
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications)
