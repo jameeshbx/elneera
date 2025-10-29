@@ -1,6 +1,6 @@
 "use client";
 import Enquirysection from "./enquiry-section";
-import { TopBar } from "@/app/teamlead/(components)/AgencyTopbar";
+import { TopBar } from "@/app/telecaller/(components)/AgencyTopbar";
 
 export default function Enquiry() {
   return (
