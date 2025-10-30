@@ -1,7 +1,7 @@
 "use client"
 import { TopBarContainer } from "@/app/admin/(components)/TobBarContainer"
-import { DMCRegistrationForm } from "@/app/agency/dashboard/add-dmc/add-dmc"
-import { DMCTable } from "@/app/agency/dashboard/add-dmc/dmc-table"
+import { DMCRegistrationForm } from "@/app/teamlead/dashboard/add-dmc/add-dmc"
+import { DMCTable } from "@/app/teamlead/dashboard/add-dmc/dmc-table"
 import { useState, useEffect } from "react"
 import { DMCFormProvider } from "@/context/dmc-form-context"
 

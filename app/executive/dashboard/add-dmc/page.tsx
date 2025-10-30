@@ -1,9 +1,9 @@
 "use client"
-import { TopBarContainer } from "@/app/admin/(components)/TobBarContainer"
 import { DMCRegistrationForm } from "@/app/executive/dashboard/add-dmc/add-dmc"
 import { DMCTable } from "@/app/executive/dashboard/add-dmc/dmc-table"
 import { useState, useEffect } from "react"
 import { DMCFormProvider } from "@/context/dmc-form-context"
+import { TopBar } from "@/app/executive/(components)/AgencyTopbar"
 
 export default function Home() {
   // Track sidebar expanded state to match the layout
@@ -34,7 +34,7 @@ export default function Home() {
           sidebarExpanded ? "lg:left-64" : "lg:left-20"
         } left-16`}
       >
-        <TopBarContainer />
+        <TopBar breadcrumbs={[]} title="Add DMC" subtitle="Add DMC" />
       </div>
 
       {/* Main content with padding to account for fixed header */}
