@@ -1,73 +1,70 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react"
-import { getColorInfo, generateColorVariants, type ColorInfo } from "@/lib/ColorUtils"
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 interface ColorContextType {
   landingPageColor: string
-  setLandingPageColor: (color: string) => void
-  colorInfo: ColorInfo
-  colorVariants: ReturnType<typeof generateColorVariants>
   isLightColor: boolean
+  setLandingPageColor: (color: string) => void
+  updateThemeColor: (color: string) => void
 }
 
 const ColorContext = createContext<ColorContextType | undefined>(undefined)
 
 export function ColorProvider({ children }: { children: ReactNode }) {
   const [landingPageColor, setLandingPageColor] = useState("#4ECDC4")
-  const [colorInfo, setColorInfo] = useState<ColorInfo>(getColorInfo("#4ECDC4"))
-  const [colorVariants, setColorVariants] = useState(generateColorVariants("#4ECDC4"))
+  const [isLightColor, setIsLightColor] = useState(false)
 
-  // Update color info and variants when color changes
+  const checkIfLightColor = (hexColor: string) => {
+    const hex = hexColor.replace('#', '')
+    const r = parseInt(hex.substring(0, 2), 16)
+    const g = parseInt(hex.substring(2, 4), 16)
+    const b = parseInt(hex.substring(4, 6), 16)
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    setIsLightColor(luminance > 0.5)
+  }
+
+  const adjustBrightness = (hex: string, percent: number): string => {
+    const num = parseInt(hex.replace("#", ""), 16)
+    const amt = Math.round(2.55 * percent)
+    const R = (num >> 16) + amt
+    const G = (num >> 8 & 0x00FF) + amt
+    const B = (num & 0x0000FF) + amt
+    return "#" + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+      (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+      (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1)
+  }
+
+  const updateThemeColor = (color: string) => {
+    setLandingPageColor(color)
+    checkIfLightColor(color)
+    
+    // Update CSS variables
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.setProperty('--theme-color', color)
+      document.documentElement.style.setProperty('--theme-color-light', color + '20')
+      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(color, -20))
+    }
+
+    // Dispatch event for components not using context
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('themeUpdated', { 
+        detail: { color } 
+      }))
+    }
+  }
+
   useEffect(() => {
-    const info = getColorInfo(landingPageColor)
-    const variants = generateColorVariants(landingPageColor)
-    setColorInfo(info)
-    setColorVariants(variants)
+    checkIfLightColor(landingPageColor)
   }, [landingPageColor])
 
-  // Load color from localStorage on mount
-  useEffect(() => {
-    const savedColor = localStorage.getItem('landingPageColor')
-    if (savedColor) {
-      setLandingPageColor(savedColor)
-    } else {
-      // Fetch from API if not in localStorage
-      fetchLandingPageColor()
-    }
-  }, [])
-
-  const fetchLandingPageColor = async () => {
-    try {
-      const response = await fetch('/api/auth/agency-profile-admin')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.companyInformation?.landingPageColor) {
-          const color = data.companyInformation.landingPageColor
-          setLandingPageColor(color)
-          localStorage.setItem('landingPageColor', color)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch landing page color:', error)
-    }
-  }
-
-  const updateLandingPageColor = (color: string) => {
-    setLandingPageColor(color)
-    localStorage.setItem('landingPageColor', color)
-  }
-
   return (
-    <ColorContext.Provider
-      value={{
-        landingPageColor,
-        setLandingPageColor: updateLandingPageColor,
-        colorInfo,
-        colorVariants,
-        isLightColor: colorInfo.isLight
-      }}
-    >
+    <ColorContext.Provider value={{ 
+      landingPageColor, 
+      isLightColor, 
+      setLandingPageColor,
+      updateThemeColor
+    }}>
       {children}
     </ColorContext.Provider>
   )

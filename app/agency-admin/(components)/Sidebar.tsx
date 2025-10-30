@@ -65,7 +65,10 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
   useEffect(() => {
     const fetchCompanyData = async () => {
       try {
-        const response = await fetch("/api/auth/agency-profile-admin", {
+     const userId = session?.user?.id || session?.user?.email || undefined   
+      const url = userId ? `/api/auth/agency-profile-admin?userId=${encodeURIComponent(userId)}` : "/api/auth/agency-profile-admin"
+
+        const response = await fetch(url, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -107,6 +110,12 @@ if (data?.profileData) {
         document.documentElement.style.setProperty('--theme-color', companyInfo.landingPageColor)
         document.documentElement.style.setProperty('--theme-color-light', companyInfo.landingPageColor + '20')
         document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(companyInfo.landingPageColor, -20))
+        // Notify other components (TopBar, ColorProvider, etc.) that theme changed
+        try {
+          window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: companyInfo.landingPageColor } }))
+        } catch {
+          // ignore silently if dispatch not available
+        }
         
       } catch (error) {
         console.error('Failed to fetch company data:', error)

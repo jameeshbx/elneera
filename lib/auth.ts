@@ -43,7 +43,9 @@ export const authOptions: NextAuthOptions = {
           const { email, password } = loginSchema.parse(credentials);
           const normalizedEmail = email.toLowerCase().trim();
 
-          const isDbConnected = await checkDatabaseConnection();
+        console.log('🔐 Authentication attempt for:', normalizedEmail);
+
+        const isDbConnected = await checkDatabaseConnection();
           if (!isDbConnected) {
             throw new Error(JSON.stringify({
               error: 'DatabaseError',
@@ -71,27 +73,22 @@ export const authOptions: NextAuthOptions = {
           }
 
           if (!user && !userFormUser) {
-            throw new Error(JSON.stringify({
-              error: 'UserNotFound',
-              message: 'No account found with this email address.'
-            }));
+            console.log('❌ No user found for:', normalizedEmail);
+            // Do not reveal which part failed to the client; return a generic message
+            throw new Error('Invalid email or password');
           }
 
           // Handle user_form table users
           if (userFormUser) {
             if (userFormUser.status !== 'ACTIVE') {
-              throw new Error(JSON.stringify({
-                error: 'AccountInactive',
-                message: 'Your account is not active. Please contact support.'
-              }));
+              console.log('⚠️ Inactive user attempted login:', normalizedEmail);
+              throw new Error('Your account is not active. Please contact support.');
             }
 
             const isValid = await bcrypt.compare(password, userFormUser.password);
+            console.log('🔍 userForm password match for', normalizedEmail, ':', isValid);
             if (!isValid) {
-              throw new Error(JSON.stringify({
-                error: 'InvalidPassword',
-                message: 'The password you entered is incorrect.'
-              }));
+              throw new Error('Invalid email or password');
             }
 
             return {
@@ -112,18 +109,14 @@ export const authOptions: NextAuthOptions = {
           // Handle main user table
           if (user) {
             if (!user.password) {
-              throw new Error(JSON.stringify({
-                error: 'NoPasswordSet',
-                message: 'Account not properly configured. Please contact support.'
-              }));
+              console.log('⚠️ User has no password set:', normalizedEmail);
+              throw new Error('Account not properly configured. Please contact support.');
             }
 
             const isValid = await bcrypt.compare(password, user.password);
+            console.log('🔍 main user password match for', normalizedEmail, ':', isValid);
             if (!isValid) {
-              throw new Error(JSON.stringify({
-                error: 'InvalidPassword',
-                message: 'The password you entered is incorrect.'
-              }));
+              throw new Error('Invalid email or password');
             }
 
             const agencyFormStatus = user.agencyForms[0]?.status || null;
@@ -145,10 +138,16 @@ export const authOptions: NextAuthOptions = {
 
           throw new Error('User authentication failed');
         } catch (error) {
+          // Log the full error server-side for debugging
+          console.error('❌ Authorization error:', error);
           if (error instanceof Error) {
-            throw new Error(error.message || 'Authentication failed. Please try again.');
+            // For credential failures return a generic message to the client
+            const msg = error.message && (error.message === 'Invalid email or password' || error.message.includes('Account not properly configured') || error.message.includes('Your account is not active'))
+              ? error.message
+              : 'Invalid email or password';
+            throw new Error(msg);
           }
-          throw new Error('An unexpected error occurred during authentication');
+          throw new Error('Invalid email or password');
         }
       },
     }),
