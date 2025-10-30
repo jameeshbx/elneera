@@ -63,7 +63,7 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const isAuthorized = user.userType === "AGENCY_ADMIN" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+    const isAuthorized = user.userType === "TRAVEL_AGENCY" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
 
     if (!isAuthorized) {
       return NextResponse.json(

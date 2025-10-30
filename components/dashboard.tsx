@@ -7,7 +7,6 @@ import Image from "next/image"
 import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 
-
 import ActiveUsersChart from "@/components/active-users-chart"
 import SalesOverviewChart from "@/components/sales-overview-chart"
 import { RequestsTable, type RequestRow } from "@/components/requests-table"
@@ -25,25 +24,6 @@ export default function Page() {
     rejectedRequests: 0,
   })
 
-  // Function to generate request ID
-  const generateRequestId = (id: string, index: number): string => {
-    return `AREQ${String(index + 1).padStart(5, "0")}`
-  }
-
-  // Function to get manager name (rotating assignment)
-  const getManagerName = (index: number): string => {
-    const managers = ["Admin Manager", "Agency Manager", "Operations Manager"]
-    return managers[index % managers.length]
-  }
-
-  // Function to get status from form data
-  const getStatus = (status: string | undefined): string => {
-    if (!status) return "Pending" // Default to Pending if status is not set
-    // Convert to title case for display
-    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()
-  }
-
-
   // Fetch agency form data
   useEffect(() => {
     const fetchAgencyRequests = async () => {
@@ -55,39 +35,31 @@ export default function Page() {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            ...(session?.user?.email && { 'X-User-Email': session.user.email })
           },
         })
+
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+          const errorData = await response.json().catch(() => ({}))
           if (response.status === 403) {
-            setError("You don't have permission to view agency requests. Please contact an administrator.");
-            setAgencyRequests([]);
-            return;
+            setError("You don't have permission to view agency requests. Please contact an administrator.")
+            setAgencyRequests([])
+            return
           }
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
         }
 
-        let data
-        try {
-          data = await response.json()
-        } catch (jsonError) {
-          console.error("Failed to parse JSON:", jsonError)
-          const responseText = await response.text()
-          console.error("Response text:", responseText)
-          throw new Error("Invalid JSON response from server")
-        }
+        const data = await response.json()
 
         // Calculate stats from actual data
         const totalRequests = data.length
         const pendingRequests = data.filter((item: { status?: string }) => 
-          !item.status || item.status.toLowerCase() === 'pending'
+          item.status?.toUpperCase() === 'PENDING'
         ).length
         const activeRequests = data.filter((item: { status?: string }) => 
-          item.status?.toLowerCase() === 'active'
+          item.status?.toUpperCase() === 'APPROVED'
         ).length
         const rejectedRequests = data.filter((item: { status?: string }) => 
-          item.status?.toLowerCase() === 'rejected'
+          item.status?.toUpperCase() === 'REJECTED'
         ).length
 
         setStats({
@@ -99,39 +71,34 @@ export default function Page() {
 
         // Transform agency form data to RequestRow format
         const transformedData: RequestRow[] = data.map(
-          (
-            form: {
-              id: string
-              companyName: string
-              contactPerson: string
-              name: string // Company name from the form
-              phoneCountryCode: string
-              phoneNumber: string
-              email: string
-              status: string
-              companyPhone?: string
-              companyPhoneCode?: string
-              createdAt: string
-              ownerName?: string
-            },
-            index: number,
-          ) => ({
-            id: generateRequestId(form.id, index),
+          (form: {
+            id: string
+            companyName: string
+            name: string
+            phoneCountryCode: string
+            phoneNumber: string
+            email: string
+            status: string
+            companyPhone?: string
+            companyPhoneCode?: string
+            createdAt: string
+          }, index: number) => ({
+            id: `AREQ${String(index + 1).padStart(5, "0")}`,
             rawId: form.id,
-            name: form.contactPerson || form.ownerName || "N/A",
+            name: form.name || "N/A",
             phone: form.companyPhone
               ? `${form.companyPhoneCode || ""} ${form.companyPhone}`.trim()
               : `${form.phoneCountryCode || ""} ${form.phoneNumber || ""}`.trim(),
             email: form.email,
             company: form.companyName,
-            status: getStatus(form.status),
+            status: form.status?.charAt(0).toUpperCase() + form.status?.slice(1).toLowerCase() || "Pending",
             requestedOn: new Date(form.createdAt).toLocaleDateString("en-GB", {
               day: "2-digit",
               month: "2-digit",
               year: "numeric",
             }),
-            managedBy: getManagerName(index),
-          }),
+            managedBy: "Admin",
+          })
         )
 
         setAgencyRequests(transformedData)
@@ -143,8 +110,14 @@ export default function Page() {
       }
     }
 
-    fetchAgencyRequests()
-  }, [])
+    if (session?.user?.email) {
+      fetchAgencyRequests()
+    }
+  }, [session])
+
+  const approvalRate = stats.totalRequests > 0 
+    ? Math.round((stats.activeRequests / stats.totalRequests) * 100) 
+    : 0
 
   return (
     <div className="min-h-screen w-full bg-muted/40">
@@ -157,11 +130,8 @@ export default function Page() {
                 <CardDescription className="font-semibold font-Helvetica text-[#6F7175]">
                   Total Requests
                 </CardDescription>
-                <CardTitle className="text-xl mt-1 flex items-center gap-2">
+                <CardTitle className="text-xl mt-1">
                   {stats.totalRequests}
-                  <span className="text-emerald-600 text-sm font-medium inline-flex items-center gap-1">
-                    {stats.totalRequests > 0 ? "+" : ""}
-                  </span>
                 </CardTitle>
               </div>
               <div className="size-10 rounded-lg bg-[#183F30] text-emerald-700 flex items-center justify-center">
@@ -178,7 +148,7 @@ export default function Page() {
                 </CardDescription>
                 <CardTitle className="text-xl mt-1 flex items-center gap-2">
                   {stats.pendingRequests}
-                  <span className="text-orange-600 text-sm font-medium inline-flex items-center gap-1">Pending</span>
+                  <span className="text-orange-600 text-sm font-medium">Pending</span>
                 </CardTitle>
               </div>
               <div className="size-10 rounded-lg bg-[#183F30] text-emerald-700 flex items-center justify-center">
@@ -187,7 +157,7 @@ export default function Page() {
             </div>
           </Card>
 
-          {/* Approval Rate wide pill card */}
+          {/* Approval Rate card */}
           <Card className="rounded-xl px-4 py-2 border-none bg-[var(--dark-blue)]">
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground text-[#B8C0CC] font-semibold font-Helvetica">
@@ -200,7 +170,7 @@ export default function Page() {
 
             <div className="flex items-center gap-3">
               <div className="text-xl font-semibold text-white">
-                {stats.totalRequests > 0 ? Math.round((stats.activeRequests / stats.totalRequests) * 100) : 0}%
+                {approvalRate}%
               </div>
               <Badge variant="secondary" className="bg-[#D2FFE6] text-emerald-700 hover:bg-emerald-50">
                 <TrendingUp className="h-3.5 w-3.5 mr-1" />
@@ -213,9 +183,7 @@ export default function Page() {
             <div className="mt-1 h-1 w-full rounded-full bg-[#627D98]">
               <div
                 className="h-1 rounded-full bg-[#00C7F2]"
-                style={{
-                  width: `${stats.totalRequests > 0 ? (stats.activeRequests / stats.totalRequests) * 100 : 0}%`,
-                }}
+                style={{ width: `${approvalRate}%` }}
                 aria-label="active progress"
               />
             </div>
@@ -246,7 +214,7 @@ export default function Page() {
                   </div>
 
                   <div className="grid grid-cols-3 gap-3 py-2 text-sm mt-4">
-                    <div className="flex l items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <div className="flex flex-col items-center gap-1">
                         <div className="size-10 rounded-lg bg-[#183F30] text-emerald-700 flex items-center justify-center">
                           <Image src="/dashboard/default.svg" alt="Total" width={20} height={20} />
@@ -257,7 +225,7 @@ export default function Page() {
                         <div className="text-xs text-muted-foreground">Total</div>
                       </div>
                     </div>
-                    <div className="flex l items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <div className="flex flex-col items-center gap-1">
                         <div className="size-10 rounded-lg bg-[#183F30] text-emerald-700 flex items-center justify-center">
                           <Image src="/dashboard/sharp.svg" alt="Approved" width={20} height={20} />
@@ -268,7 +236,7 @@ export default function Page() {
                         <div className="text-xs text-muted-foreground">Active</div>
                       </div>
                     </div>
-                    <div className="flex l items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <div className="flex flex-col items-center gap-1">
                         <div className="size-10 rounded-lg bg-[#183F30] text-emerald-700 flex items-center justify-center">
                           <Image src="/dashboard/sales.svg" alt="Pending" width={20} height={20} />
@@ -290,9 +258,8 @@ export default function Page() {
             <div className="flex items-start justify-between p-4 px-6">
               <div>
                 <CardTitle>Agency Overview</CardTitle>
-                <CardDescription className="inline-flex text-[#6F7175] items-center gap-1 mt-1">
-                  <span className="text-emerald-600 font-semibold inline-flex items-center gap-1">({"+"}5) more</span>
-                  in 2025
+                <CardDescription className="text-[#6F7175] mt-1">
+                  Request trends over time
                 </CardDescription>
               </div>
             </div>
@@ -303,7 +270,7 @@ export default function Page() {
           </Card>
         </div>
 
-        {/* Agency Requests Table - Full Width */}
+        {/* Agency Requests Table */}
         <div className="w-full">
           {loading ? (
             <Card className="rounded-2xl border-none p-8">
@@ -329,7 +296,7 @@ export default function Page() {
           )}
         </div>
 
-        <footer className="py-6 text-xs text-muted-foreground">@ 2025, Made by Trekking Miles.</footer>
+        <footer className="py-6 text-xs text-muted-foreground">© 2025, Made by Trekking Miles.</footer>
       </main>
     </div>
   )

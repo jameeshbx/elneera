@@ -169,7 +169,7 @@ export async function POST(req: Request) {
 
     // Validate the user type
     // Validate the user type - Updated to handle all possible user types
-    const validUserTypes = ['MANAGER', 'EXECUTIVE', 'TEAM_LEAD', 'TL', 'AGENCY_ADMIN'];
+    const validUserTypes = ['MANAGER', 'EXECUTIVE', 'TEAM_LEAD', 'TL', 'TRAVEL_AGENCY'];
     if (!userType || !validUserTypes.includes(userType)) {
       console.error("❌ Invalid user type received:", userType);
       return NextResponse.json(
@@ -288,7 +288,7 @@ export async function POST(req: Request) {
           data: {
             name: name || existingUser.name,
             phone: phoneNumber || existingUser.phone,
-            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL' | 'AGENCY_ADMIN',
+            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL' | 'TRAVEL_AGENCY',
             password: await hash(password, 10), // Update password
             updatedAt: new Date(),
             businessType: 'AGENCY'
@@ -430,8 +430,8 @@ export async function POST(req: Request) {
         html: emailContent.html
       });
 
-      // Send notification to admin for AGENCY_ADMIN signup
-      if (userType === 'AGENCY_ADMIN') {
+      // Send notification to admin for TRAVEL_AGENCY signup
+      if (userType === 'TRAVEL_AGENCY') {
         const adminEmail = 'anusree@buyexchange.in';
         const adminSubject = 'New Agency Admin Registration';
         const adminHtml = `

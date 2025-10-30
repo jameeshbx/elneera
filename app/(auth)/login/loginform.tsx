@@ -105,9 +105,9 @@ export default function LoginForm() {
     // Inside the handleSubmit function, replace the getRedirectPath function with this fixed version:
 
 const getRedirectPath = async (): Promise<string> => {
-  // Handle AGENCY_ADMIN specific redirection
-  if ((userType && userType.toUpperCase() === "AGENCY_ADMIN") || 
-      (role && role.toUpperCase() === "AGENCY_ADMIN")) {
+  // Handle TRAVEL_AGENCY specific redirection
+  if ((userType && userType.toUpperCase() === "TRAVEL_AGENCY") || 
+      (role && role.toUpperCase() === "TRAVEL_AGENCY")) {
     
     try {
       const agencyFormRes = await fetch('/api/agencyform');

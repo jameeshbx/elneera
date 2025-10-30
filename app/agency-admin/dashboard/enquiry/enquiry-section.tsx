@@ -569,15 +569,8 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
               <ChevronDown className="h-4 w-4" />
             </Button>
             <Button
-              onClick={() => setIsDialogOpen(true)}
-              className="bg-white hover:bg-white text-green-800 border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add enquiry</span>
-            </Button>
-            <Button
               onClick={handleViewLeads}
-              className="bg-green-800 hover:bg-green-800 text-white border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
+              className="bg-white hover:bg-white text-green-800 border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
             >
               <Eye className="h-4 w-4" />
               <span>View Leads</span>
@@ -605,21 +598,32 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                     >
                       {/* Column header */}
                       <div className="p-3 sm:p-4 shadow-sm rounded-t-lg bg-white">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-amber-100 p-2 sm:p-3 rounded-md">
-                            <Image
-                              src={
-                                column.icon?.startsWith("//")
-                                  ? column.icon.replace("//", "/")
-                                  : column.icon || "/Vectors.png"
-                              }
-                              alt={column.title}
-                              width={32}
-                              height={32}
-                              className="w-6 h-6 sm:w-8 sm:h-8"
-                            />
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-amber-100 p-2 sm:p-3 rounded-md">
+                              <Image
+                                src={
+                                  column.icon?.startsWith("//")
+                                    ? column.icon.replace("//", "/")
+                                    : column.icon || "/Vectors.png"
+                                }
+                                alt={column.title}
+                                width={32}
+                                height={32}
+                                className="w-6 h-6 sm:w-8 sm:h-8"
+                              />
+                            </div>
+                            <h3 className="font-semibold text-sm sm:text-base font-poppins">{column.title}</h3>
                           </div>
-                          <h3 className="font-semibold text-sm sm:text-base font-poppins">{column.title}</h3>
+                          {column.id === "enquiry" && (
+                            <Button
+                              onClick={() => setIsDialogOpen(true)}
+                              size="sm"
+                              className="bg-green-700 hover:bg-green-800 text-white h-7 w-7 p-0 rounded-full"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
 
@@ -935,74 +939,74 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
               </div>
 
               {/* Budget */}
-             <div className="col-span-3 space-y-1 sm:space-y-2 font-poppins">
-  <div className="flex justify-between items-center">
-    <label className="text-xs sm:text-sm font-medium">Budget</label>
-    {!isEditingBudget && (
-      <button
-        onClick={() => {
-          setTempBudget(newEnquiry.budget || 1000);
-          setIsEditingBudget(true);
-        }}
-        type="button"
-        className="text-xs text-blue-600 hover:text-blue-800"
-      >
-        Edit
-      </button>
-    )}
-  </div>
-  <div className="pt-2 px-2">
-   <Slider
-  defaultValue={[newEnquiry.budget || 1000]}
-  max={newEnquiry.currency === 'INR' ? 200000 : 50000}
-  min={100}
-  step={100}
-  onValueChange={(value: number[]) => handleInputChange("budget", value[0])}
-/>
-    <div className="flex justify-between items-center mt-2 text-xs sm:text-sm text-gray-500">
-      <span>{getCurrencySymbol(newEnquiry.currency)}100</span>
-      {isEditingBudget ? (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            value={tempBudget}
-            onChange={(e) => setTempBudget(Number(e.target.value))}
-            className="w-24 h-8 text-sm"
-            min={100}
-            max={newEnquiry.currency === 'INR' ? 200000 : 50000}
-            step={100}
-          />
-          <button
-            onClick={() => {
-              handleInputChange("budget", tempBudget);
-              setIsEditingBudget(false);
-            }}
-            className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
-          >
-            Save
-          </button>
-          <button
-            onClick={() => setIsEditingBudget(false)}
-            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <div 
-          className="bg-green-100 px-2 py-1 rounded text-green-800 cursor-pointer hover:bg-green-200"
-          onClick={() => {
-            setTempBudget(newEnquiry.budget || 1000);
-            setIsEditingBudget(true);
-          }}
-        >
-          {getCurrencySymbol(newEnquiry.currency)}{newEnquiry.budget || 1000}
-        </div>
-      )}
-      <span>{getCurrencySymbol(newEnquiry.currency)}{newEnquiry.currency === 'INR' ? '200000' : '50000'}</span>
-    </div>
-  </div>
-</div>
+              <div className="col-span-3 space-y-1 sm:space-y-2 font-poppins">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs sm:text-sm font-medium">Budget</label>
+                  {!isEditingBudget && (
+                    <button
+                      onClick={() => {
+                        setTempBudget(newEnquiry.budget || 1000);
+                        setIsEditingBudget(true);
+                      }}
+                      type="button"
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+                <div className="pt-2 px-2">
+                  <Slider
+                    defaultValue={[newEnquiry.budget || 1000]}
+                    max={newEnquiry.currency === 'INR' ? 200000 : 50000}
+                    min={100}
+                    step={100}
+                    onValueChange={(value: number[]) => handleInputChange("budget", value[0])}
+                  />
+                  <div className="flex justify-between items-center mt-2 text-xs sm:text-sm text-gray-500">
+                    <span>{getCurrencySymbol(newEnquiry.currency)}100</span>
+                    {isEditingBudget ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={tempBudget}
+                          onChange={(e) => setTempBudget(Number(e.target.value))}
+                          className="w-24 h-8 text-sm"
+                          min={100}
+                          max={newEnquiry.currency === 'INR' ? 200000 : 50000}
+                          step={100}
+                        />
+                        <button
+                          onClick={() => {
+                            handleInputChange("budget", tempBudget);
+                            setIsEditingBudget(false);
+                          }}
+                          className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setIsEditingBudget(false)}
+                          className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        className="bg-green-100 px-2 py-1 rounded text-green-800 cursor-pointer hover:bg-green-200"
+                        onClick={() => {
+                          setTempBudget(newEnquiry.budget || 1000);
+                          setIsEditingBudget(true);
+                        }}
+                      >
+                        {getCurrencySymbol(newEnquiry.currency)}{newEnquiry.budget || 1000}
+                      </div>
+                    )}
+                    <span>{getCurrencySymbol(newEnquiry.currency)}{newEnquiry.currency === 'INR' ? '200000' : '50000'}</span>
+                  </div>
+                </div>
+              </div>
 
               {/* Traveling with pets */}
               <div className="col-span-3 space-y-1 sm:space-y-2">
