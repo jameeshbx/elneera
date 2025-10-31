@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { PrismaClient, type Prisma, BookingStatus } from "@prisma/client"
+import prisma from '@/lib/prisma'
+import { type Prisma, BookingStatus } from "@prisma/client"
 
 type RouteHandlerContext = {
   params: Promise<{
@@ -15,8 +16,7 @@ type PutRouteHandlerContext = {
   }>
 }
 
-// Create a Prisma client instance
-const prisma = new PrismaClient()
+// Use shared Prisma client from lib/prisma to avoid multiple engine instances during dev HMR
 
 // Import specific types we need
 import type { BookingProgress } from "@prisma/client"

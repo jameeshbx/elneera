@@ -1,24 +1,48 @@
 "use client"
 
-import { useState } from 'react';
-import Sidebar from '@/app/executive/(components)/Sidebar';
+import { useState, useEffect } from "react"
+import Sidebar from "@/app/executive/(components)/Sidebar"
+import { ColorProvider } from "@/context/color-context"
 
-
-export default function ClientLayout({
+export default function ExecutiveDashboardLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(true)
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024
+      setIsMobile(mobile)
+      if (mobile) {
+        setSidebarExpanded(false)
+      }
+    }
+
+    handleResize()
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [])
+
+  const sidebarWidth = isMobile ? "4rem" : sidebarExpanded ? "16rem" : "4rem"
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      <Sidebar expanded={sidebarExpanded} setExpanded={setSidebarExpanded} />
-      <main className={`flex-1 transition-all duration-300 ${sidebarExpanded ? 'lg:ml-64' : 'lg:ml-20'} ml-16`}>
-        <div className="p-4 md:p-6 lg:p-8">
+    <ColorProvider>
+      <div className="flex h-screen overflow-hidden bg-gray-50">
+        <Sidebar 
+          expanded={sidebarExpanded} 
+          setExpanded={setSidebarExpanded}
+        />
+        
+        <div 
+          className="flex-1 flex flex-col transition-all duration-300 overflow-y-auto"
+          style={{ marginLeft: sidebarWidth }}
+        >
           {children}
         </div>
-      </main>
-    </div>
-  );
+      </div>
+    </ColorProvider>
+  )
 }
