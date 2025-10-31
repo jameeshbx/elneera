@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import  prisma  from '@/lib/prisma';
+import prisma from '@/lib/prisma';
 
 // This endpoint handles agency rejection
 export async function GET(request: Request) {
@@ -12,6 +12,28 @@ export async function GET(request: Request) {
         { error: 'Agency ID is required' },
         { status: 400 }
       );
+    }
+
+    // First get the current agency to check status
+    const currentAgency = await prisma.agencyForm.findUnique({
+      where: { id: agencyId },
+      select: { status: true }
+    });
+
+    // If already rejected, redirect to rejection page without changing anything
+    if (currentAgency?.status === 'REJECTED') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/agency-rejected' },
+      });
+    }
+
+    // If already processed with a different status, redirect to appropriate page
+    if (currentAgency?.status === 'ACTIVE' || currentAgency?.status === 'MODIFY') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `/already-processed?status=${currentAgency.status}` },
+      });
     }
 
     // Update the agency status to REJECTED and include the creator data
@@ -31,7 +53,7 @@ export async function GET(request: Request) {
 
     // Log the rejection with creator's information
     console.log(`Agency ${updatedAgency.id} rejected for user ${updatedAgency.creator?.email || 'unknown'}`);
-    
+
     // In a real app, you would also want to:
     // 1. Send a notification email to the agency using updatedAgency.creator.email
     // 2. Log the rejection reason (you might want to add a reason field)
