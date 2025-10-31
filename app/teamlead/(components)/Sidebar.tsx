@@ -7,6 +7,7 @@ import { useState, useEffect } from "react"
 import Image from "next/image"
 import { signOut, useSession } from "next-auth/react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Session } from "next-auth"
 
 type MenuItem = {
   title: string
@@ -60,6 +61,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
   
   // Use external expanded state if provided, otherwise use internal
   const expanded = externalExpanded !== undefined ? externalExpanded : internalExpanded
+  const [, setLogoError] = useState(false)
 
   useEffect(() => {
     const handleResize = () => {
@@ -70,69 +72,191 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
     return () => window.removeEventListener("resize", handleResize)
   }, [])
 
+ 
   useEffect(() => {
-    const fetchCompanyData = async () => {
-      try {
-        const response = await fetch("/api/auth/agency-profile-admin", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
+  const fetchCompanyData = async () => {
+    try {
+      // Wait for session to be available
+      if (!session) {
+        console.log('No session available yet')
+        return
+      }
+
+let userId = (session.user as Session['user'] & { id?: string })?.id;
+
+      // If session didn't include id, ask server for it
+      if (!userId) {
+        try {
+          const whoami = await fetch('/api/auth/whoami', { credentials: 'include' })
+          if (whoami.ok) {
+            const body = await whoami.json()
+            if (body?.success && body?.id) {
+              userId = body.id
+            }
+          } else {
+            console.warn('whoami lookup failed:', whoami.status)
+          }
+        } catch{
+          console.warn('whoami fetch error')
+        }
+      }
+
+      if (!userId) {
+        // Fallback: Try to fetch company data without userId
+        const fallbackRes = await fetch('/api/auth/agency-profile-admin', {
+          credentials: 'include'
         })
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-
-        const data = await response.json()
-        console.log('Company Data:', data)
-        console.log('Logo URL:', data?.companyInformation?.logo)
-        console.log('Landing Page Color:', data?.companyInformation?.landingPageColor)
-        console.log('Profile Data:', data?.profileData)
         
-        const companyInfo = {
-          name: data?.companyInformation?.name || 'Agency',
-          logoUrl: data?.companyInformation?.logo || null,
-          landingPageColor: data?.companyInformation?.landingPageColor || "#4ECDC4"
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json()
+          const landingPageColor = fallbackData?.companyInformation?.landingPageColor || '#4ECDC4'
+          setThemeColor(landingPageColor)
+          document.documentElement.style.setProperty('--theme-color', landingPageColor)
+          document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+          document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+            // Notify other components about the theme change
+            try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch{}
+            // Notify other components about logo (if present)
+            try { window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: fallbackData?.companyInformation?.logo || null, name: fallbackData?.companyInformation?.name || null } })) } catch  {}
+          
+          const logoUrl = fallbackData?.companyInformation?.logo || null
+          setCompanyData({ 
+            name: fallbackData?.companyInformation?.name || 'Team Lead', 
+            logoUrl: logoUrl, 
+            landingPageColor 
+          })
+          setLogoError(false)
+          
+          if (fallbackData?.profileData) {
+            setProfileData({
+              name: fallbackData.profileData.name,
+              email: fallbackData.profileData.email,
+              bio: fallbackData.profileData.bio || '',
+              fullName: fallbackData.profileData.fullName,
+              mobile: fallbackData.profileData.mobile,
+              location: fallbackData.profileData.location,
+              image: fallbackData.profileData.avatarUrl
+            })
+          }
         }
-        
-        setCompanyData(companyInfo)
-        setThemeColor(companyInfo.landingPageColor)
+        setIsLoading(false)
+        return
+      }
 
-        // Update profile data from API
-        if (data?.profileData) {
+      // 1) Fetch team lead details to get agencyId
+      const teamLeadRes = await fetch(`/api/auth/agency-add-user/${userId}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!teamLeadRes.ok) {
+        throw new Error(`Team lead fetch failed: ${teamLeadRes.status}`)
+      }
+
+      const teamLead = await teamLeadRes.json()
+
+      // Expecting agencyId in the returned payload
+      const agencyId = teamLead.agencyId || teamLead.data?.agencyId
+      
+      if (!agencyId) {
+        console.warn('No agencyId found for team lead, falling back to session-based agency-profile-admin')
+        const fbRes = await fetch('/api/auth/agency-profile-admin', { credentials: 'include' })
+        if (!fbRes.ok) throw new Error(`Fallback profile fetch failed: ${fbRes.status}`)
+        const fallbackData = await fbRes.json()
+        const landingPageColor = fallbackData?.companyInformation?.landingPageColor || '#4ECDC4'
+        setThemeColor(landingPageColor)
+        document.documentElement.style.setProperty('--theme-color', landingPageColor)
+        document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+        
+        const logoUrl = fallbackData?.companyInformation?.logo || null
+        setCompanyData({ 
+          name: fallbackData?.companyInformation?.name || 'Team Lead', 
+          logoUrl: logoUrl, 
+          landingPageColor 
+        })
+        setLogoError(false)
+        
+        if (fallbackData?.profileData) {
           setProfileData({
-            name: data.profileData.name,
-            email: data.profileData.email,
-            bio: data.profileData.bio || '',
-            fullName: data.profileData.fullName,
-            mobile: data.profileData.mobile,
-            location: data.profileData.location,
-            image: data.profileData.avatarUrl
+            name: fallbackData.profileData.name,
+            email: fallbackData.profileData.email,
+            bio: fallbackData.profileData.bio || '',
+            fullName: fallbackData.profileData.fullName,
+            mobile: fallbackData.profileData.mobile,
+            location: fallbackData.profileData.location,
+            image: fallbackData.profileData.avatarUrl
           })
         }
-
-        // Apply theme color to CSS custom property for global use
-        document.documentElement.style.setProperty('--theme-color', companyInfo.landingPageColor)
-        document.documentElement.style.setProperty('--theme-color-light', companyInfo.landingPageColor + '20')
-        document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(companyInfo.landingPageColor, -20))
-        
-      } catch (error) {
-        console.error('Failed to fetch company data:', error)
-        setCompanyData({
-          name: 'Agency',
-          logoUrl: null,
-          landingPageColor: "#4ECDC4"
-        })
-        setThemeColor("#4ECDC4")
-      } finally {
         setIsLoading(false)
+        return
       }
+
+      // 2) Fetch agency admin details using agencyId
+      const agencyRes = await fetch(`/api/auth/agency-profile-admin?agencyId=${agencyId}`, {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!agencyRes.ok) {
+        throw new Error(`Agency profile fetch failed: ${agencyRes.status}`)
+      }
+
+      const agencyData = await agencyRes.json()
+
+      const landingPageColor = agencyData?.companyInformation?.landingPageColor || "#4ECDC4"
+      setThemeColor(landingPageColor)
+      document.documentElement.style.setProperty('--theme-color', landingPageColor)
+      document.documentElement.style.setProperty('--theme-color-light', `${landingPageColor}20`)
+      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
+      // Notify other components about the theme change
+      try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch {}
+
+      const companyLogo = agencyData?.companyInformation?.logo || null
+      setCompanyData({
+        name: agencyData?.companyInformation?.name || 'Team Lead',
+        logoUrl: companyLogo,
+        landingPageColor
+      })
+      setLogoError(false) // Reset error state when new logo is loaded
+      
+      // Broadcast logo and theme updates so header and other components can react
+      try { window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: companyLogo, name: agencyData?.companyInformation?.name || null } })) } catch  {}
+      try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch {}
+
+      if (agencyData?.profileData) {
+        setProfileData({
+          name: agencyData.profileData.name,
+          email: agencyData.profileData.email,
+          bio: agencyData.profileData.bio || '',
+          fullName: agencyData.profileData.fullName,
+          mobile: agencyData.profileData.mobile,
+          location: agencyData.profileData.location,
+          image: agencyData.profileData.avatarUrl
+        })
+      }
+
+    } catch  {
+      // Silently handle errors without console.error to prevent unhandled error warnings
+      // Fallback to default color
+      const fallbackColor = "#4ECDC4"
+      setThemeColor(fallbackColor)
+      document.documentElement.style.setProperty('--theme-color', fallbackColor)
+      document.documentElement.style.setProperty('--theme-color-light', `${fallbackColor}20`)
+      document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(fallbackColor, -20))
+      // Notify other components about the theme change
+      try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: fallbackColor } })) } catch {}
+    } finally {
+      setIsLoading(false)
     }
-  
-    if (session) {
-      fetchCompanyData()
-    }
-  }, [session, logoKey])
+  }
+
+  // Only run when session is available
+  if (session) {
+    fetchCompanyData()
+  }
+}, [session])
+
 
   // Listen for logo updates from profile page AND agency form
   useEffect(() => {
@@ -144,6 +268,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
           logoUrl: event.detail.logoUrl
         } : null)
         setLogoKey(Date.now())
+        setLogoError(false)
       }
     }
 
@@ -250,7 +375,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
       dropdownItems: [
         {
           name: "Bookings",
-          href: "/teamleaddashboard/reports/recent-booking",
+          href: "/teamlead/dashboard/reports/recent-booking",
           logo: <Image src="/dmcagency.svg" alt="Bookings" width={16} height={16} className="mr-2 min-w-[16px]" />,
         },
         {
@@ -275,25 +400,21 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         },
       ],
     },
-    {
-      title: "Add Users", 
-      href: "/teamlead/dashboard/add-users",
-      icon: (
-        <Image
-          src="/people.png"
-          alt="Add Users"
-          width={20}
-          height={20}
-          className="min-w-[20px]"
-        />
-      ),
-    },
+    
     {
       title: "Add DMC",
       href: "/teamlead/dashboard/add-dmc",
       icon: <Image src="/Vector.svg" alt="Add DMC" width={20} height={20} className="min-w-[20px]" />,
     },
   ]
+
+  // Resolve image path (handles absolute, prefixed, and uploads)
+  const resolveImage = (path: string | null | undefined) => {
+    if (!path) return undefined
+    if (path.startsWith('http')) return path
+    if (path.startsWith('/')) return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${path}`
+    return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${path}`
+  }
 
   const accountItems = [
     {
@@ -302,7 +423,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
       icon: (
         <Image
           key={`profile-${profileImageKey}`}
-          src={profileData?.image || session?.user?.image || "/avatar/Image (3).png"}
+          src={resolveImage(profileData?.image) || resolveImage(session?.user?.image) || "/avatar/Image (3).png"}
           alt="Profile"
           width={20}
           height={20}
@@ -382,53 +503,53 @@ const isCollapsed = isMobile ? !expanded : !expanded
 
       <div className="flex flex-col h-full p-2 md:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {/* Logo Section */}
-        <div className="flex items-center p-2 mb-6">
-          <Link href="/" data-cy="sidebar-logo-link" className="flex items-center w-full">
-            {isLoading ? (
-              <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
-            ) : (
-              <>
-                {companyData?.logoUrl ? (
-                  <div className="flex items-center w-full">
-                    <Image
-                      key={`${logoKey}-${companyData.logoUrl}`}
-                      src={getLogoUrl(companyData.logoUrl) || '/placeholder.svg?height=32&width=120'}
-                      alt="Company Logo"
-                      width={isCollapsed ? 32 : 120}
-                      height={isCollapsed ? 32 : 32}
-                      className="object-contain max-w-full h-8"
-                      priority
-                      onError={(e) => {
-                        console.error('Error loading logo:', companyData.logoUrl)
-                        e.currentTarget.style.display = 'none'
-                        const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback')
-                        if (fallback) fallback.classList.remove('hidden')
-                      }}
-                    />
-                    <div className="logo-fallback hidden">
-                      <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
-                        <span className="text-xs font-medium text-gray-500">
-                          {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
-                    <span className="text-xs font-medium text-gray-500">
-                      {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
-                    </span>
-                  </div>
-                )}
-                {!isCollapsed && !companyData?.logoUrl && (
-                  <span className="ml-2 text-lg font-semibold">
-                    {companyData?.name || 'Agency'}
-                  </span>
-                )}
-              </>
-            )}
-          </Link>
-        </div>
+       <div className="flex items-center p-2 mb-6">
+                 <Link href="/" data-cy="sidebar-logo-link" className="flex items-center w-full">
+                   {isLoading ? (
+                     <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
+                   ) : (
+                     <>
+                       {companyData?.logoUrl ? (
+                         <div className="flex items-center w-full">
+                           <Image
+                             key={`${logoKey}-${companyData.logoUrl}`}
+                             src={getLogoUrl(companyData.logoUrl) || '/placeholder.svg?height=32&width=120'}
+                             alt="Company Logo"
+                             width={isCollapsed ? 32 : 120}
+                             height={isCollapsed ? 32 : 32}
+                             className="object-contain max-w-full h-8"
+                             priority
+                             onError={(e) => {
+                               console.error('Error loading logo:', companyData.logoUrl)
+                               e.currentTarget.style.display = 'none'
+                               const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback')
+                               if (fallback) fallback.classList.remove('hidden')
+                             }}
+                           />
+                           <div className="logo-fallback hidden">
+                             <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
+                               <span className="text-xs font-medium text-gray-500">
+                                 {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                               </span>
+                             </div>
+                           </div>
+                         </div>
+                       ) : (
+                         <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
+                           <span className="text-xs font-medium text-gray-500">
+                             {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                           </span>
+                         </div>
+                       )}
+                       {!isCollapsed && !companyData?.logoUrl && (
+                         <span className="ml-2 text-lg font-semibold">
+                           {companyData?.name || 'Agency'}
+                         </span>
+                       )}
+                     </>
+                   )}
+                 </Link>
+               </div>
 
         <nav className="flex-1 space-y-2">
           {menuItems.map((item) => (

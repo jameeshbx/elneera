@@ -61,6 +61,11 @@ interface UserData {
   name: string;
   status: string;
 }
+interface ApiResponse {
+  success: boolean;
+  data: UserData[];
+}
+
 
 
 const generateUniqueId = () => {
@@ -175,15 +180,37 @@ const [tempBudget, setTempBudget] = useState(1000);
         method: "GET",
         headers: { "Content-Type": "application/json" },
       })
-      const data = await response.json()
-if (response.ok && data?.success && Array.isArray(data.data)) {
-  const mapped = data.data
-    .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
-    .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
-  setStaffUsers(mapped)
-} else {
-  setStaffUsers([])
-}
+      // Handle non-OK responses and empty / invalid JSON bodies gracefully
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => null)
+        console.warn('/api/auth/agency-add-user returned', response.status, bodyText)
+        setStaffUsers([])
+        return
+      }
+
+      const text = await response.text().catch(() => null)
+      if (!text) {
+        setStaffUsers([])
+        return
+      }
+
+    let data: ApiResponse | null = null;
+      try {
+        data = JSON.parse(text)
+      } catch (err) {
+        console.error('Failed to parse /api/auth/agency-add-user JSON', err, text)
+        setStaffUsers([])
+        return
+      }
+
+      if (data?.success && Array.isArray(data.data)) {
+        const mapped = data.data
+          .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
+          .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
+        setStaffUsers(mapped)
+      } else {
+        setStaffUsers([])
+      }
     } catch (e) {
       console.error("Failed to fetch staff users", e)
       setStaffUsers([])
