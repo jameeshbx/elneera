@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 
+
 interface PaymentRecord {
   id: string
   paymentDate: string
@@ -23,7 +24,7 @@ interface PaymentRecord {
   currency?: string
 }
 
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Info, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -36,10 +37,11 @@ interface PaymentData {
   paymentDate: string
   remainingBalance: string
   paymentStatus: string
-  paymentChannel: "Bank transfer ( manual entry )" | "Payment gateway"
+  paymentChannel: "Bank transfer ( manual entry )" | "Payment gateway" | "Cash" | "UPI"
   transactionId: string
   selectedBank: string
   paymentGateway: string
+  upiId?: string
 }
 
 interface Commission {
@@ -58,36 +60,39 @@ interface PaymentMethod {
     accountNumber: string
   }>
   paymentLink?: string
+  identifier?: string  // For UPI ID
 }
 
 const DMCPaymentInterface: React.FC = () => {
   const { toast } = useToast();
-  
+
   // ...existing state
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
-  
+
   const searchParams = useSearchParams()
   const enquiryId = searchParams.get("enquiryId")
 
   const [dmcId, setDmcId] = useState<string | null>(null)
   const [commission, setCommission] = useState<Commission | null>(null)
-  const [showBankDetails, setShowBankDetails] = useState<boolean>(true)
+  const [, setShowBankDetails] = useState<boolean>(true)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [currency, setCurrency] = useState<string>("USD")
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [paymentData, setPaymentData] = useState<PaymentData>({
+  const router = useRouter()
+  const [paymentData, setPaymentData] = useState<PaymentData>(() => ({
     dmcName: "",
-    itineraryReference: "ITN-20250412-001",
+    itineraryReference: "",
     totalCost: "",
     amountPaid: "",
-    paymentDate: "",
-    remainingBalance: "",
-    paymentStatus: "Partial",
+    paymentDate: new Date().toISOString().split("T")[0],
+    remainingBalance: "0.00",
+    paymentStatus: "PAID",
     paymentChannel: "Bank transfer ( manual entry )",
     transactionId: "",
     selectedBank: "",
     paymentGateway: "",
-  })
+    upiId: "",
+  }))
 
   useEffect(() => {
     if (enquiryId) {
@@ -157,11 +162,19 @@ const DMCPaymentInterface: React.FC = () => {
             const result = await response.json()
             const paymentMethodsData = (result.data.methods || []) as PaymentMethod[]
             setPaymentMethods(paymentMethodsData)
+
             // Set payment gateway link from the first available method
             const gateway = paymentMethodsData.find((pm) => pm.paymentLink)
+
+            // Find UPI payment method if exists
+            const upiMethod = paymentMethodsData.find(
+              (pm) => pm.type === 'UPI' && pm.identifier
+            )
+
             setPaymentData((prev) => ({
               ...prev,
               paymentGateway: gateway?.paymentLink || "",
+              upiId: upiMethod?.identifier || prev.upiId || ""
             }))
           }
         } catch (error) {
@@ -173,26 +186,30 @@ const DMCPaymentInterface: React.FC = () => {
     }
   }, [dmcId])
 
-  useEffect(() => {
-    const total = Number.parseFloat(paymentData.totalCost) || 0
-    const paid = Number.parseFloat(paymentData.amountPaid) || 0
-    const remaining = total - paid
-    setPaymentData((prev: PaymentData) => ({
-      ...prev,
-      remainingBalance: remaining >= 0 ? remaining.toFixed(2) : "0.00",
-    }))
-  }, [paymentData.totalCost, paymentData.amountPaid])
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const handleInputChange = (field: keyof PaymentData, value: string) => {
-    setPaymentData((prev: PaymentData) => ({ ...prev, [field]: value }))
+    setPaymentData((prev: PaymentData) => {
+      const newData = { ...prev, [field]: value };
+
+      // Recalculate remaining balance when total cost or amount paid changes
+      if (field === 'totalCost' || field === 'amountPaid') {
+        const total = Number.parseFloat(field === 'totalCost' ? value : prev.totalCost) || 0;
+        const paid = Number.parseFloat(field === 'amountPaid' ? value : prev.amountPaid) || 0;
+        const remaining = total - paid;
+        newData.remainingBalance = remaining >= 0 ? remaining.toFixed(2) : "0.00";
+      }
+
+      return newData;
+    });
   }
 
-  const handlePaymentChannelChange = (channel: "Bank transfer ( manual entry )" | "Payment gateway") => {
+  const handlePaymentChannelChange = (channel: "Bank transfer ( manual entry )" | "Payment gateway" | "Cash" | "UPI") => {
     setShowBankDetails(channel === "Bank transfer ( manual entry )")
     setPaymentData((prev: PaymentData) => ({
       ...prev,
       paymentChannel: channel,
+      transactionId: channel === "Cash" ? "CASH" : prev.transactionId === "CASH" ? "" : prev.transactionId
     }))
   }
 
@@ -206,7 +223,7 @@ const DMCPaymentInterface: React.FC = () => {
       return;
     }
 
-   
+
 
     try {
       let response: Response;
@@ -221,24 +238,24 @@ const DMCPaymentInterface: React.FC = () => {
           response = await fetch(receiptFile.url);
         } else {
           // Relative path - use our API with direct=true
-          const url = receiptFile.url.startsWith('/') 
-            ? receiptFile.url.substring(1) 
+          const url = receiptFile.url.startsWith('/')
+            ? receiptFile.url.substring(1)
             : receiptFile.url;
           const apiUrl = `/api/files/${encodeURIComponent(url)}?direct=true`;
           console.log('Fetching file from API:', apiUrl);
           response = await fetch(apiUrl);
         }
-      } 
+      }
       // If we have a file ID, use the files API
       else if (receiptFile.id) {
         console.log('Fetching file by ID:', receiptFile.id);
         response = await fetch(`/api/files/${receiptFile.id}`);
-      } 
+      }
       // If we have neither, error out
       else {
         throw new Error('No valid file reference provided');
       }
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('File download failed:', {
@@ -252,13 +269,13 @@ const DMCPaymentInterface: React.FC = () => {
 
       // Get the file data as a blob
       const blob = await response.blob();
-      
+
       if (blob.size === 0) {
         throw new Error('Received empty file');
       }
-      
+
       downloadUrl = window.URL.createObjectURL(blob);
-      
+
       // Get the filename from the content-disposition header or use the provided filename
       const contentDisposition = response.headers.get('content-disposition');
       if (contentDisposition) {
@@ -285,7 +302,7 @@ const DMCPaymentInterface: React.FC = () => {
       a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      
+
       // Cleanup
       setTimeout(() => {
         document.body.removeChild(a);
@@ -303,6 +320,70 @@ const DMCPaymentInterface: React.FC = () => {
       toast({
         title: 'Error',
         description: `Failed to download the file: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // New function to handle invoice download
+  const handleInvoiceDownload = async (paymentId: string) => {
+    try {
+      toast({
+        title: 'Downloading Invoice',
+        description: 'Your invoice download has started...',
+        variant: 'default',
+      });
+
+      const response = await fetch(`/api/dmc-payment/invoice/${paymentId}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to download invoice: ${response.status} ${response.statusText}`);
+      }
+
+      // Get the PDF blob
+      const blob = await response.blob();
+
+      if (blob.size === 0) {
+        throw new Error('Received empty invoice file');
+      }
+
+      // Create download URL
+      const downloadUrl = window.URL.createObjectURL(blob);
+
+      // Get filename from content-disposition header or use default
+      let fileName = `invoice-${paymentId}.pdf`;
+      const contentDisposition = response.headers.get('content-disposition');
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          fileName = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+
+      // Create and trigger download
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileName;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(downloadUrl);
+      }, 100);
+
+      toast({
+        title: 'Invoice Downloaded',
+        description: 'Invoice PDF has been downloaded successfully.',
+        variant: 'default',
+      });
+    } catch (error) {
+      console.error('Error downloading invoice:', error);
+      toast({
+        title: 'Error',
+        description: `Failed to download invoice: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: 'destructive',
       });
     }
@@ -342,167 +423,168 @@ const DMCPaymentInterface: React.FC = () => {
     }
   }
 
-// In your handleSubmit function
-const handleSubmit = async () => {
-  if (!enquiryId || !dmcId) {
-    toast({ title: "Error", description: "Missing Enquiry ID or DMC ID.", variant: "destructive" })
-    return
-  }
-
-  if (!selectedFile) {
-    toast({ title: "Error", description: "Please select a receipt file to upload.", variant: "destructive" })
-    return
-  }
-
-  if (!paymentData.amountPaid || Number.parseFloat(paymentData.amountPaid) <= 0) {
-    toast({ title: "Error", description: "Please enter a valid amount paid.", variant: "destructive" })
-    return
-  }
-
-  if (!paymentData.paymentDate) {
-    toast({ title: "Error", description: "Please select a payment date.", variant: "destructive" })
-    return
-  }
-
-  setIsLoading(true)
-
-  try {
-    const paymentFormData = new FormData()
-    paymentFormData.append("dmcId", dmcId)
-    paymentFormData.append("enquiryId", enquiryId)
-    paymentFormData.append("amountPaid", paymentData.amountPaid)
-    paymentFormData.append("paymentDate", new Date(paymentData.paymentDate).toISOString())
-    paymentFormData.append("transactionId", paymentData.transactionId || "")
-    paymentFormData.append("paymentChannel", paymentData.paymentChannel)
-    paymentFormData.append("paymentStatus", paymentData.paymentStatus)
-    paymentFormData.append("totalCost", paymentData.totalCost)
-    paymentFormData.append("currency", currency)
-    paymentFormData.append("selectedBank", paymentData.selectedBank ?? "")
-    
-    // Add the file with the correct field name
-    if (selectedFile) {
-      paymentFormData.append("receipt", selectedFile)
+  // In your handleSubmit function
+  const handleSubmit = async () => {
+    if (!enquiryId || !dmcId) {
+      toast({ title: "Error", description: "Missing Enquiry ID or DMC ID.", variant: "destructive" })
+      return
     }
 
-    const paymentResponse = await fetch("/api/dmc-payment", {
-      method: "POST",
-      body: paymentFormData,
-    })
-
-    if (!paymentResponse.ok) {
-      const errorData = await paymentResponse.json()
-      throw new Error(errorData.error || "Failed to save payment details.")
+    if (!selectedFile) {
+      toast({ title: "Error", description: "Please select a receipt file to upload.", variant: "destructive" })
+      return
     }
 
-    const savedPayment = await paymentResponse.json()
-    console.log("Payment saved successfully:", savedPayment)
-
-    // Refresh payments list
-    const paymentsResponse = await fetch(`/api/dmc-payment?enquiryId=${enquiryId}&dmcId=${dmcId}`)
-    if (paymentsResponse.ok) {
-      const paymentsData = await paymentsResponse.json()
-      setPayments(paymentsData)
+    if (!paymentData.amountPaid || Number.parseFloat(paymentData.amountPaid) <= 0) {
+      toast({ title: "Error", description: "Please enter a valid amount paid.", variant: "destructive" })
+      return
     }
 
-    // Send email notification
-    if (commission?.dmc?.email) {
-      try {
-        const emailFormData = new FormData()
-        emailFormData.append("to", commission.dmc.email)
-        emailFormData.append("subject", `Payment Notification for Itinerary: ${savedPayment.itineraryReference}`)
+    if (!paymentData.paymentDate) {
+      toast({ title: "Error", description: "Please select a payment date.", variant: "destructive" })
+      return
+    }
 
-        // Add payment details with proper data structure
-        const emailPaymentDetails = {
-          dmcName: commission.dmc.name,
-          itineraryReference: savedPayment.itineraryReference,
-          totalCost: savedPayment.totalCost.toString(),
-          amountPaid: savedPayment.amountPaid.toString(),
-          paymentDate: new Date(savedPayment.paymentDate).toLocaleDateString(),
-          remainingBalance: savedPayment.remainingBalance.toString(),
-          paymentStatus: savedPayment.paymentStatus,
-          paymentChannel: savedPayment.paymentChannel,
-          transactionId: savedPayment.transactionId,
-          currency: savedPayment.enquiry?.currency || currency,
-          receiptUrl: savedPayment.receiptUrl // Use the URL from the saved payment
-        }
+    setIsLoading(true)
 
-        emailFormData.append("paymentDetails", JSON.stringify(emailPaymentDetails))
+    try {
+      const paymentFormData = new FormData()
+      paymentFormData.append("dmcId", dmcId)
+      paymentFormData.append("enquiryId", enquiryId)
+      paymentFormData.append("amountPaid", paymentData.amountPaid)
+      paymentFormData.append("paymentDate", new Date(paymentData.paymentDate).toISOString())
+      paymentFormData.append("transactionId", paymentData.transactionId || "")
+      paymentFormData.append("paymentChannel", paymentData.paymentChannel)
+      paymentFormData.append("paymentStatus", paymentData.paymentStatus)
+      paymentFormData.append("totalCost", paymentData.totalCost)
+      paymentFormData.append("currency", currency)
+      paymentFormData.append("selectedBank", paymentData.selectedBank ?? "")
 
-        // Add file if it exists
-        if (selectedFile) {
-          emailFormData.append("file", selectedFile)
-        }
+      // Add the file with the correct field name
+      if (selectedFile) {
+        paymentFormData.append("receipt", selectedFile)
+      }
 
-        console.log("Sending email to:", commission.dmc.email)
+      const paymentResponse = await fetch("/api/dmc-payment", {
+        method: "POST",
+        body: paymentFormData,
+      })
 
-        const emailResponse = await fetch("/api/send-dmc-payment-email", {
-          method: "POST",
-          body: emailFormData,
-        })
+      if (!paymentResponse.ok) {
+        const errorData = await paymentResponse.json()
+        throw new Error(errorData.error || "Failed to save payment details.")
+      }
 
-        const responseData = await emailResponse.json()
+      const savedPayment = await paymentResponse.json()
+      console.log("Payment saved successfully:", savedPayment)
 
-        if (!emailResponse.ok) {
-          console.warn("Failed to send email:", responseData)
+      // Refresh payments list
+      const paymentsResponse = await fetch(`/api/dmc-payment?enquiryId=${enquiryId}&dmcId=${dmcId}`)
+      if (paymentsResponse.ok) {
+        const paymentsData = await paymentsResponse.json()
+        setPayments(paymentsData)
+      }
+
+      // Send email notification
+      if (commission?.dmc?.email) {
+        try {
+          const emailFormData = new FormData()
+          emailFormData.append("to", commission.dmc.email)
+          emailFormData.append("subject", `Payment Notification for Itinerary: ${savedPayment.itineraryReference}`)
+
+          // Add payment details with proper data structure
+          const emailPaymentDetails = {
+            dmcName: commission.dmc.name,
+            itineraryReference: savedPayment.itineraryReference,
+            enquiryId: savedPayment.enquiryId,
+            totalCost: savedPayment.totalCost.toString(),
+            amountPaid: savedPayment.amountPaid.toString(),
+            paymentDate: new Date(savedPayment.paymentDate).toLocaleDateString(),
+            remainingBalance: savedPayment.remainingBalance.toString(),
+            paymentStatus: savedPayment.paymentStatus,
+            paymentChannel: savedPayment.paymentChannel,
+            transactionId: savedPayment.transactionId,
+            currency: savedPayment.enquiry?.currency || currency,
+            receiptUrl: savedPayment.receiptUrl, // Use the URL from the saved payment
+            upiId: paymentData.paymentChannel === 'UPI' ? paymentData.upiId : undefined // Include UPI ID only for UPI payments
+          }
+
+          emailFormData.append("paymentDetails", JSON.stringify(emailPaymentDetails))
+
+          // Add file if it exists
+          if (selectedFile) {
+            emailFormData.append("file", selectedFile)
+          }
+
+          console.log("Sending email to:", commission.dmc.email)
+
+          const emailResponse = await fetch("/api/send-dmc-payment-email", {
+            method: "POST",
+            body: emailFormData,
+          })
+
+          const responseData = await emailResponse.json()
+
+          if (!emailResponse.ok) {
+            console.warn("Failed to send email:", responseData)
+            toast({
+              title: "Payment Saved",
+              description: `Payment saved successfully, but email notification failed: ${responseData.details || responseData.error}`,
+              variant: "default",
+            })
+          } else {
+            console.log("Email sent successfully:", responseData.messageId)
+            toast({
+              title: "Success",
+              description: "Payment updated and email sent successfully!",
+            })
+          }
+        } catch (error) {
+          console.error("Error sending email:", error)
+          const errorMessage = error instanceof Error ? error.message : "Failed to send email notification"
           toast({
             title: "Payment Saved",
-            description: `Payment saved successfully, but email notification failed: ${responseData.details || responseData.error}`,
+            description: `Payment saved successfully, but email notification failed: ${errorMessage}`,
             variant: "default",
           })
-        } else {
-          console.log("Email sent successfully:", responseData.messageId)
-          toast({
-            title: "Success",
-            description: "Payment updated and email sent successfully!",
-          })
         }
-      } catch (error) {
-        console.error("Error sending email:", error)
-        const errorMessage = error instanceof Error ? error.message : "Failed to send email notification"
+      } else {
         toast({
           title: "Payment Saved",
-          description: `Payment saved successfully, but email notification failed: ${errorMessage}`,
-          variant: "default",
+          description: "Payment saved successfully, but DMC email is not available to send notification.",
         })
       }
-    } else {
+
+      // Reset form
+      setSelectedFile(null)
+      setPaymentData((prev) => ({
+        ...prev,
+        amountPaid: "",
+        paymentDate: "",
+        transactionId: "",
+        selectedBank: "",
+      }))
+
+      // Reset file input
+      const fileInput = document.getElementById("file-upload") as HTMLInputElement
+      if (fileInput) {
+        fileInput.value = ""
+      }
+        router.push(`/agency-admin/dashboard/booking-details?enquiryId=${enquiryId}`)
+
+    } catch (error) {
+      console.error("Error in payment submission:", error)
+      const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred."
       toast({
-        title: "Payment Saved",
-        description: "Payment saved successfully, but DMC email is not available to send notification.",
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
       })
+    } finally {
+      setIsLoading(false)
     }
-
-    // Reset form
-    setSelectedFile(null)
-    setPaymentData((prev) => ({
-      ...prev,
-      amountPaid: "",
-      paymentDate: "",
-      transactionId: "",
-      selectedBank: "",
-    }))
-
-    // Reset file input
-    const fileInput = document.getElementById("file-upload") as HTMLInputElement
-    if (fileInput) {
-      fileInput.value = ""
-    }
-  } catch (error) {
-    console.error("Error in payment submission:", error)
-    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred."
-    toast({
-      title: "Error",
-      description: errorMessage,
-      variant: "destructive",
-    })
-  } finally {
-    setIsLoading(false)
   }
-}
 
-  const handleCopyGateway = () => {
-    navigator.clipboard.writeText(paymentData.paymentGateway)
-  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-3 sm:p-4 lg:p-6">
@@ -626,103 +708,101 @@ const handleSubmit = async () => {
                       onChange={(e) => handleInputChange("paymentStatus", e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                     >
-                      <option value="Partial">Partial</option>
-                      <option value="Paid">Paid</option>
-                      <option value="Pending">Pending</option>
+                      <option value="PARTIAL">Partial</option>
+                      <option value="PAID">Paid</option>
+                      <option value="PENDING">Pending</option>
                     </select>
                   </div>
+                </div>
 
-                  {/* Payment Channel */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Channel</label>
-                    <select
-                      value={paymentData.paymentChannel}
-                      onChange={(e) =>
-                        handlePaymentChannelChange(
-                          e.target.value as "Bank transfer ( manual entry )" | "Payment gateway",
-                        )
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                    >
-                      <option value="Bank transfer ( manual entry )">Bank transfer (manual entry)</option>
-                      <option value="Payment gateway">Payment gateway</option>
-                    </select>
+
+
+                {/* Payment Channel */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Channel</label>
+                  <select
+                    value={paymentData.paymentChannel}
+                    onChange={(e) =>
+                      handlePaymentChannelChange(
+                        e.target.value as "Bank transfer ( manual entry )" | "Payment gateway" | "Cash" | "UPI",
+                      )
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm mb-4"
+                  >
+                    <option value="Bank transfer ( manual entry )">Bank transfer (manual entry)</option>
+                    <option value="Payment gateway">Payment gateway</option>
+                    <option value="Cash">Cash</option>
+                    <option value="UPI">UPI</option>
+                  </select>
+                </div>
+
+                {/* Conditional details below Payment Channel */}
+                {paymentData.paymentChannel === "Bank transfer ( manual entry )" && (
+                  <div className="space-y-4 mb-4">
+                    {/* Transaction ID */}
+                    <div>
+                      <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                        Transaction ID
+                        <Info className="w-4 h-4 ml-1 text-gray-400" />
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentData.transactionId}
+                        onChange={(e) => handleInputChange("transactionId", e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                      />
+                    </div>
+
+                    {/* Choose Bank */}
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                      <p className="text-sm text-blue-700 mb-3">Choose bank account for reference</p>
+                      <div className="space-y-2">
+                        {(paymentMethods.find((pm) => pm.type === "BANK_ACCOUNT")?.bank || []).map(
+                          (bank: { bankName: string; accountNumber: string }, index: number) => (
+                            <div key={index} className="flex items-start sm:items-center">
+                              <input
+                                type="radio"
+                                name="bankAccount"
+                                checked={paymentData.selectedBank === `${bank.bankName} ( ${bank.accountNumber} )`}
+                                onChange={() =>
+                                  handleInputChange("selectedBank", `${bank.bankName} ( ${bank.accountNumber} )`)
+                                }
+                                className="mr-3 mt-0.5 sm:mt-0 text-green-600 focus:ring-green-500"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {bank.bankName} ( {bank.accountNumber} )
+                              </span>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
                   </div>
+                )}
 
-                  {/* Conditional details below Payment Channel */}
-                  {showBankDetails ? (
-                    <div className="space-y-4">
-                      {/* Transaction ID */}
-                      <div>
-                        <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                          Transaction ID
-                          <Info className="w-4 h-4 ml-1 text-gray-400" />
-                        </label>
-                        <input
-                          type="text"
-                          value={paymentData.transactionId}
-                          onChange={(e) => handleInputChange("transactionId", e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                        />
-                      </div>
+                {paymentData.paymentChannel === "UPI" && (
+                  <div className="mb-4">
+                    <div>
+                      <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+                        UPI ID
+                        <Info className="w-4 h-4 ml-1 text-gray-400" />
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentData.upiId || ''}
+                        onChange={(e) => handleInputChange("upiId", e.target.value)}
+                        placeholder="Enter UPI ID"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
 
-                      {/* Choose Bank */}
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <p className="text-sm text-blue-700 mb-3">Choose bank account for reference</p>
-                        <div className="space-y-2">
-                          {(paymentMethods.find((pm) => pm.type === "BANK_ACCOUNT")?.bank || []).map(
-                            (bank: { bankName: string; accountNumber: string }, index: number) => (
-                              <div key={index} className="flex items-start sm:items-center">
-                                <input
-                                  type="radio"
-                                  name="bankAccount"
-                                  checked={paymentData.selectedBank === `${bank.bankName} ( ${bank.accountNumber} )`}
-                                  onChange={() =>
-                                    handleInputChange("selectedBank", `${bank.bankName} ( ${bank.accountNumber} )`)
-                                  }
-                                  className="mr-3 mt-0.5 sm:mt-0 text-green-600 focus:ring-green-500"
-                                />
-                                <span className="text-sm text-gray-700">
-                                  {bank.bankName} ( {bank.accountNumber} )
-                                </span>
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Payment Link */}
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                          <input
-                            type="text"
-                            value={paymentData.paymentGateway}
-                            readOnly
-                            className="flex-1 px-3 py-2 border border-blue-200 rounded-md bg-white text-sm"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleCopyGateway}
-                            className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 text-sm"
-                          >
-                            Copy link
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Attach Receipt */}
-                  <div className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-md">
-                    <div className="flex flex-col">
-                      <span className="text-sm text-gray-600">Attach receipts / Screenshots</span>
-                      {selectedFile && (
-                        <span className="text-xs text-green-600 mt-1">Selected: {selectedFile.name}</span>
-                      )}
-                    </div>
-                    <div className="relative">
+                {/* Receipt Upload - Always Visible */}
+                <div className="mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 w-full px-3 py-2 border border-gray-300 rounded-md">Attach receipts / Screenshots</span>
+                    <div className="relative flex-1 max-w-[120px]">
                       <input
                         type="file"
                         id="file-upload"
@@ -732,22 +812,25 @@ const handleSubmit = async () => {
                       />
                       <label
                         htmlFor="file-upload"
-                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors text-sm font-medium cursor-pointer block"
+                        className="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors text-xs font-medium cursor-pointer block text-center whitespace-nowrap"
                       >
                         Choose File
                       </label>
                     </div>
                   </div>
+                  {selectedFile && (
+                    <span className="text-xs text-green-600 mt-1 block">Selected: {selectedFile.name}</span>
+                  )}
+                </div>
 
-                  <div className="">
-                    <Button
-                      onClick={handleSubmit}
-                      disabled={isLoading}
-                      className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 font-medium"
-                    >
-                      {isLoading ? "UPDATING..." : "UPDATE"}
-                    </Button>
-                  </div>
+                <div className="mt-4">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isLoading}
+                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 font-medium w-full sm:w-auto"
+                  >
+                    {isLoading ? "UPDATING..." : "UPDATE"}
+                  </Button>
                 </div>
               </div>
             </div>
@@ -758,7 +841,7 @@ const handleSubmit = async () => {
             {/* Payment Summary Table */}
             <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full xl:w-[528px] xl:ml-[-143px] p-4">
               <h3 className="text-sm font-medium text-gray-900 mb-4">Payment History</h3>
-              
+
               {/* Desktop Table View */}
               <div className="hidden lg:block overflow-x-auto">
                 <table className="w-full text-xs">
@@ -771,6 +854,7 @@ const handleSubmit = async () => {
                       <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment channel</th>
                       <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RECEIPT</th>
+                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">INVOICE</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white">
@@ -821,6 +905,16 @@ const handleSubmit = async () => {
                               <span className="text-gray-400 text-xs">No file</span>
                             )}
                           </td>
+                          <td className="px-2 py-3 whitespace-nowrap">
+                            <button
+                              onClick={() => handleInvoiceDownload(payment.id)}
+                              className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                              title="Download Invoice"
+                            >
+                              <Download className="w-3 h-3 mr-1" />
+                              Invoice
+                            </button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -868,36 +962,53 @@ const handleSubmit = async () => {
                         </div>
                       </div>
                       <div className="mt-2 pt-2 border-t border-gray-300">
-                        <span className="font-medium text-gray-700 text-xs">Receipt:</span>
-                        <div className="mt-1">
-                          {payment.receiptFile?.id ? (
-                            <button
-                              onClick={() => handleDownload({
-                                id: payment.receiptFile!.id,
-                                url: payment.receiptFile!.url,
-                                name: payment.receiptFile!.name || 'receipt'
-                              })}
-                              className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                              title={`Download ${payment.receiptFile.name || 'receipt'}`}
-                            >
-                              <Download className="w-3 h-3 mr-1" />
-                              Download Receipt ({payment.receiptFile.name || 'receipt'})
-                            </button>
-                          ) : payment.receiptUrl && typeof payment.receiptUrl === 'string' ? (
-                            <button
-                              onClick={() => handleDownload({
-                                url: payment.receiptUrl!,
-                                name: `receipt_${payment.id}`
-                              })}
-                              className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                              title="Download receipt"
-                            >
-                              <Download className="w-3 h-3 mr-1" />
-                              Download Receipt
-                            </button>
-                          ) : (
-                            <span className="text-gray-400 text-xs">No file available</span>
-                          )}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="font-medium text-gray-700 text-xs">Receipt:</span>
+                            <div className="mt-1">
+                              {payment.receiptFile?.id ? (
+                                <button
+                                  onClick={() => handleDownload({
+                                    id: payment.receiptFile!.id,
+                                    url: payment.receiptFile!.url,
+                                    name: payment.receiptFile!.name || 'receipt'
+                                  })}
+                                  className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                                  title={`Download ${payment.receiptFile.name || 'receipt'}`}
+                                >
+                                  <Download className="w-3 h-3 mr-1" />
+                                  Download
+                                </button>
+                              ) : payment.receiptUrl && typeof payment.receiptUrl === 'string' ? (
+                                <button
+                                  onClick={() => handleDownload({
+                                    url: payment.receiptUrl!,
+                                    name: `receipt_${payment.id}`
+                                  })}
+                                  className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                                  title="Download receipt"
+                                >
+                                  <Download className="w-3 h-3 mr-1" />
+                                  Download
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 text-xs">No file</span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700 text-xs">Invoice:</span>
+                            <div className="mt-1">
+                              <button
+                                onClick={() => handleInvoiceDownload(payment.id)}
+                                className="flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                                title="Download Invoice"
+                              >
+                                <Download className="w-3 h-3 mr-1" />
+                                Download
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
