@@ -299,7 +299,6 @@ model UserForm {
   updatedAt        DateTime   @updatedAt
   createdBy        String
   resetToken       String?
-  agencyId          String?   // Added field to store agency admin ID
   agency            User?     @relation("AgencyUsers", fields: [agencyId], references: [id], onDelete: SetNull)
 
   resetTokenExpiry DateTime?
