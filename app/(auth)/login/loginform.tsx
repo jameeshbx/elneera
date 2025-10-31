@@ -49,6 +49,85 @@ export default function LoginForm() {
     };
   }, []);
 
+  // Helper to compute redirect path given a session
+  const getRedirectPath = async (sessionParam?: Session | null): Promise<string> => {
+    const sessionToUse = sessionParam ?? (await getSession());
+    const user = (sessionToUse as Session | null)?.user;
+
+    if (!user) return "/dashboard";
+
+    const { role, userType } = user;
+
+    // Handle AGENCY_ADMIN specific redirection
+    if ((userType && userType.toUpperCase() === "AGENCY_ADMIN") || (role && role.toUpperCase() === "AGENCY_ADMIN")) {
+      try {
+        const agencyFormRes = await fetch('/api/agencyform');
+        if (agencyFormRes.status === 404) return "/agency-admin/agency-form";
+        const agencyData = await agencyFormRes.json();
+        if (agencyData.data) {
+          const status = agencyData.data.status?.toUpperCase();
+          if (status === 'APPROVED' || status === 'ACTIVE') return "/agency-admin/dashboard";
+          if (status === 'PENDING' || status === 'UNDER_REVIEW') return "/agency-admin/under-review";
+          if (status === 'REJECTED' || status === 'DECLINED') return "/agency-admin/under-review";
+          return "/agency-admin/dashboard";
+        }
+        return "/agency-admin/agency-form";
+      } catch (error) {
+        console.error('Error checking agency form status:', error);
+        return "/agency-admin/agency-form";
+      }
+    }
+
+    const type = userType || role;
+    if (type) {
+      const upperType = type.toUpperCase();
+      if (upperType === "SUPER_ADMIN") return "/super-admin/dashboard";
+      if (upperType === "ADMIN") return "/admin/dashboard";
+      if (upperType === "MANAGER") return "/agency/dashboard";
+      if (upperType === "EXECUTIVE") return "/executive/dashboard";
+      if (upperType === "TEAM_LEAD") return "/teamlead/dashboard";
+      if (upperType === "TL") return "/telecaller/dashboard";
+    }
+
+    return "/dashboard";
+  };
+
+  // Auto sign-in effect: only trigger when both email and password query params are present.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const emailParam = params.get('email');
+    const passwordParam = params.get('password');
+
+    if (emailParam && passwordParam) {
+      (async () => {
+        setIsLoading(true);
+        try {
+          const result = await signIn('credentials', {
+            redirect: false,
+            email: emailParam.trim().toLowerCase(),
+            password: passwordParam,
+          });
+
+          if (result?.error) {
+            console.error('Auto sign-in error:', result.error);
+            toast.error('Automatic sign-in failed. Please try logging in manually.');
+            setIsLoading(false);
+            return;
+          }
+
+          const session = (await getSession()) as Session | null;
+          const redirectPath = await getRedirectPath(session);
+          window.location.href = redirectPath;
+        } catch (err) {
+          console.error('Auto sign-in exception:', err);
+          toast.error('Automatic sign-in failed.');
+        } finally {
+          setIsLoading(false);
+        }
+      })();
+    }
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
@@ -101,73 +180,8 @@ export default function LoginForm() {
 
       // Helper to check if agency-form is submitted
 
-      // Determine the redirect path based on userType or role
-    // Inside the handleSubmit function, replace the getRedirectPath function with this fixed version:
-
-const getRedirectPath = async (): Promise<string> => {
-  // Handle AGENCY_ADMIN specific redirection
-  if ((userType && userType.toUpperCase() === "AGENCY_ADMIN") || 
-      (role && role.toUpperCase() === "AGENCY_ADMIN")) {
-    
-    try {
-      const agencyFormRes = await fetch('/api/agencyform');
-      
-      // If API returns 404, it means no form exists yet
-      if (agencyFormRes.status === 404) {
-        return "/agency-admin/agency-form";
-      }
-      
-      const agencyData = await agencyFormRes.json();
-      
-      // Check if form exists
-      if (agencyData.data) {
-        const status = agencyData.data.status?.toUpperCase();
-        
-        // If APPROVED or ACTIVE - go directly to dashboard
-        if (status === 'APPROVED' || status === 'ACTIVE') {
-          return "/agency-admin/dashboard";
-        }
-        // If PENDING or UNDER_REVIEW - show under review page with modal
-        else if (status === 'PENDING' || status === 'UNDER_REVIEW') {
-          return "/agency-admin/under-review";
-        }
-        // If REJECTED or DECLINED - show under review page with rejected modal
-        else if (status === 'REJECTED' || status === 'DECLINED') {
-          return "/agency-admin/under-review";
-        }
-        // For any other status, redirect to dashboard (safety fallback)
-        else {
-          return "/agency-admin/dashboard";
-        }
-      }
-      // If no form data exists, show the agency form
-      else {
-        return "/agency-admin/agency-form";
-      }
-    } catch (error) {
-      console.error("Error checking agency form status:", error);
-      // If there's an error, redirect to agency form to be safe
-      return "/agency-admin/agency-form";
-    }
-  }
-
-  // Existing code for other user types
-  const type = userType || role;
-  if (type) {
-    const upperType = type.toUpperCase();
-    if (upperType === "SUPER_ADMIN") return "/super-admin/dashboard";
-    if (upperType === "ADMIN") return "/admin/dashboard";
-    if (upperType === "MANAGER") return "/agency/dashboard";
-    if (upperType === "EXECUTIVE") return "/executive/dashboard";
-    if (upperType === "TEAM_LEAD") return "/teamlead/dashboard";
-    if (upperType === "TL") return "/telecaller/dashboard";
-  }
-
-  // Default fallback
-  return "/dashboard";
-};
-
-      const redirectPath = await getRedirectPath();
+      // use shared redirect helper with current session
+      const redirectPath = await getRedirectPath(session);
       console.log("Redirecting to:", redirectPath);
       window.location.href = redirectPath;
     } catch (error) {

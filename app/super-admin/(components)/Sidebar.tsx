@@ -46,7 +46,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
   const menuItems: MenuItem[] = [
     {
       title: "Dashboard",
-      href: "/admin/daboard",
+      href: "/admin/dashboard",
       icon: (
         <Image
           src="/dash.svg"
@@ -197,33 +197,23 @@ const Sidebar = ({ expanded }: SidebarProps) => {
         {/* Logo Section */}
         <div className="flex items-center justify-center p-2 mb-4">
           <Link href="/" data-cy="sidebar-logo-link">
-            {isMobile ? (
+            {isCollapsed ? (
               <Image
                 src="/logo/elneeraf.png"
                 alt="Company Logo"
-                width={64}
-                height={64}
+                width={40}
+                height={40}
                 priority
-                className="mx-auto"
-                data-cy="sidebar-logo"
-              />
-            ) : isCollapsed ? (
-              <Image
-                src="/logo/elneeraf.png"
-                alt="Company Logo"
-                width={480}
-                height={80}
-                priority
-                className="mx-auto"
+                className="w-8 h-8 sm:w-10 sm:h-10"
                 data-cy="sidebar-logo"
               />
             ) : (
               <Image
                 src="/logo/elneeraf.png"
                 alt="Company Logo"
-                width={420}
+                width={200}
                 height={60}
-                className="-mb-22 mt-[-61px] w-[320px]"
+                className="w-32 sm:w-40 md:w-48 h-auto"
                 priority
                 data-cy="sidebar-logo"
               />
@@ -252,7 +242,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     <span className="mr-2">{item.icon}</span>
                     {!isCollapsed && (
                       <>
-                        <span className="text-sm md:text-lg">{item.title}</span>
+                        <span className="text-sm md:text-base">{item.title}</span>
                         <svg
                           className={`w-4 h-4 ml-auto transition-transform ${
                             loginRequestsOpen ? "rotate-180" : ""
@@ -277,7 +267,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                         <Link
                           key={dropdownItem.href}
                           href={dropdownItem.href}
-                          className={`flex items-center px-3 py-1 md:px-4 md:py-2 text-sm md:text-xl rounded-lg ${
+                          className={`flex items-center px-3 py-1 md:px-4 md:py-2 text-sm md:text-base rounded-lg ${
                             pathname === dropdownItem.href
                               ? "bg-blue-100 text-blue-600"
                               : "text-gray-700 hover:bg-gray-100"
@@ -309,10 +299,10 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                 >
                   <span className="mr-2">{item.icon}</span>
                   {!isCollapsed && (
-                    <span className="text-sm md:text-lg">{item.title}</span>
+                    <span className="text-sm md:text-base">{item.title}</span>
                   )}
                   {(isMobile || isCollapsed) && hoveredItem === item.title && (
-                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs md:text-sm rounded whitespace-nowrap">
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs md:text-sm rounded whitespace-nowrap z-50">
                       {item.title}
                     </div>
                   )}
@@ -339,12 +329,12 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                 >
                   <span className="mr-2">{item.icon}</span>
                   {!isCollapsed && (
-                    <span className="text-sm md:text-lg font-poppins">
+                    <span className="text-sm md:text-base font-poppins">
                       {item.title}
                     </span>
                   )}
                   {(isMobile || isCollapsed) && hoveredItem === item.title && (
-                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs md:text-sm rounded whitespace-nowrap">
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs md:text-sm rounded whitespace-nowrap z-50">
                       {item.title}
                     </div>
                   )}
@@ -364,12 +354,12 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                 >
                   <span className="mr-2">{item.icon}</span>
                   {!isCollapsed && (
-                    <span className="text-sm md:text-lg font-poppins">
+                    <span className="text-sm md:text-base font-poppins">
                       {item.title}
                     </span>
                   )}
                   {(isMobile || isCollapsed) && hoveredItem === item.title && (
-                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs md:text-sm rounded whitespace-nowrap">
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-xs md:text-sm rounded whitespace-nowrap z-50">
                       {item.title}
                     </div>
                   )}
@@ -386,23 +376,23 @@ const Sidebar = ({ expanded }: SidebarProps) => {
               alt="background"
               width={218}
               height={250}
-              className="w-full mt-4 md:mt-6"
+              className="w-full h-auto"
             />
-            <div className="p-2 md:p-3 bg-gray-50 rounded-lg mt-[-120px] md:mt-[-160px]">
+            <div className="p-2 md:p-3 bg-gray-50 rounded-lg -mt-24 md:-mt-32">
               <Image
                 src="/Icon.svg"
                 alt="help icon"
                 width={28}
                 height={28}
-                className="w-8 h-8 md:w-10 md:h-10"
+                className="w-7 h-7 md:w-8 md:h-8"
               />
-              <h4 className="mt-1 md:mt-2 mb-0 md:mb-1 text-xs md:text-[15px] text-white font-poppins">
+              <h4 className="mt-1 md:mt-2 mb-0 md:mb-1 text-xs md:text-sm text-white font-poppins">
                 Need help?
               </h4>
-              <p className="mb-1 md:mb-2 text-[11px] md:text-[13px] text-white font-poppins">
+              <p className="mb-1 md:mb-2 text-[10px] md:text-xs text-white font-poppins">
                 Please check our docs
               </p>
-              <button className="w-full px-2 py-1 md:px-3 md:py-2 text-xs md:text-[13px] text-center text-black font-poppins bg-white rounded-md hover:bg-gray-100">
+              <button className="w-full px-2 py-1 md:px-3 md:py-2 text-[10px] md:text-xs text-center text-black font-poppins bg-white rounded-md hover:bg-gray-100">
                 DOCUMENTATION
               </button>
             </div>

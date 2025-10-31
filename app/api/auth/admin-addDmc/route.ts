@@ -4,6 +4,18 @@ import { randomUUID } from "crypto"
 
 const prisma = new PrismaClient()
 
+interface DMC {
+  id: string;
+  name: string;
+  contactPerson: string | null;
+  phoneNumber: string | null;
+  designation: string | null;
+  email: string | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -81,7 +93,7 @@ export async function GET(request: NextRequest) {
     ])
 
     // Transform data to match frontend interface
-    const transformedDmcs = dmcs.map((dmc) => ({
+const transformedDmcs = dmcs.map((dmc: DMC) => ({
       id: dmc.id,
       name: dmc.name,
       primaryContact: dmc.contactPerson || "",

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import prisma from "@/lib/prisma"
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3"
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 interface TeamMemberProfileImage {
   url: string;
@@ -24,25 +26,84 @@ interface TeamMemberResponse {
   avatarColor: string
 }
 
+// Initialize S3 Client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'eu-north-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+  },
+})
+
+// Helper function to generate fresh presigned URL for S3 objects
+async function generatePresignedUrl(s3Url: string | null): Promise<string | null> {
+  if (!s3Url || !s3Url.includes('s3.') || !s3Url.includes('amazonaws.com')) {
+    return s3Url; // Not an S3 URL, return as is
+  }
+
+  try {
+    // Extract bucket name and key from S3 URL
+    // URL format: https://bucket-name.s3.region.amazonaws.com/key/path/file.ext
+    const urlParts = s3Url.split('amazonaws.com/')[1]?.split('?')[0]
+    if (!urlParts) return s3Url;
+
+    // The key is everything after amazonaws.com/
+    const key = urlParts
+    const bucketName = process.env.AWS_S3_BUCKET_NAME || 'trekkingmiles-generated-itinerary'
+
+    console.log('Generating presigned URL for key:', key)
+
+    // Generate fresh presigned URL with 7 days expiry
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    })
+
+    const presignedUrl = await getSignedUrl(s3Client, command, {
+      expiresIn: 604800, // 7 days in seconds
+    })
+
+    return presignedUrl
+  } catch (error) {
+    console.error('Error generating presigned URL:', error)
+    return s3Url // Return original URL if generation fails
+  }
+}
+
 // Helper function to normalize logo URL
-function normalizeLogoUrl(logoPath: string | null | undefined): string | null {
+async function normalizeLogoUrl(logoPath: string | null | undefined): Promise<string | null> {
   if (!logoPath) return null;
   
-  // If it's already a full URL, return as is
+  // If it's an S3 URL, generate fresh presigned URL
+  if (logoPath.includes('s3.') && logoPath.includes('amazonaws.com')) {
+    return await generatePresignedUrl(logoPath);
+  }
+  
+  // If it's already a full URL (but not S3), return as is
   if (logoPath.startsWith('http')) {
     return logoPath;
   }
   
   // If it starts with /, it's already a proper path from public
+  const base = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXTAUTH_URL || '';
+
   if (logoPath.startsWith('/')) {
-    return logoPath;
+    return base ? `${base.replace(/\/$/, '')}${logoPath}` : logoPath;
   }
-  
+
   // Otherwise, ensure it has the /uploads/ prefix
-  return logoPath.startsWith('uploads/') ? `/${logoPath}` : `/uploads/${logoPath}`;
+  const path = logoPath.startsWith('uploads/') ? `/${logoPath}` : `/uploads/${logoPath}`;
+  return base ? `${base.replace(/\/$/, '')}${path}` : path;
 }
 
-export async function GET() {
+function ensureLeadingHash(color: string | null | undefined, fallback = '#0F9D58') {
+  if (!color) return fallback;
+  const trimmed = color.trim();
+  if (!trimmed) return fallback;
+  return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+}
+
+export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions)
 
@@ -50,28 +111,27 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Find user by email
-   const user = await prisma.user.findUnique({
-  where: { email: session.user.email },
-  include: {
-    profileImage: true,
-    agency: true,
-  },
-})
+    const url = new URL(req.url)
+    const agencyIdParam = url.searchParams.get('agencyId')
+
+    // If agencyId query param is provided, fetch that user (agency admin) by id.
+    // Otherwise, default to using the session user's email.
+    let user
+    if (agencyIdParam) {
+      user = await prisma.user.findUnique({
+        where: { id: agencyIdParam },
+        include: { profileImage: true, agency: true }
+      })
+    } else {
+      // Find user by email
+      user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        include: { profileImage: true, agency: true }
+      })
+    }
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
-    }
-
-    const isAuthorized = user.userType === "AGENCY_ADMIN" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
-
-    if (!isAuthorized) {
-      return NextResponse.json(
-        {
-          error: `Access denied. User type: ${user.userType}, Role: ${user.role}`,
-        },
-        { status: 403 },
-      )
     }
 
     // Helper function to check if user_form table exists
@@ -158,6 +218,10 @@ export async function GET() {
       // Continue without agency form data if table doesn't exist
     }
 
+    // Generate fresh presigned URLs for logos
+    const logoUrl = await normalizeLogoUrl(agencyForm?.logoPath)
+    const businessLicenseUrl = await normalizeLogoUrl(agencyForm?.businessLicensePath)
+
     // Build company information with fallbacks and proper logo URL handling
     const companyInformation = {
       name: agencyForm?.contactPerson || user.companyName || user.name || "N/A",
@@ -177,15 +241,15 @@ export async function GET() {
         : user.phone || "N/A",
       email: agencyForm?.email || user.email,
       website: agencyForm?.website || "N/A",
-      logo: normalizeLogoUrl(agencyForm?.logoPath),
+      logo: logoUrl,
       country: agencyForm?.country || "INDIA",
       yearOfRegistration: agencyForm?.yearOfRegistration || "N/A",
       panNo: agencyForm?.panNumber || "N/A",
       panType: agencyForm?.panType || "N/A",
       headquarters: agencyForm?.headquarters || "N/A",
       yearsOfOperation: agencyForm?.yearsOfOperation || "N/A",
-      landingPageColor: agencyForm?.landingPageColor || "#0F9D58",
-      businessLicense: normalizeLogoUrl(agencyForm?.businessLicensePath),
+      landingPageColor: ensureLeadingHash(agencyForm?.landingPageColor, '#0F9D58'),
+      businessLicense: businessLicenseUrl,
     }
 
     const response = {
@@ -214,7 +278,7 @@ export async function GET() {
       teamMembers: teamMembers,
       commentData: null,
       companyInformation: companyInformation,
-      hasAgencyForm: !!agencyForm, // Flag to indicate if agency form exists
+      hasAgencyForm: !!agencyForm,
     }
 
     return NextResponse.json(response)

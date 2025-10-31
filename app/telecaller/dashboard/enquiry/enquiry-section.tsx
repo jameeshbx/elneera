@@ -165,25 +165,33 @@ export default function Enquiry() {
   }, [])
 
   const fetchStaffUsers = async () => {
-    try {
-      const response = await fetch("/api/auth/agency-add-user", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      })
-      const data = await response.json()
-if (response.ok && data?.success && Array.isArray(data.data)) {
-  const mapped = data.data
-    .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
-    .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
-  setStaffUsers(mapped)
-} else {
-  setStaffUsers([])
-}
-    } catch (e) {
-      console.error("Failed to fetch staff users", e)
-      setStaffUsers([])
+  try {
+    const response = await fetch("/api/auth/agency-add-user", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
+
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : {};
+
+    if (data?.success && Array.isArray(data.data)) {
+      const mapped = data.data
+        .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
+        .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true));
+      setStaffUsers(mapped);
+    } else {
+      console.warn("Unexpected response format from /api/auth/agency-add-user", data);
+      setStaffUsers([]);
+    }
+  } catch (e) {
+    console.error("Failed to fetch staff users", e);
+    setStaffUsers([]);
   }
+};
 
   const fetchEnquiries = async () => {
     try {
