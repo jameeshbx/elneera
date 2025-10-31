@@ -1,8 +1,8 @@
 "use client";
 import React, { Suspense } from "react";
-import BreadcrumbDemo from "@/app/executive/dashboard/breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
 
-import DMCPaymentInterface from "@/app/executive/dashboard/dmc-payment/dmc-payment";
+import DMCPaymentInterface from "@/app/teamlead/dashboard/dmc-payment/dmc-payment";
 
 export default function Enquiry() {
   return (

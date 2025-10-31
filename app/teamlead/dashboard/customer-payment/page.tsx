@@ -1,9 +1,9 @@
 "use client";
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import BreadcrumbDemo from "@/app/executive/dashboard/breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
 
-import PaymentOverviewForm from "@/app/executive/dashboard/customer-payment/customer";
+import PaymentOverviewForm from "@/app/teamlead/dashboard/customer-payment/customer";
 
 export default function CustomerPayment() {
   const searchParams = useSearchParams();

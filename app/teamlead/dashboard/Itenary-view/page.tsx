@@ -1,10 +1,10 @@
 
 "use client";
 import React, { Suspense } from "react";
-import BreadcrumbDemo from "@/app/executive/dashboard/breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
 
 
-import ItineraryView from "@/app/executive/dashboard/Itenary-view/Itenary-view";
+import ItineraryView from "@/app/teamlead/dashboard/Itenary-view/Itenary-view";
 
 export default function Enquiry() {
   return(

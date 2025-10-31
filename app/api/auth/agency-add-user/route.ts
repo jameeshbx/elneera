@@ -315,7 +315,7 @@ export async function POST(req: Request) {
             phoneNumber: phoneNumber || existingUserForm.phoneNumber,
             userType: userType,
             password: await hash(password, 10),
-            agency: { connect: { id: agencyAdminId } },
+            agencyId: agencyAdminId,    
             updatedAt: new Date(),
             resetToken,
             resetTokenExpiry

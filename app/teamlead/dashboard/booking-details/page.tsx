@@ -1,8 +1,8 @@
 "use client";
 import React, { Suspense } from "react";
-import BreadcrumbDemo from "@/app/executive/dashboard/breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
 
-import KashmirBookingDashboard from "@/app/executive/dashboard/booking-details/booking";
+import KashmirBookingDashboard from "@/app/teamlead/dashboard/booking-details/booking";
 
 export default function Enquiry() {
   return (

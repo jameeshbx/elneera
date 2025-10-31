@@ -1,8 +1,8 @@
 "use client";
 import React, { Suspense } from "react";
-import BreadcrumbDemo from "@/app/executive/dashboard/breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
 
-import TravelBookingInterface from "@/app/executive/dashboard/share-dmc/share-dmc";
+import TravelBookingInterface from "@/app/teamlead/dashboard/share-dmc/share-dmc";
 
 export default function Enquiry() {
   return (
