@@ -244,7 +244,8 @@ export async function POST(req: Request) {
     console.log("🔍 User type from form:", userType);
 
     // Validate the user type
-    const validUserTypes = ['MANAGER', 'EXECUTIVE', 'TEAM_LEAD', 'TL'];
+    // Validate the user type - Updated to handle all possible user types
+    const validUserTypes = ['MANAGER', 'EXECUTIVE', 'TEAM_LEAD', 'TL', 'TRAVEL_AGENCY'];
     if (!userType || !validUserTypes.includes(userType)) {
       console.error("❌ Invalid user type received:", userType);
       return NextResponse.json(
@@ -315,7 +316,7 @@ export async function POST(req: Request) {
             phoneNumber: phoneNumber || existingUserForm.phoneNumber,
             userType: userType,
             password: await hash(password, 10),
-            agencyId: agencyAdminId,    
+           agencyId: agencyAdminId,  // Use agencyId instead of agency
             updatedAt: new Date(),
             resetToken,
             resetTokenExpiry
@@ -354,8 +355,8 @@ export async function POST(req: Request) {
           data: {
             name: name || existingUser.name,
             phone: phoneNumber || existingUser.phone,
-            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL',
-            password: await hash(password, 10),
+            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL' | 'TRAVEL_AGENCY',
+            password: await hash(password, 10), // Update password
             updatedAt: new Date(),
             businessType: 'AGENCY'
           },
@@ -536,6 +537,32 @@ export async function POST(req: Request) {
         subject: emailContent.subject,
         html: emailContent.html
       });
+
+      // Send notification to admin for TRAVEL_AGENCY signup
+      if (userType === 'TRAVEL_AGENCY') {
+        const adminEmail = 'anusree@buyexchange.in';
+        const adminSubject = 'New Agency Admin Registration';
+        const adminHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #dc2626;">New Agency Admin Registration</h2>
+            <p>A new agency admin has been registered in the system:</p>
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>Name:</strong> ${name}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Phone:</strong> ${phoneNumber}</p>
+              <p><strong>Registration Date:</strong> ${new Date().toLocaleString()}</p>
+            </div>
+            <p>Please review their registration in the admin panel and ensure appropriate permissions are set.</p>
+          </div>
+        `;
+
+        await sendEmail({
+          to: adminEmail,
+          subject: adminSubject,
+          html: adminHtml
+        });
+      }
+
     } catch (emailError) {
       console.error('Error sending email:', emailError);
     }

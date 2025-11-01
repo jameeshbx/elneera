@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import { signOut, useSession } from "next-auth/react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Session } from "next-auth"
 
 type MenuItem = {
@@ -41,7 +42,7 @@ interface CompanyInformation {
   landingPageColor: string
 }
 
-const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) => {
+const Sidebar = ({ expanded, setExpanded, profileData: initialProfileData }: SidebarProps) => {
   const pathname = usePathname()
   const [reportsOpen, setReportsOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
@@ -53,7 +54,13 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
   const [themeColor, setThemeColor] = useState("#4ECDC4")
   const [profileData, setProfileData] = useState(initialProfileData)
   const [profileImageKey, setProfileImageKey] = useState(Date.now())
-  const [logoError, setLogoError] = useState(false)
+
+  
+  // Internal expanded state for when no external control is provided
+  const [, setInternalExpanded] = useState(true)
+  
+  // Use external expanded state if provided, otherwise use internal
+  const [, setLogoError] = useState(false)
 
   useEffect(() => {
     const handleResize = () => {
@@ -321,6 +328,15 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
     setReportsOpen(!reportsOpen)
   }
 
+  // Toggle function that works with both internal and external state
+ const toggleSidebar = () => {
+  if (setExpanded) {
+    setExpanded(!expanded);
+  } else {
+    setInternalExpanded(!expanded);
+  }
+}
+
   const menuItems: MenuItem[] = [
     {
       title: "Dashboard",
@@ -334,17 +350,17 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
     },
     {
       title: "Flights",
-      href: "/teamlead/dashboard/flights",
+      href: "/agency/dashboard/flights",
       icon: <Image src="/flight.png" alt="Flights" width={20} height={20} className="min-w-[20px]" />,
     },
     {
       title: "Accommodation",
-      href: "/teamlead/dashboard/accomadation",
+      href: "/agency/dashboard/accomadation",
       icon: <Image src="/sleep.png" alt="Accommodation" width={20} height={20} className="min-w-[20px]" />,
     },
     {
       title: "Reports",
-      href: "/teamlead/dashboard/reports",
+      href: "/agency/dashboard/reports",
       icon: (
         <Image
           src="/subscription.svg"
@@ -358,12 +374,12 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       dropdownItems: [
         {
           name: "Bookings",
-          href: "/teamlead/dashboard/reports/recent-booking",
+          href: "/agency/dashboard/reports/recent-booking",
           logo: <Image src="/dmcagency.svg" alt="Bookings" width={16} height={16} className="mr-2 min-w-[16px]" />,
         },
         {
           name: "Revenue by Destinations",
-          href: "/teamlead/dashboard/reports/revenue-destination",
+          href: "/agency/dashboard/reports/revenue-destination",
           logo: (
             <Image
               src="/dmcagency.svg"
@@ -376,17 +392,29 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         },
         {
           name: "Revenue by DMC",
-          href: "/teamlead/dashboard/reports/revenue-dmc",
+          href: "/agency/dashboard/reports/revenue-dmc",
           logo: (
             <Image src="/dmcagency.svg" alt="Revenue by DMC" width={16} height={16} className="mr-2 min-w-[16px]" />
           ),
         },
       ],
     },
-    
+    {
+      title: "Add Users", 
+      href: "/agency/dashboard/add-users",
+      icon: (
+        <Image
+          src="/people.png"
+          alt="Add Users"
+          width={20}
+          height={20}
+          className="min-w-[20px]"
+        />
+      ),
+    },
     {
       title: "Add DMC",
-      href: "/teamlead/dashboard/add-dmc",
+      href: "/agency/dashboard/add-dmc",
       icon: <Image src="/Vector.svg" alt="Add DMC" width={20} height={20} className="min-w-[20px]" />,
     },
   ]
@@ -402,7 +430,7 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
   const accountItems = [
     {
       title: profileData?.name || session?.user?.name || "Profile",
-      href: "/teamlead/dashboard/profile",
+      href: "/agency/dashboard/profile",
       icon: (
         <Image
           key={`profile-${profileImageKey}`}
@@ -416,7 +444,7 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
     },
     {
       title: "Settings",
-      href: "/teamlead/dashboard/settings",
+      href: "/agency/dashboard/settings",
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
@@ -446,7 +474,21 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
     },
   ]
 
-  const isCollapsed = isMobile ? true : !expanded
+const isCollapsed = isMobile ? !expanded : !expanded
+
+  const getLogoUrl = (logoPath: string | null | undefined) => {
+    if (!logoPath) return null
+    
+    if (logoPath.startsWith('http')) {
+      return logoPath
+    }
+    
+    if (logoPath.startsWith('/')) {
+      return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${logoPath}`
+    }
+    
+    return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${logoPath}`
+  }
 
   return (
     <aside
@@ -455,54 +497,70 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       }`}
       data-cy="sidebar"
     >
+      {/* Toggle Button - Only show on desktop */}
+      {!isMobile && (
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-6 z-50 flex items-center justify-center w-6 h-6 bg-white border border-gray-200 rounded-full shadow-md hover:bg-gray-50 transition-colors"
+          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          {expanded ? (
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          )}
+        </button>
+      )}
+
       <div className="flex flex-col h-full p-2 md:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {/* Logo Section */}
-        <div className="flex items-center p-2 mb-6">
-          <Link href="/" data-cy="sidebar-logo-link" className="flex items-center w-full">
-            {isLoading ? (
-              <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
-            ) : (
-              <>
-                {companyData?.logoUrl && !logoError ? (
-                  <div className="flex items-center w-full">
-                    {/* Use regular img tag for S3 URLs to avoid Next.js Image restrictions */}
-                    <img
-                      key={`logo-${logoKey}`}
-                      src={companyData.logoUrl}
-                      alt="Company Logo"
-                      style={{
-                        width: isCollapsed ? '32px' : '120px',
-                        height: '32px',
-                        objectFit: 'contain',
-                        maxWidth: '100%'
-                      }}
-                      onError={() => {
-                        // Silently handle error and show fallback
-                        setLogoError(true);
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center w-full">
-                    <Image
-                      src={process.env.NEXT_PUBLIC_BASE_URL ? `${process.env.NEXT_PUBLIC_BASE_URL}/logo/elneeraw.png` : '/logo/elneeraw.png'}
-                      alt="Default Logo"
-                      width={isCollapsed ? 32 : 120}
-                      height={isCollapsed ? 32 : 32}
-                      className="object-contain max-w-full h-8"
-                      priority
-                    />
-                    {!isCollapsed && (
-                      <span className="ml-2 text-lg font-semibold">
-                        {companyData?.name || 'Agency'}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </Link>
-        </div>
+       <div className="flex items-center p-2 mb-6">
+                 <Link href="/" data-cy="sidebar-logo-link" className="flex items-center w-full">
+                   {isLoading ? (
+                     <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
+                   ) : (
+                     <>
+                       {companyData?.logoUrl ? (
+                         <div className="flex items-center w-full">
+                           <Image
+                             key={`${logoKey}-${companyData.logoUrl}`}
+                             src={getLogoUrl(companyData.logoUrl) || '/placeholder.svg?height=32&width=120'}
+                             alt="Company Logo"
+                             width={isCollapsed ? 32 : 120}
+                             height={isCollapsed ? 32 : 32}
+                             className="object-contain max-w-full h-8"
+                             priority
+                             onError={(e) => {
+                               console.error('Error loading logo:', companyData.logoUrl)
+                               e.currentTarget.style.display = 'none'
+                               const fallback = e.currentTarget.parentElement?.querySelector('.logo-fallback')
+                               if (fallback) fallback.classList.remove('hidden')
+                             }}
+                           />
+                           <div className="logo-fallback hidden">
+                             <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
+                               <span className="text-xs font-medium text-gray-500">
+                                 {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                               </span>
+                             </div>
+                           </div>
+                         </div>
+                       ) : (
+                         <div className="h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
+                           <span className="text-xs font-medium text-gray-500">
+                             {companyData?.name?.charAt(0)?.toUpperCase() || 'LOGO'}
+                           </span>
+                         </div>
+                       )}
+                       {!isCollapsed && !companyData?.logoUrl && (
+                         <span className="ml-2 text-lg font-semibold">
+                           {companyData?.name || 'Agency'}
+                         </span>
+                       )}
+                     </>
+                   )}
+                 </Link>
+               </div>
 
         <nav className="flex-1 space-y-2">
           {menuItems.map((item) => (
@@ -514,12 +572,12 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
                     onMouseEnter={() => setHoveredItem(item.title)}
                     onMouseLeave={() => setHoveredItem(null)}
                     className={`flex items-center w-full ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors ${
-                      pathname.startsWith("/teamlead/dashboard/reports")
+                      pathname.startsWith("/agency/dashboard/reports")
                         ? "text-white"
                         : "text-gray-700 hover:bg-gray-100"
                     }`}
                     style={{
-                      backgroundColor: pathname.startsWith("/teamlead/dashboard/reports") ? themeColor : 'transparent'
+                      backgroundColor: pathname.startsWith("/agency/dashboard/reports") ? themeColor : 'transparent'
                     }}
                     data-cy={`sidebar-item-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
                   >

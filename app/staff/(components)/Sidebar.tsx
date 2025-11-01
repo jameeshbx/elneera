@@ -28,10 +28,13 @@ const Sidebar = ({ expanded }: SidebarProps) => {
   const [loginRequestsOpen, setLoginRequestsOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
+      const width = window.innerWidth;
+      setIsMobile(width < 640); // sm breakpoint
+      setIsTablet(width >= 640 && width < 1024); // md to lg
     };
 
     handleResize();
@@ -53,7 +56,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Dashboard"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
     },
@@ -66,7 +69,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Login Requests"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
       isDropdown: true,
@@ -80,7 +83,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
               alt="DMC Agency Logo"
               width={16}
               height={16}
-              className="mr-2 min-w-[16px]"
+              className="mr-2 min-w-[14px] sm:min-w-[16px]"
             />
           ),
         },
@@ -93,7 +96,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
               alt="Agency Logo"
               width={16}
               height={16}
-              className="mr-2 min-w-[16px]"
+              className="mr-2 min-w-[14px] sm:min-w-[16px]"
             />
           ),
         },
@@ -108,7 +111,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Advisors"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
     },
@@ -121,7 +124,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Manage Users"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
     },
@@ -134,7 +137,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Manage Users"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
     },
@@ -150,7 +153,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Profile"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
     },
@@ -163,7 +166,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Settings"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
     },
@@ -176,26 +179,25 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           alt="Logout"
           width={20}
           height={20}
-          className="min-w-[20px]"
+          className="min-w-[18px] sm:min-w-[20px]"
         />
       ),
       onClick: () => signOut({ callbackUrl: "/" }),
     },
   ];
 
-  // On mobile, we always want collapsed state
-  const isCollapsed = isMobile ? true : !expanded;
+  // Determine sidebar state based on screen size
+  const isCollapsed = isMobile || isTablet || !expanded;
+  const sidebarWidth = isMobile ? "w-14" : isTablet ? "w-16" : expanded ? "w-64" : "w-20";
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 h-full bg-white shadow-lg transition-all duration-300 ${
-        isMobile ? "w-16" : expanded ? "w-64" : "w-20"
-      }`}
+      className={`fixed inset-y-0 left-0 z-40 h-full bg-white shadow-lg transition-all duration-300 ${sidebarWidth}`}
       data-cy="sidebar"
     >
-      <div className="flex flex-col h-full p-2 md:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+      <div className="flex flex-col h-full p-2 sm:p-3 lg:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {/* Logo Section */}
-        <div className="flex items-center justify-center p-2 mb-4">
+        <div className="flex items-center justify-center p-1 sm:p-2 mb-2 sm:mb-4">
           <Link href="/" data-cy="sidebar-logo-link">
             {isCollapsed ? (
               <Image
@@ -221,7 +223,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
           </Link>
         </div>
 
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 space-y-0.5 sm:space-y-1">
           {menuItems.map((item) => (
             <div key={item.href}>
               {item.isDropdown ? (
@@ -230,7 +232,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     onClick={toggleLoginRequests}
                     onMouseEnter={() => setHoveredItem(item.title)}
                     onMouseLeave={() => setHoveredItem(null)}
-                    className={`flex items-center w-full p-2 md:p-3 rounded-lg transition-colors ${
+                    className={`flex items-center w-full p-1.5 sm:p-2 lg:p-3 rounded-lg transition-colors ${
                       pathname.startsWith("/admin/login-requests")
                         ? "bg-blue-100 text-blue-600"
                         : "text-gray-700 hover:bg-gray-100"
@@ -239,12 +241,12 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                       .toLowerCase()
                       .replace(/\s+/g, "-")}`}
                   >
-                    <span className="mr-2">{item.icon}</span>
+                    <span className="mr-1 sm:mr-2">{item.icon}</span>
                     {!isCollapsed && (
                       <>
                         <span className="text-sm md:text-base">{item.title}</span>
                         <svg
-                          className={`w-4 h-4 ml-auto transition-transform ${
+                          className={`w-3 h-3 sm:w-4 sm:h-4 ml-auto transition-transform ${
                             loginRequestsOpen ? "rotate-180" : ""
                           }`}
                           fill="none"
@@ -262,7 +264,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     )}
                   </button>
                   {loginRequestsOpen && !isCollapsed && (
-                    <div className="ml-6 md:ml-8 mt-1 space-y-1">
+                    <div className="ml-4 sm:ml-6 lg:ml-8 mt-1 space-y-0.5 sm:space-y-1">
                       {item.dropdownItems?.map((dropdownItem) => (
                         <Link
                           key={dropdownItem.href}
@@ -288,7 +290,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                   href={item.href}
                   onMouseEnter={() => setHoveredItem(item.title)}
                   onMouseLeave={() => setHoveredItem(null)}
-                  className={`flex items-center p-2 md:p-3 rounded-lg transition-colors ${
+                  className={`flex items-center p-1.5 sm:p-2 lg:p-3 rounded-lg transition-colors ${
                     pathname === item.href
                       ? "bg-blue-100 text-blue-600"
                       : "text-gray-700 hover:bg-gray-100"
@@ -297,7 +299,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                     .toLowerCase()
                     .replace(/\s+/g, "-")}`}
                 >
-                  <span className="mr-2">{item.icon}</span>
+                  <span className="mr-1 sm:mr-2">{item.icon}</span>
                   {!isCollapsed && (
                     <span className="text-sm md:text-base">{item.title}</span>
                   )}
@@ -311,9 +313,9 @@ const Sidebar = ({ expanded }: SidebarProps) => {
             </div>
           ))}
 
-          <div className="pt-2 md:pt-4 mt-2 md:mt-4 border-t border-gray-200">
+          <div className="pt-2 sm:pt-3 lg:pt-4 mt-2 sm:mt-3 lg:mt-4 border-t border-gray-200">
             {!isCollapsed && (
-              <h3 className="px-2 md:px-3 mb-1 md:mb-2 text-xs font-semibold tracking-wider text-black uppercase">
+              <h3 className="px-2 sm:px-3 mb-1 sm:mb-2 text-[10px] sm:text-xs font-semibold tracking-wider text-black uppercase">
                 ACCOUNT PAGES
               </h3>
             )}
@@ -324,10 +326,10 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                   onClick={item.onClick}
                   onMouseEnter={() => setHoveredItem(item.title)}
                   onMouseLeave={() => setHoveredItem(null)}
-                  className={`flex items-center w-full p-2 md:p-3 rounded-lg transition-colors text-gray-700 hover:bg-gray-100`}
+                  className={`flex items-center w-full p-1.5 sm:p-2 lg:p-3 rounded-lg transition-colors text-gray-700 hover:bg-gray-100`}
                   data-cy={`sidebar-account-item-${item.title.toLowerCase()}`}
                 >
-                  <span className="mr-2">{item.icon}</span>
+                  <span className="mr-1 sm:mr-2">{item.icon}</span>
                   {!isCollapsed && (
                     <span className="text-sm md:text-base font-poppins">
                       {item.title}
@@ -345,14 +347,14 @@ const Sidebar = ({ expanded }: SidebarProps) => {
                   href={item.href}
                   onMouseEnter={() => setHoveredItem(item.title)}
                   onMouseLeave={() => setHoveredItem(null)}
-                  className={`flex items-center p-2 md:p-3 rounded-lg transition-colors ${
+                  className={`flex items-center p-1.5 sm:p-2 lg:p-3 rounded-lg transition-colors ${
                     pathname === item.href
                       ? "bg-blue-100 text-blue-600"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                   data-cy={`sidebar-account-item-${item.title.toLowerCase()}`}
                 >
-                  <span className="mr-2">{item.icon}</span>
+                  <span className="mr-1 sm:mr-2">{item.icon}</span>
                   {!isCollapsed && (
                     <span className="text-sm md:text-base font-poppins">
                       {item.title}
@@ -370,7 +372,7 @@ const Sidebar = ({ expanded }: SidebarProps) => {
         </nav>
 
         {!isCollapsed && (
-          <div className="p-2 md:p-3 mt-auto">
+          <div className="p-1.5 sm:p-2 lg:p-3 mt-auto hidden lg:block">
             <Image
               src="/Background.svg"
               alt="background"

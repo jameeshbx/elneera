@@ -9,14 +9,14 @@ import { z } from "zod"
 import { toast } from "sonner"
 
 
-const userTypes = ["AGENCY_ADMIN"] as const;
+const userTypes = ["TRAVEL_AGENCY"] as const;
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
-  userType: z.enum(["AGENCY_ADMIN"], {
+  userType: z.enum(["TRAVEL_AGENCY"], {
     message: "Please select a valid user type"
   })
 });

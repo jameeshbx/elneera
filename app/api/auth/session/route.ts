@@ -20,7 +20,7 @@ export async function GET() {
       // First try to use userType if available
       if (userType) {
         switch (userType.toUpperCase()) {
-          case 'AGENCY_ADMIN':
+          case 'TRAVEL_AGENCY':
             return '/agency-admin/agency-form';
           case 'MANAGER':
             return '/agency/dashboard';
@@ -36,7 +36,7 @@ export async function GET() {
       // Fall back to role if userType is not available
       if (role) {
         switch (role.toUpperCase()) {
-          case 'AGENCY_ADMIN':
+          case 'TRAVEL_AGENCY':
             return '/agency-admin/agency-form';
           case 'MANAGER':
             return '/agency/dashboard';

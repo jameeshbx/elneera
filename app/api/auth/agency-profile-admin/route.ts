@@ -134,6 +134,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
+    const isAuthorized = user.userType === "TRAVEL_AGENCY" || user.role === "ADMIN" || user.role === "SUPER_ADMIN"
+
+    if (!isAuthorized) {
+      return NextResponse.json(
+        {
+          error: `Access denied. User type: ${user.userType}, Role: ${user.role}`,
+        },
+        { status: 403 },
+      )
+    }
+
     // Helper function to check if user_form table exists
     const ensureUserFormTableExists = async () => {
       try {
