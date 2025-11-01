@@ -14,6 +14,28 @@ export async function GET(request: Request) {
       );
     }
 
+    // First get the current agency to check status
+    const currentAgency = await prisma.agencyForm.findUnique({
+      where: { id: agencyId },
+      select: { status: true }
+    });
+
+    // If already approved, redirect to success page without changing anything
+    if (currentAgency?.status === 'ACTIVE') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/agency-approved' },
+      });
+    }
+
+    // If already processed with a different status, redirect to appropriate page
+    if (currentAgency?.status === 'REJECTED') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `/already-processed?status=${currentAgency.status}` },
+      });
+    }
+
     // Update the agency status to ACTIVE and include the creator data
     const updatedAgency = await prisma.agencyForm.update({
       where: { id: agencyId },
@@ -31,7 +53,7 @@ export async function GET(request: Request) {
 
     // Log the approval with creator's information
     console.log(`Agency ${updatedAgency.id} approved for user ${updatedAgency.creator?.email || 'unknown'}`);
-    
+
     // In a real app, you would also want to:
     // 1. Send a confirmation email to the agency using updatedAgency.creator.email
     // 2. Create any necessary user accounts

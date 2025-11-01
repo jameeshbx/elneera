@@ -9,6 +9,17 @@ import { User as NextAuthUser } from "next-auth";
 
 
 
+// Extend the UserForm type to include the agencyId field
+type UserFormWithAgencyId = {
+  id: string;
+  email: string;
+  name: string | null;
+  userType: UserType | null;
+  status: string;
+  password: string;
+  agencyId?: string | null;
+};
+
 type AuthUser = NextAuthUser & {
   id: string;
   email: string | null;
@@ -68,7 +79,10 @@ const authOptions: NextAuthOptions = {
         }
 
         // Fallback: check user_form table (agency-created users)
-        const userFormUser = await prisma.userForm.findUnique({ where: { email: normalizedEmail } })
+        // Get the full user form data
+        const userFormUser = await prisma.userForm.findUnique({ 
+          where: { email: normalizedEmail }
+        })
         if (userFormUser) {
           if (userFormUser.status !== 'ACTIVE') {
             throw new Error('Your account is not active. Please contact support.')
@@ -86,7 +100,7 @@ const authOptions: NextAuthOptions = {
             name: userFormUser.name,
             role: 'EXECUTIVE',
             userType: userFormUser.userType,
-            agencyId: userFormUser.agencyId || null,
+            agencyId: (userFormUser as UserFormWithAgencyId).agencyId ?? null,
             profileCompleted: true,
             status: userFormUser.status,
           } as AuthUser)

@@ -1,27 +1,55 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  images: {
-    domains: [
-      'images.unsplash.com', 
-      'res.cloudinary.com', 
-      'lh3.googleusercontent.com', 
-      's.gravatar.com', 
-      'localhost', 
-      'trekkingb2b.vercel.app',
-      'flagcdn.com',
-      'trekkingmiles-generated-itinerary.s3.eu-north-1.amazonaws.com' 
-    ],
-  },
-  
-   // Experimental features
-   experimental: {
+  // Explicitly configure Turbopack
+  experimental: {
     serverActions: {
       bodySizeLimit: '2mb',
     },
   },
-  // Configure page extensions to include API routes
+  
+  // Configure Turbopack with empty config to use webpack
+  // This prevents the build error while keeping webpack as the default bundler
+  turbopack: {
+    // Empty config to use webpack instead
+  },
+  /* config options here */
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 's.gravatar.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'trekkingb2b.vercel.app',
+      },
+      {
+        protocol: 'https',
+        hostname: 'flagcdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'trekkingmiles-generated-itinerary.s3.eu-north-1.amazonaws.com',
+      },
+    ],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+  },
+  
+   // Configure page extensions to include API routes
   pageExtensions: ['tsx', 'ts', 'jsx', 'js', 'api.ts'],
 
   // Enable React Strict Mode
@@ -59,10 +87,6 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Configure cookies
-  cookies: {
-    // Add any custom cookie configuration here
-  },
 };
 
 // Log configuration for debugging
