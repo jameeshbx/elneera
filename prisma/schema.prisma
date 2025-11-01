@@ -288,6 +288,7 @@ model UserForm {
   id               String     @id @default(uuid())
   name             String
   phoneNumber      String
+  agencyId         String?
   phoneExtension   String     @default("+91")
   email            String     @unique
   username         String     @unique
@@ -298,7 +299,6 @@ model UserForm {
   updatedAt        DateTime   @updatedAt
   createdBy        String
   resetToken       String?
-  agencyId          String?   // Added field to store agency admin ID
   agency            User?     @relation("AgencyUsers", fields: [agencyId], references: [id], onDelete: SetNull)
 
   resetTokenExpiry DateTime?
@@ -1036,6 +1036,7 @@ enum Role {
   USER
   ADMIN
   SUPER_ADMIN
+  TRAVEL_AGENCY
   AGENT_USER
   AGENT_ADMIN
   DMC_USER
@@ -1051,6 +1052,7 @@ enum Role {
 
 enum UserType {
   USER
+  TRAVEL_AGENCY
   AGENCY_ADMIN
   AGENCY_MANAGER
   TEAM_LEAD

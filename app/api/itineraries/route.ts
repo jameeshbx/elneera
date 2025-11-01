@@ -4,11 +4,13 @@ import { PrismaClient } from "@prisma/client"
 const prisma = new PrismaClient()
 
 // GET - Fetch itineraries
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const enquiryId = searchParams.get("enquiryId")
     const id = searchParams.get("id")
+    const userId = searchParams.get("userId") // Add userId parameter
 
     if (id) {
       // Fetch specific itinerary by ID
@@ -24,20 +26,25 @@ export async function GET(request: NextRequest) {
       }
 
       return NextResponse.json(itinerary)
-    } else if (enquiryId) {
-      // Fetch itineraries for specific enquiry
-      const itineraries = await prisma.itineraries.findMany({
-        where: { enquiryId },
-        include: {
-          enquiry: true,
-        },
-        orderBy: { createdAt: "desc" },
-      })
-
-      return NextResponse.json(itineraries)
     } else {
-      // Fetch all itineraries
+      // Build the where clause
+      const where: {
+  enquiryId?: string;
+  userId?: string;
+} = {};
+      
+      if (enquiryId) {
+        where.enquiryId = enquiryId;
+      }
+      
+      // Add user ID filter if provided
+      if (userId) {
+        where.userId = userId;
+      }
+
+      // Fetch itineraries with filters
       const itineraries = await prisma.itineraries.findMany({
+        where,
         include: {
           enquiry: true,
         },

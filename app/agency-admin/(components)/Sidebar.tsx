@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import { signOut, useSession } from "next-auth/react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 
 type MenuItem = {
   title: string
@@ -40,7 +41,7 @@ interface CompanyInformation {
   landingPageColor: string
 }
 
-const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) => {
+const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initialProfileData }: SidebarProps) => {
   const pathname = usePathname()
   const [reportsOpen, setReportsOpen] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
@@ -52,6 +53,13 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
   const [themeColor, setThemeColor] = useState("#4ECDC4")
   const [profileData, setProfileData] = useState(initialProfileData)
   const [profileImageKey, setProfileImageKey] = useState(Date.now())
+
+  
+  // Internal expanded state for when no external control is provided
+  const [internalExpanded, setInternalExpanded] = useState(true)
+  
+  // Use external expanded state if provided, otherwise use internal
+  const expanded = externalExpanded !== undefined ? externalExpanded : internalExpanded
 
   useEffect(() => {
     const handleResize = () => {
@@ -93,18 +101,18 @@ const Sidebar = ({ expanded, profileData: initialProfileData }: SidebarProps) =>
         setCompanyData(companyInfo)
         setThemeColor(companyInfo.landingPageColor)
 
-       // Update profile data from API
-if (data?.profileData) {
-  setProfileData({
-    name: data.profileData.name,
-    email: data.profileData.email,
-    bio: data.profileData.bio || '',
-    fullName: data.profileData.fullName,
-    mobile: data.profileData.mobile,
-    location: data.profileData.location,
-    image: data.profileData.avatarUrl
-  })
-}
+        // Update profile data from API
+        if (data?.profileData) {
+          setProfileData({
+            name: data.profileData.name,
+            email: data.profileData.email,
+            bio: data.profileData.bio || '',
+            fullName: data.profileData.fullName,
+            mobile: data.profileData.mobile,
+            location: data.profileData.location,
+            image: data.profileData.avatarUrl
+          })
+        }
 
         // Apply theme color to CSS custom property for global use
         document.documentElement.style.setProperty('--theme-color', companyInfo.landingPageColor)
@@ -164,20 +172,20 @@ if (data?.profileData) {
     }
 
     const handleProfileUpdate = (event: CustomEvent) => {
-  console.log('Profile updated event received:', event.detail)
-  if (event.detail?.profileData) {
-    setProfileData({
-      name: event.detail.profileData.name,
-      email: event.detail.profileData.email,
-      bio: event.detail.profileData.bio || '',
-      fullName: event.detail.profileData.fullName,
-      mobile: event.detail.profileData.mobile,
-      location: event.detail.profileData.location,
-      image: event.detail.profileData.avatarUrl
-    })
-    setProfileImageKey(Date.now())
-  }
-}
+      console.log('Profile updated event received:', event.detail)
+      if (event.detail?.profileData) {
+        setProfileData({
+          name: event.detail.profileData.name,
+          email: event.detail.profileData.email,
+          bio: event.detail.profileData.bio || '',
+          fullName: event.detail.profileData.fullName,
+          mobile: event.detail.profileData.mobile,
+          location: event.detail.profileData.location,
+          image: event.detail.profileData.avatarUrl
+        })
+        setProfileImageKey(Date.now())
+      }
+    }
 
     window.addEventListener('logoUpdated', handleLogoUpdate as EventListener)
     window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
@@ -204,6 +212,15 @@ if (data?.profileData) {
   const toggleReports = () => {
     setReportsOpen(!reportsOpen)
   }
+
+  // Toggle function that works with both internal and external state
+  const toggleSidebar = () => {
+  if (setExpanded) {
+    setExpanded(!expanded)
+  } else {
+    setInternalExpanded(!expanded)
+  }
+}
 
   const menuItems: MenuItem[] = [
     {
@@ -291,16 +308,16 @@ if (data?.profileData) {
     {
       title: profileData?.name || session?.user?.name || "Profile",
       href: "/agency-admin/dashboard/profile",
-     icon: (
-  <Image
-    key={`profile-${profileImageKey}`}
-    src={profileData?.image || session?.user?.image || "/avatar/Image (3).png"}
-    alt="Profile"
-    width={20}
-    height={20}
-    className="min-w-[20px] rounded-full object-cover"
-  />
-),
+      icon: (
+        <Image
+          key={`profile-${profileImageKey}`}
+          src={profileData?.image || session?.user?.image || "/avatar/Image (3).png"}
+          alt="Profile"
+          width={20}
+          height={20}
+          className="min-w-[20px] rounded-full object-cover"
+        />
+      ),
     },
     {
       title: "Settings",
@@ -334,7 +351,7 @@ if (data?.profileData) {
     },
   ]
 
-  const isCollapsed = isMobile ? true : !expanded
+const isCollapsed = isMobile ? !expanded : !expanded
 
   const getLogoUrl = (logoPath: string | null | undefined) => {
     if (!logoPath) return null
@@ -357,6 +374,21 @@ if (data?.profileData) {
       }`}
       data-cy="sidebar"
     >
+      {/* Toggle Button - Only show on desktop */}
+      {!isMobile && (
+        <button
+          onClick={toggleSidebar}
+          className="absolute -right-3 top-6 z-50 flex items-center justify-center w-6 h-6 bg-white border border-gray-200 rounded-full shadow-md hover:bg-gray-50 transition-colors"
+          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          {expanded ? (
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          )}
+        </button>
+      )}
+
       <div className="flex flex-col h-full p-2 md:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {/* Logo Section */}
         <div className="flex items-center p-2 mb-6">
@@ -424,7 +456,7 @@ if (data?.profileData) {
                     style={{
                       backgroundColor: pathname.startsWith("/agency/dashboard/reports") ? themeColor : 'transparent'
                     }}
-                    data-cy={`sidebar-item-${item.title.toLowerCase().replace(/\s+/g, "-")} `}
+                    data-cy={`sidebar-item-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
                   >
                     <span className={isCollapsed ? "" : "mr-3"}>{item.icon}</span>
                     {!isCollapsed && (

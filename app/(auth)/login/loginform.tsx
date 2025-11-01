@@ -180,8 +180,73 @@ export default function LoginForm() {
 
       // Helper to check if agency-form is submitted
 
-      // use shared redirect helper with current session
-      const redirectPath = await getRedirectPath(session);
+      // Determine the redirect path based on userType or role
+    // Inside the handleSubmit function, replace the getRedirectPath function with this fixed version:
+
+const getRedirectPath = async (): Promise<string> => {
+  // Handle TRAVEL_AGENCY specific redirection
+  if ((userType && userType.toUpperCase() === "TRAVEL_AGENCY") || 
+      (role && role.toUpperCase() === "TRAVEL_AGENCY")) {
+    
+    try {
+      const agencyFormRes = await fetch('/api/agencyform');
+      
+      // If API returns 404, it means no form exists yet
+      if (agencyFormRes.status === 404) {
+        return "/agency-admin/agency-form";
+      }
+      
+      const agencyData = await agencyFormRes.json();
+      
+      // Check if form exists
+      if (agencyData.data) {
+        const status = agencyData.data.status?.toUpperCase();
+        
+        // If APPROVED or ACTIVE - go directly to dashboard
+        if (status === 'APPROVED' || status === 'ACTIVE') {
+          return "/agency-admin/dashboard";
+        }
+        // If PENDING or UNDER_REVIEW - show under review page with modal
+        else if (status === 'PENDING' || status === 'UNDER_REVIEW') {
+          return "/agency-admin/under-review";
+        }
+        // If REJECTED or DECLINED - show under review page with rejected modal
+        else if (status === 'REJECTED' || status === 'DECLINED') {
+          return "/agency-admin/under-review";
+        }
+        // For any other status, redirect to dashboard (safety fallback)
+        else {
+          return "/agency-admin/dashboard";
+        }
+      }
+      // If no form data exists, show the agency form
+      else {
+        return "/agency-admin/agency-form";
+      }
+    } catch (error) {
+      console.error("Error checking agency form status:", error);
+      // If there's an error, redirect to agency form to be safe
+      return "/agency-admin/agency-form";
+    }
+  }
+
+  // Existing code for other user types
+  const type = userType || role;
+  if (type) {
+    const upperType = type.toUpperCase();
+    if (upperType === "SUPER_ADMIN") return "/super-admin/dashboard";
+    if (upperType === "ADMIN") return "/admin/dashboard";
+    if (upperType === "MANAGER") return "/agency/dashboard";
+    if (upperType === "EXECUTIVE") return "/executive/dashboard";
+    if (upperType === "TEAM_LEAD") return "/teamlead/dashboard";
+    if (upperType === "TL") return "/telecaller/dashboard";
+  }
+
+  // Default fallback
+  return "/dashboard";
+};
+
+      const redirectPath = await getRedirectPath();
       console.log("Redirecting to:", redirectPath);
       window.location.href = redirectPath;
     } catch (error) {
