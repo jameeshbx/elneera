@@ -28,14 +28,14 @@ import { StandaloneBankDetails } from "./standalone-bank-details"
 interface DMC {
   id: string
   name: string
-  primaryContact: string
+  contactPerson: string  // Changed from primaryContact
   phoneNumber: string
   designation: string
   email: string
   status: string
   joinSource: string
+  agencyId: string  // Added agencyId
 }
-
 interface PaginationInfo {
   page: number
   limit: number
@@ -83,28 +83,40 @@ export function DMCTable() {
         limit: String(params.limit || pagination.limit),
       })
 
-      const response = await fetch(`/api/auth/agency-add-dmc?${searchParams}`, {
-        credentials: "include",
-      })
+          const response = await fetch(`/api/auth/agency-add-dmc?${searchParams}`, {
+      credentials: "include",
+    })
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch DMCs")
-      }
-
-      const data = await response.json()
-      setDmcData(data.data)
-      setPagination(data.pagination)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch DMCs")
-      toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to fetch DMCs",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Failed to fetch DMCs:', response.status, errorText)
+      throw new Error("Failed to fetch DMCs")
     }
+
+    const data = await response.json()
+    console.log('Received DMC data:', data) // Log the response data
+    
+    if (!data.data) {
+      console.error('No data in response:', data)
+      throw new Error("Invalid response format from server")
+    }
+
+    setDmcData(data.data)
+    setPagination(data.pagination)
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "Failed to fetch DMCs"
+    console.error('Error in fetchDMCs:', err)
+    setError(errorMessage)
+    toast({
+      title: "Error",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  } finally {
+    setIsLoading(false)
   }
+}
+
 
   // Initial fetch
   useEffect(() => {
@@ -387,7 +399,7 @@ export function DMCTable() {
                     <TableCell className="py-3 font-medium">
                       <div className="flex items-center gap-2">{dmc.name}</div>
                     </TableCell>
-                    <TableCell className="py-3">{dmc.primaryContact}</TableCell>
+                   <TableCell className="py-3">{dmc.contactPerson}</TableCell>  {/* Updated from primaryContact */}
                     <TableCell className="py-3 hidden md:table-cell">{dmc.phoneNumber}</TableCell>
                     <TableCell className="py-3 hidden md:table-cell">{dmc.designation}</TableCell>
                     <TableCell className="py-3 hidden sm:table-cell">{dmc.email}</TableCell>

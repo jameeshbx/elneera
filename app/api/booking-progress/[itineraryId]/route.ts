@@ -2,20 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 import prisma from '@/lib/prisma'
 import { type Prisma, BookingStatus } from "@prisma/client"
 
-// Base type for route parameters
-type RouteParams = {
-  itineraryId: string
-}
-
-// Next.js App Router passes params as a Promise
-type RouteHandlerContext = {
-  params: Promise<RouteParams>
-}
-
-// Type for the PUT handler context
-type PutRouteHandlerContext = {
-  params: Promise<RouteParams & { id: string }>
-}
 
 // Helper function to safely get params
 async function getParams<T extends object>(params: Promise<T>): Promise<T> {
@@ -245,11 +231,8 @@ export async function POST(
 
 // Update existing booking progress
 export async function PUT(
-  request: NextRequest,
-  context: { params: Promise<{ itineraryId: string }> }
-) {
+  request: NextRequest) {
   try {
-    const { itineraryId } = await getParams(context.params)
     const body = await request.json()
     const { id, date, service, status, dmcNotes } = body
 

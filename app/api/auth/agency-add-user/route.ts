@@ -201,21 +201,21 @@ export async function POST(req: Request) {
 
     // Verify the user is an agency admin
     const agencyAdmin = await prisma.user.findUnique({
-      where: { id: agencyAdminId },
-      select: { 
-        id: true, 
-        userType: true,
-        businessType: true 
-      }
-    });
+  where: { id: agencyAdminId },
+  select: { 
+    id: true, 
+    userType: true,
+    businessType: true 
+  }
+});
 
-    if (!agencyAdmin || agencyAdmin.userType !== 'AGENCY_ADMIN') {
-      console.log("❌ User is not an agency admin");
-      return NextResponse.json({
-        success: false,
-        error: "Only agency admins can create users"
-      }, { status: 403 });
-    }
+if (!agencyAdmin || !['AGENCY_ADMIN', 'TRAVEL_AGENCY'].includes(agencyAdmin.userType)){
+  console.log("❌ User is not an agency admin");
+  return NextResponse.json({
+    success: false,
+    error: "Only agency admins can create users"
+  }, { status: 403 });
+}
 
     console.log("✅ Verified agency admin status");
     
