@@ -1,5 +1,4 @@
 "use client"
-
 import Link from "next/link"
 import type React from "react"
 import { usePathname } from "next/navigation"
@@ -20,7 +19,6 @@ type MenuItem = {
     logo?: React.ReactNode
   }[]
 }
-
 type SidebarProps = {
   expanded?: boolean
   setExpanded?: (value: boolean) => void
@@ -35,7 +33,6 @@ type SidebarProps = {
     image?: string
   } | null
 }
-
 interface CompanyInformation {
   name: string
   logoUrl: string | null
@@ -55,10 +52,10 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
   const [profileData, setProfileData] = useState(initialProfileData)
   const [profileImageKey, setProfileImageKey] = useState(Date.now())
 
-  
+
   // Internal expanded state for when no external control is provided
   const [internalExpanded, setInternalExpanded] = useState(true)
-  
+
   // Use external expanded state if provided, otherwise use internal
   const expanded = externalExpanded !== undefined ? externalExpanded : internalExpanded
   const [, setLogoError] = useState(false)
@@ -71,7 +68,6 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [])
-
  
   useEffect(() => {
   const fetchCompanyData = async () => {
@@ -81,9 +77,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         console.log('No session available yet')
         return
       }
-
 let userId = (session.user as Session['user'] & { id?: string })?.id;
-
       // If session didn't include id, ask server for it
       if (!userId) {
         try {
@@ -100,7 +94,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
           console.warn('whoami fetch error')
         }
       }
-
       if (!userId) {
         // Fallback: Try to fetch company data without userId
         const fallbackRes = await fetch('/api/auth/agency-profile-admin', {
@@ -142,19 +135,15 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         setIsLoading(false)
         return
       }
-
       // 1) Fetch team lead details to get agencyId
       const teamLeadRes = await fetch(`/api/auth/agency-add-user/${userId}`, {
         method: 'GET',
         credentials: 'include',
       })
-
       if (!teamLeadRes.ok) {
         throw new Error(`Team lead fetch failed: ${teamLeadRes.status}`)
       }
-
       const teamLead = await teamLeadRes.json()
-
       // Expecting agencyId in the returned payload
       const agencyId = teamLead.agencyId || teamLead.data?.agencyId
       
@@ -191,19 +180,15 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         setIsLoading(false)
         return
       }
-
       // 2) Fetch agency admin details using agencyId
       const agencyRes = await fetch(`/api/auth/agency-profile-admin?agencyId=${agencyId}`, {
         method: 'GET',
         credentials: 'include'
       })
-
       if (!agencyRes.ok) {
         throw new Error(`Agency profile fetch failed: ${agencyRes.status}`)
       }
-
       const agencyData = await agencyRes.json()
-
       const landingPageColor = agencyData?.companyInformation?.landingPageColor || "#4ECDC4"
       setThemeColor(landingPageColor)
       document.documentElement.style.setProperty('--theme-color', landingPageColor)
@@ -211,7 +196,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(landingPageColor, -20))
       // Notify other components about the theme change
       try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch {}
-
       const companyLogo = agencyData?.companyInformation?.logo || null
       setCompanyData({
         name: agencyData?.companyInformation?.name || 'Team Lead',
@@ -223,7 +207,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       // Broadcast logo and theme updates so header and other components can react
       try { window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: companyLogo, name: agencyData?.companyInformation?.name || null } })) } catch  {}
       try { window.dispatchEvent(new CustomEvent('themeUpdated', { detail: { color: landingPageColor } })) } catch {}
-
       if (agencyData?.profileData) {
         setProfileData({
           name: agencyData.profileData.name,
@@ -235,7 +218,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
           image: agencyData.profileData.avatarUrl
         })
       }
-
     } catch  {
       // Silently handle errors without console.error to prevent unhandled error warnings
       // Fallback to default color
@@ -250,14 +232,11 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       setIsLoading(false)
     }
   }
-
   // Only run when session is available
   if (session) {
     fetchCompanyData()
   }
 }, [session])
-
-
   // Listen for logo updates from profile page AND agency form
   useEffect(() => {
     const handleLogoUpdate = (event: CustomEvent) => {
@@ -271,7 +250,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         setLogoError(false)
       }
     }
-
     const handleThemeUpdate = (event: CustomEvent) => {
       console.log('Theme updated event received:', event.detail)
       if (event.detail?.color) {
@@ -286,7 +264,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(event.detail.color, -20))
       }
     }
-
     const handleProfileUpdate = (event: CustomEvent) => {
       console.log('Profile updated event received:', event.detail)
       if (event.detail?.profileData) {
@@ -302,7 +279,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         setProfileImageKey(Date.now())
       }
     }
-
     window.addEventListener('logoUpdated', handleLogoUpdate as EventListener)
     window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
     window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
@@ -313,7 +289,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       window.removeEventListener('profileUpdated', handleProfileUpdate as EventListener)
     }
   }, [])
-
   const adjustBrightness = (hex: string, percent: number): string => {
     const num = parseInt(hex.replace("#", ""), 16)
     const amt = Math.round(2.55 * percent)
@@ -324,7 +299,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
       (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
       (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1)
   }
-
   const toggleReports = () => {
     setReportsOpen(!reportsOpen)
   }
@@ -400,14 +374,13 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
         },
       ],
     },
-    
+
     {
       title: "Add DMC",
       href: "/executive/dashboard/add-dmc",
       icon: <Image src="/Vector.svg" alt="Add DMC" width={20} height={20} className="min-w-[20px]" />,
     },
   ]
-
   // Resolve image path (handles absolute, prefixed, and uploads)
   const resolveImage = (path: string | null | undefined) => {
     if (!path) return undefined
@@ -415,7 +388,6 @@ let userId = (session.user as Session['user'] & { id?: string })?.id;
     if (path.startsWith('/')) return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${path}`
     return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${path}`
   }
-
   const accountItems = [
     {
       title: profileData?.name || session?.user?.name || "Profile",
@@ -467,15 +439,15 @@ const isCollapsed = isMobile ? !expanded : !expanded
 
   const getLogoUrl = (logoPath: string | null | undefined) => {
     if (!logoPath) return null
-    
+
     if (logoPath.startsWith('http')) {
       return logoPath
     }
-    
+
     if (logoPath.startsWith('/')) {
       return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${logoPath}`
     }
-    
+
     return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${logoPath}`
   }
 
@@ -503,6 +475,7 @@ const isCollapsed = isMobile ? !expanded : !expanded
 
       <div className="flex flex-col h-full p-2 md:p-4 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {/* Logo Section */}
+        
        <div className="flex items-center p-2 mb-6">
                  <Link href="/" data-cy="sidebar-logo-link" className="flex items-center w-full">
                    {isLoading ? (
@@ -632,7 +605,6 @@ const isCollapsed = isMobile ? !expanded : !expanded
               )}
             </div>
           ))}
-
           <div className="pt-4 mt-4 border-t border-gray-200">
             {!isCollapsed && (
               <h3 className="px-3 mb-2 text-xs font-semibold tracking-wider text-gray-500 uppercase">ACCOUNT PAGES</h3>
@@ -715,5 +687,4 @@ const isCollapsed = isMobile ? !expanded : !expanded
     </aside>
   )
 }
-
 export default Sidebar
