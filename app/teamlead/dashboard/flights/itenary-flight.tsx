@@ -28,7 +28,6 @@ interface AccommodationEnquiry {
   assignedStaff: string | null
   pointOfContact: string | null
   notes: string | null
-  leadSource: string
   status: string
   enquiryDate: string
   createdAt: string
@@ -50,7 +49,6 @@ interface FlightEnquiry {
   assignedStaff: string | null
   pointOfContact: string | null
   notes: string | null
-  leadSource: string
   status: string
   enquiryDate: string
   createdAt: string
@@ -201,10 +199,7 @@ export default function ItineraryPage() {
                 <p className="font-medium">Enquiry Date:</p>
                 <p>{enquiry.enquiryDate}</p>
               </div>
-              <div>
-                <p className="font-medium">Lead Source:</p>
-                <p>{enquiry.leadSource}</p>
-              </div>
+             
               <div>
                 <p className="font-medium">Assigned Staff:</p>
                 <p>{enquiry.assignedStaff || "N/A"}</p>

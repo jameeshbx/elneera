@@ -9,6 +9,7 @@ export interface BreadcrumbItem {
   label: string
   href: string
   active?: boolean
+  searchParams?: Record<string, string>
 }
 
 interface BreadcrumbsProps {
@@ -20,10 +21,23 @@ interface BreadcrumbsProps {
 export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
   const { isLightColor, landingPageColor } = useColor()
   
+  // Helper function to build URL with search params
+  const buildUrl = (baseUrl: string, searchParams?: Record<string, string>) => {
+    if (!searchParams || Object.keys(searchParams).length === 0) return baseUrl
+    
+    const params = new URLSearchParams()
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (value) params.append(key, value)
+    })
+    
+    return `${baseUrl}?${params.toString()}`
+  }
+
   return (
     <nav className={cn("flex items-center space-x-1 text-sm", className)} aria-label="Breadcrumb">
       {items.map((item, index) => {
         const isLast = index === items.length - 1
+        const href = buildUrl(item.href, item.searchParams)
         
         return (
           <div key={item.href} className="flex items-center">
@@ -49,7 +63,7 @@ export function Breadcrumbs({ items, className }: BreadcrumbsProps) {
               </span>
             ) : (
               <Link
-                href={item.href}
+                href={href}
                 className={cn(
                   "hover:underline transition-colors",
                   isLightColor ? "text-gray-600 hover:text-gray-900" : "text-gray-300 hover:text-white",

@@ -2,7 +2,7 @@
 import type React from "react"
 import { useState } from "react"
 import Image from "next/image"
-import { Edit } from "lucide-react"
+import { Edit, X, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -25,7 +25,7 @@ const dmcSchema = z.object({
   email: z.string().email("Invalid email address"),
   website: z.string().url("Invalid URL").or(z.literal("")),
   primaryCountry: z.string().min(1, "Primary country is required"),
-  destinationsCovered: z.string().min(1, "Destinations covered is required"),
+  destinationsCovered: z.array(z.string()).min(1, "At least one destination must be selected"),
   cities: z.string().min(1, "Cities is required"),
   gstRegistration: z.enum(["Yes", "No"]),
   gstNo: z.string().optional(),
@@ -77,15 +77,61 @@ const fetchDMCs = async (params: {
 export function DMCRegistrationForm() {
   const { formData, setFormData, isEditing, editingId, resetForm } = useDMCForm()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDestinationDropdownOpen, setIsDestinationDropdownOpen] = useState(false)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData({ ...formData, [name]: value })
   }
 
+  // Parse destinations from string to array
+  const getDestinationsArray = (): string[] => {
+    if (Array.isArray(formData.destinationsCovered)) {
+      return formData.destinationsCovered
+    }
+    if (typeof formData.destinationsCovered === 'string') {
+      try {
+        const parsed = JSON.parse(formData.destinationsCovered)
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return formData.destinationsCovered ? [formData.destinationsCovered] : []
+      }
+    }
+    return []
+  }
+
+ const handleDestinationToggle = (destination: string) => {
+  const currentDestinations = getDestinationsArray()
+  
+  const newDestinations = currentDestinations.includes(destination)
+    ? currentDestinations.filter((d: string) => d !== destination)
+    : [...currentDestinations, destination]
+  
+  // Convert array back to string before setting
+  setFormData({ 
+    ...formData, 
+    destinationsCovered: JSON.stringify(newDestinations) 
+  })
+}
+
+const removeDestination = (destination: string) => {
+  const currentDestinations = getDestinationsArray()
+  
+  const newDestinations = currentDestinations.filter((d: string) => d !== destination)
+  setFormData({ 
+    ...formData, 
+    destinationsCovered: JSON.stringify(newDestinations) 
+  })
+}
+
   const validateForm = () => {
     try {
-      dmcSchema.parse(formData)
+      // Convert destinations to array for validation
+      const dataToValidate = {
+        ...formData,
+        destinationsCovered: getDestinationsArray()
+      }
+      dmcSchema.parse(dataToValidate)
       return true
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -112,10 +158,16 @@ export function DMCRegistrationForm() {
 
     try {
       const formDataToSend = new FormData()
+      
       // Append all form data
       Object.entries(formData).forEach(([key, value]) => {
         if (value !== null && value !== undefined && key !== "id") {
-          formDataToSend.append(key, String(value))
+          if (key === 'destinationsCovered') {
+            const destinations = getDestinationsArray()
+            formDataToSend.append(key, JSON.stringify(destinations))
+          } else {
+            formDataToSend.append(key, String(value))
+          }
         }
       })
 
@@ -161,8 +213,7 @@ export function DMCRegistrationForm() {
       // Reset form and editing state
       resetForm()
 
-      // Optionally refresh DMC list - only if needed for your UI
-      // Remove this section if you don't need to refresh the list immediately
+      // Optionally refresh DMC list
       try {
         await fetchDMCs({
           search: "",
@@ -174,7 +225,6 @@ export function DMCRegistrationForm() {
         console.log("DMC list refreshed successfully")
       } catch (fetchError) {
         console.error("Error refreshing DMC list:", fetchError)
-        // Don't show error toast for refresh failure, as the main operation succeeded
         console.warn("DMC created/updated successfully but failed to refresh list")
       }
     } catch (error) {
@@ -188,6 +238,8 @@ export function DMCRegistrationForm() {
       setIsSubmitting(false)
     }
   }
+
+  const selectedDestinations = getDestinationsArray()
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -403,7 +455,7 @@ export function DMCRegistrationForm() {
           />
         </div>
 
-        {/* Primary Country - Made scrollable */}
+        {/* Primary Country */}
         <div className="space-y-2 w-full">
           <label htmlFor="primaryCountry" className="block text-sm font-medium text-gray-700 font-Poppins">
             Primary country
@@ -425,29 +477,73 @@ export function DMCRegistrationForm() {
           </Select>
         </div>
 
-        {/* Destinations Covered - Made scrollable */}
-        <div className="space-y-2 w-full">
-          <label htmlFor="destinationsCovered" className="block text-sm font-medium text-gray-700 font-Poppins">
-            Destinations Covered
-          </label>
-          <Select
-            value={formData.destinationsCovered}
-            onValueChange={(value) => setFormData((prev) => ({ ...prev, destinationsCovered: value }))}
-          >
-            <SelectTrigger className="w-full h-12">
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent className="max-h-60 overflow-y-auto">
-              {destinations.map((destination) => (
-                <SelectItem key={destination} value={destination}>
-                  {destination}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
-        {/* Cities - Made scrollable */}
+{/* Destinations Covered - Multi-Select */}
+<div className="space-y-2 w-full">
+  <label htmlFor="destinationsCovered" className="block text-sm font-medium text-gray-700 font-Poppins">
+    Destinations Covered
+  </label>
+  <div className="relative">
+    <div
+      onClick={() => setIsDestinationDropdownOpen(!isDestinationDropdownOpen)}
+      className="w-full h-12 px-3 py-2 border border-gray-300 rounded-md cursor-pointer hover:border-emerald-500 focus:border-emerald-500 transition-colors flex items-center justify-between bg-white"
+    >
+      <span className="text-sm text-gray-700">
+        {selectedDestinations.length > 0 
+          ? `${selectedDestinations.length} selected` 
+          : "Select destinations..."}
+      </span>
+      <svg
+        className={`w-4 h-4 transition-transform ${isDestinationDropdownOpen ? 'rotate-180' : ''}`}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
+
+    {isDestinationDropdownOpen && (
+      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+        {destinations.map((destination: string) => (
+          <div
+            key={destination}
+            onClick={() => handleDestinationToggle(destination)}
+            className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+          >
+            <span className="text-sm">{destination}</span>
+            {selectedDestinations.includes(destination) && (
+              <Check className="w-4 h-4 text-emerald-600" />
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+
+    {/* Selected Destinations Tags - Shows ALL selected destinations */}
+    {selectedDestinations.length > 0 && (
+      <div className="flex flex-wrap gap-2 mt-2">
+        {selectedDestinations.map((destination: string) => (
+          <div
+            key={destination}
+            className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm"
+          >
+            <span>{destination}</span>
+            <button
+              type="button"
+              onClick={() => removeDestination(destination)}
+              className="hover:bg-emerald-200 rounded-full p-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+</div>
+
+        {/* Cities */}
         <div className="space-y-2 w-full">
           <label htmlFor="cities" className="block text-sm font-medium text-gray-700 font-Poppins">
             Cities
@@ -576,7 +672,7 @@ export function DMCRegistrationForm() {
           />
         </div>
 
-        {/* Country - Made scrollable */}
+        {/* Country */}
         <div className="space-y-2 w-full">
           <label htmlFor="country" className="block text-sm font-medium text-gray-700 font-Poppins">
             Country
@@ -616,12 +712,9 @@ export function DMCRegistrationForm() {
             </div>
           </div>
         </div>
-
-        
       </div>
 
       <div className="flex flex-wrap gap-4 mt-6">
-       
         <Button
           type="submit"
           className="h-12 px-6 bg-custom-green hover:bg-gray-900 text-white rounded-md ml-auto"

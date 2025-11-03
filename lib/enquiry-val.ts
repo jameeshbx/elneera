@@ -15,7 +15,6 @@ export const flightEnquirySchema = z.object({
   assignedStaff: z.string().optional(),
   pointOfContact: z.string().optional(),
   notes: z.string().optional(),
-  leadSource: z.string().default("Direct"),
 })
 
 export const accommodationEnquirySchema = z.object({
@@ -35,5 +34,4 @@ export const accommodationEnquirySchema = z.object({
   assignedStaff: z.string().optional(),
   pointOfContact: z.string().optional(),
   notes: z.string().optional(),
-  leadSource: z.string().default("Direct"),
 })

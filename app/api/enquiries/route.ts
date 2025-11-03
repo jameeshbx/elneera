@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
         numberOfKids: enquiryData.numberOfKids,
         travelingWithPets: enquiryData.travelingWithPets,
         flightsRequired: enquiryData.flightsRequired,
-        leadSource: enquiryData.leadSource,
         tags: enquiryData.tags,
         mustSeeSpots: enquiryData.mustSeeSpots,
         status: enquiryData.status || "enquiry",

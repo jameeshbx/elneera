@@ -349,7 +349,6 @@ model enquiries {
   notes              String?
   assignedStaff      String?
   pointOfContact     String?
-  leadSource         String?             @default("Direct")
   flightsRequired    String?             @default("no")
   pickupLocation     String?
   dropLocation       String?
@@ -670,7 +669,6 @@ model FlightEnquiry {
   assignedStaff         String?
   pointOfContact        String?
   notes                 String?
-  leadSource            String   @default("Direct")
   status                String   @default("enquiry")
   enquiryDate           String
   createdAt             DateTime @default(now())
@@ -703,7 +701,6 @@ model AccommodationEnquiry {
   assignedStaff     String?
   pointOfContact    String?
   notes             String?
-  leadSource        String   @default("Direct")
   status            String   @default("enquiry")
   enquiryDate       DateTime @default(now())
   createdAt         DateTime @default(now())

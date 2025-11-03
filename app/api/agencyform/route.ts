@@ -290,7 +290,7 @@ export async function PUT(request: NextRequest) {
 
     // Send update notification email to admin
     try {
-      const adminEmail = "anand@buyexchange.in";
+      const adminEmail = "support@trekkingmiles.com";
       
       // Prepare attachments array
       const attachments = [];
@@ -546,9 +546,9 @@ export async function POST(request: NextRequest) {
       console.log("Created new form:", agencyForm.id);
     }
 
-    // Send approval email to admin (anand@buyexchange.in)
+    // Send approval email to admin (support@trekkingmiles.com)
     try {
-      const adminEmail = "anand@buyexchange.in";
+      const adminEmail = "support@trekkingmiles.com";
       
       console.log("Sending approval email to:", adminEmail);
       console.log("SMTP Config:", {

@@ -33,7 +33,6 @@ interface Enquiry {
   numberOfKids: string
   travelingWithPets: string
   flightsRequired: string
-  leadSource: string
   tags: string
   mustSeeSpots: string
   status: string
@@ -75,7 +74,6 @@ export default function ViewLeads() {
   const router = useRouter()
 
   const [filters, setFilters] = useState({
-    leadSource: [] as string[],
     tags: [] as string[],
     pointOfContact: [] as string[],
     status: [] as string[],
@@ -206,26 +204,7 @@ export default function ViewLeads() {
               />
             </div>
 
-            {/* Lead Source Dropdown */}
-            <Select
-              onValueChange={(value) => handleFilterChange("leadSource", value, !filters.leadSource.includes(value))}
-            >
-              <SelectTrigger className="w-30 bg-green-800 text-white">
-                <SelectValue placeholder="Lead source" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from(new Set(enquiries.map((item) => item.leadSource)))
-                  .filter(Boolean)
-                  .map((source) => (
-                    <SelectItem key={source} value={source}>
-                      <div className="flex items-center">
-                        <Checkbox checked={filters.leadSource.includes(source)} className="mr-2" />
-                        {source}
-                      </div>
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            
 
             {/* Tags Dropdown */}
             <Select onValueChange={(value) => handleFilterChange("tags", value, !filters.tags.includes(value))}>
@@ -354,9 +333,7 @@ export default function ViewLeads() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 font-semibold uppercase tracking-wider">
                   Location(s)
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 font-semibold uppercase tracking-wider">
-                  Lead source
-                </th>
+               
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 font-semibold uppercase tracking-wider">
                   Point of contact
                 </th>
@@ -398,7 +375,6 @@ export default function ViewLeads() {
                   <td className="px-4 py-4 text-sm text-gray-900 max-w-xs truncate">
                     {enquiry.locations || "Not specified"}
                   </td>
-                  <td className="px-4 py-4 text-sm text-gray-900">{enquiry.leadSource}</td>
                   <td className="px-4 py-4 text-sm text-gray-900">{enquiry.pointOfContact || "Not assigned"}</td>
                   <td className="px-4 py-4 text-sm text-gray-900">{enquiry.assignedStaff || "Unassigned"}</td>
                   <td className="px-4 py-4">
