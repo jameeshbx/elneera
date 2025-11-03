@@ -41,7 +41,6 @@ interface Enquiry {
   numberOfKids: string
   travelingWithPets: string
   flightsRequired: string
-  leadSource: string
   tags: string
   mustSeeSpots: string
   status: string
@@ -159,7 +158,6 @@ const [tempBudget, setTempBudget] = useState(1000);
     numberOfKids: "",
     travelingWithPets: "no",
     flightsRequired: "no",
-    leadSource: "Direct",
     tags: "sightseeing",
     mustSeeSpots: "",
     
@@ -405,7 +403,6 @@ const [tempBudget, setTempBudget] = useState(1000);
       numberOfKids: "",
       travelingWithPets: "no",
       flightsRequired: "no",
-      leadSource: "Direct",
       tags: "sightseeing",
       mustSeeSpots: "",
       
@@ -728,37 +725,6 @@ const [tempBudget, setTempBudget] = useState(1000);
           <div className="p-4 sm:p-6">
             <DialogTitle className="text-lg sm:text-xl font-semibold font-poppins">Add Enquiry</DialogTitle>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-4">
-              {/* Lead source */}
-              <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Lead source</label>
-                <RadioGroup
-                  value={newEnquiry.leadSource}
-                  onValueChange={(value: string) => handleInputChange("leadSource", value)}
-                >
-                  <div className="flex gap-6">
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Direct"
-                        id="lead-direct"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-direct" className="text-sm">
-                        Direct
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Sub agent"
-                        id="lead-agent"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-agent" className="text-sm">
-                        Sub agent
-                      </Label>
-                    </div>
-                  </div>
-                </RadioGroup>
-              </div>
 
               {/* Tags */}
               <div className="space-y-1 sm:space-y-2">

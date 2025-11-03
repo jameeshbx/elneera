@@ -35,7 +35,6 @@ interface Itinerary {
     budget: number
     enquiryDate: string
     assignedStaff: string
-    leadSource: string
     tags: string
     mustSeeSpots: string
     flightsRequired: string

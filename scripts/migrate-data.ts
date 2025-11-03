@@ -25,7 +25,6 @@ async function migrateExistingData() {
         assignedStaff: enquiry.assignedStaff,
         pointOfContact: enquiry.pointOfContact,
         notes: enquiry.notes,
-        leadSource: enquiry.leadSource || 'Direct',
         status: enquiry.status,
         enquiryDate: enquiry.enquiryDate,
       }

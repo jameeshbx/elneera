@@ -859,7 +859,7 @@ export default function AgencyForm() {
 
                                 <div className="grid md:grid-cols-2 gap-4 font-poppins">
                                     <div>
-                                        <Label htmlFor="year-reg">Year of Registration *</Label>
+                                        <Label htmlFor="year-reg">Year of Incorporation*</Label>
                                         <Input
                                             id="year-reg"
                                             placeholder="Year of Registration"

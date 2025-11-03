@@ -41,7 +41,6 @@ interface Enquiry {
   numberOfKids: string
   travelingWithPets: string
   flightsRequired: string
-  leadSource: string
   tags: string
   mustSeeSpots: string
   status: string
@@ -61,6 +60,11 @@ interface UserData {
   name: string;
   status: string;
 }
+interface ApiResponse {
+  success: boolean;
+  data: UserData[];
+}
+
 
 
 const generateUniqueId = () => {
@@ -154,7 +158,6 @@ const [tempBudget, setTempBudget] = useState(1000);
     numberOfKids: "",
     travelingWithPets: "no",
     flightsRequired: "no",
-    leadSource: "Direct",
     tags: "sightseeing",
     mustSeeSpots: "",
     
@@ -170,33 +173,47 @@ const [tempBudget, setTempBudget] = useState(1000);
   }, [])
 
   const fetchStaffUsers = async () => {
-  try {
-    const response = await fetch("/api/auth/agency-add-user", {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
+    try {
+      const response = await fetch("/api/auth/agency-add-user", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      })
+      // Handle non-OK responses and empty / invalid JSON bodies gracefully
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => null)
+        console.warn('/api/auth/agency-add-user returned', response.status, bodyText)
+        setStaffUsers([])
+        return
+      }
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const text = await response.text().catch(() => null)
+      if (!text) {
+        setStaffUsers([])
+        return
+      }
+
+    let data: ApiResponse | null = null;
+      try {
+        data = JSON.parse(text)
+      } catch (err) {
+        console.error('Failed to parse /api/auth/agency-add-user JSON', err, text)
+        setStaffUsers([])
+        return
+      }
+
+      if (data?.success && Array.isArray(data.data)) {
+        const mapped = data.data
+          .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
+          .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
+        setStaffUsers(mapped)
+      } else {
+        setStaffUsers([])
+      }
+    } catch (e) {
+      console.error("Failed to fetch staff users", e)
+      setStaffUsers([])
     }
-
-    const text = await response.text();
-    const data = text ? JSON.parse(text) : {};
-
-    if (data?.success && Array.isArray(data.data)) {
-      const mapped = data.data
-        .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
-        .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true));
-      setStaffUsers(mapped);
-    } else {
-      console.warn("Unexpected response format from /api/auth/agency-add-user", data);
-      setStaffUsers([]);
-    }
-  } catch (e) {
-    console.error("Failed to fetch staff users", e);
-    setStaffUsers([]);
   }
-};
 
   const fetchEnquiries = async () => {
     try {
@@ -386,7 +403,6 @@ const [tempBudget, setTempBudget] = useState(1000);
       numberOfKids: "",
       travelingWithPets: "no",
       flightsRequired: "no",
-      leadSource: "Direct",
       tags: "sightseeing",
       mustSeeSpots: "",
       
@@ -709,37 +725,6 @@ const [tempBudget, setTempBudget] = useState(1000);
           <div className="p-4 sm:p-6">
             <DialogTitle className="text-lg sm:text-xl font-semibold font-poppins">Add Enquiry</DialogTitle>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-4">
-              {/* Lead source */}
-              <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Lead source</label>
-                <RadioGroup
-                  value={newEnquiry.leadSource}
-                  onValueChange={(value: string) => handleInputChange("leadSource", value)}
-                >
-                  <div className="flex gap-6">
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Direct"
-                        id="lead-direct"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-direct" className="text-sm">
-                        Direct
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Sub agent"
-                        id="lead-agent"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-agent" className="text-sm">
-                        Sub agent
-                      </Label>
-                    </div>
-                  </div>
-                </RadioGroup>
-              </div>
 
               {/* Tags */}
               <div className="space-y-1 sm:space-y-2">
