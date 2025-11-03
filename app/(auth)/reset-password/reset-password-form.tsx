@@ -31,14 +31,14 @@ export default function ResetPasswordForm() {
         }
 
         try {
-            const response = await fetch("/api/auth/reset-password", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    token,
-                    password: newPassword,
-                }),
-            })
+          const response = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        token,
+        newPassword: newPassword,  // Changed from 'password' to 'newPassword'
+    }),
+})
 
             const result = await response.json()
 
@@ -92,14 +92,14 @@ export default function ResetPasswordForm() {
                     <div className="relative z-10 flex flex-col -mt-32 sm:-mt-38 md:-mt-48 lg:-mt-56 xl:-mt-72">
                         {/* Responsive logo */}
                         <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 relative -mb-2 sm:-mb-3 md:-mb-4 self-start">
-                            <Image src="/logo2.png" alt="Trekking Miles Logo" fill className="object-contain" />
+                            <Image src="/logo/elneeraw.png" alt="Trekking Miles Logo" fill className="object-contain" />
                         </div>
 
                         <h1 className="text-white text-xl sm:text-2xl md:text-3xl lg:text-4xl font-medium mb-2 sm:mb-3 md:mb-4 font-nunito">
                             Start your remarkable journey with us!
                         </h1>
 
-                        <p className="text-white/90 text-xs sm:text-sm font-nunito">Seamless Access to Your Travel Business Hub</p>
+                        <p className="text-white/90 text-xs sm:text-sm font-nunito ml-[27px]">Seamless Access to Your Travel Business Hub</p>
                     </div>
                 </div>
 

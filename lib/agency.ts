@@ -5,7 +5,17 @@ export const agencyFormSchemaBase = z
   .object({
     name: z.string().min(1, "Company name is required"),
     contactPerson: z.string().min(1, "Contact person is required"),
-    agencyType: z.enum(["PRIVATE_LIMITED", "PROPRIETORSHIP", "PARTNERSHIP", "PUBLIC_LIMITED", "LLP"]),
+agencyType: z.enum([
+  "PRIVATE_LIMITED", 
+  "PROPRIETORSHIP", 
+  "PARTNERSHIP", 
+  "PUBLIC_LIMITED", 
+  "LLP",
+  "TOUR_OPERATOR",
+  "TRAVEL_AGENT",
+  "DMC",
+  "OTHER"
+]),
     designation: z.string().min(1, "Designation is required"),
     phoneNumber: z.string().min(10, "Phone number must be at least 10 digits"),
     phoneCountryCode: z.string().default("+91"),

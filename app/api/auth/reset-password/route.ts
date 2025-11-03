@@ -4,65 +4,59 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// In app/api/auth/reset-password/route.ts
 export async function POST(req: NextRequest) {
   try {
-    const { email, token, newPassword } = await req.json();
+    const { token, newPassword } = await req.json();
 
-    if (!email || !token || !newPassword) {
+    if (!token || !newPassword) {
       return NextResponse.json(
-        { error: "Email, token, and new password are required" },
+        { error: "Token and new password are required" },
         { status: 400 }
       );
     }
 
-    // Validate password strength
-    if (newPassword.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters long" },
-        { status: 400 }
-      );
-    }
-
-    // Find user by email
-    const user = await prisma.user.findUnique({
-      where: { email }
+    // Find the password reset record
+    const passwordReset = await prisma.passwordReset.findUnique({
+      where: { token },
+      include: { user: true },
     });
 
-    if (!user) {
+    if (!passwordReset) {
       return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
+        { error: "Invalid or expired token" },
+        { status: 400 }
+      );
+    }
+
+    // Check if token is expired
+    if (new Date() > passwordReset.expiresAt) {
+      await prisma.passwordReset.delete({
+        where: { id: passwordReset.id },
+      });
+      return NextResponse.json(
+        { error: "Reset token has expired" },
+        { status: 400 }
       );
     }
 
     // Hash the new password
     const hashedPassword = await hash(newPassword, 12);
 
-    // Update password in User table
+    // Update the user's password
     await prisma.user.update({
-      where: { email },
-      data: { 
-        password: hashedPassword,
-      }
+      where: { id: passwordReset.userId },
+      data: { password: hashedPassword },
     });
 
-    // Try to update UserForm if it exists
-    try {
-      await prisma.userForm.update({
-        where: { email },
-        data: { 
-          password: hashedPassword,
-          updatedAt: new Date()
-        }
-      });
-    } catch  {
-      console.log("UserForm not found or update failed, continuing...");
-    }
+    // Delete the used token
+    await prisma.passwordReset.delete({
+      where: { id: passwordReset.id },
+    });
 
     return NextResponse.json({
       success: true,
       message: "Password updated successfully",
-      role: user.role // Include role in response
     });
 
   } catch (error) {

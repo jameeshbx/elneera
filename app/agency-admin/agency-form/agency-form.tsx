@@ -113,7 +113,7 @@ export default function AgencyForm() {
                 if (data.exists && data.data) {
                     setIsEditMode(true);
                     const formData = data.data;
-                    
+
                     console.log('Loading existing agency data:', formData);
 
                     // Set basic form values
@@ -269,7 +269,7 @@ export default function AgencyForm() {
 
             // Create FormData object
             const formData = new FormData();
-            
+
             console.log('Preparing form data for submission...');
             console.log('Form values:', data);
             console.log('Logo file:', logoFile);
@@ -278,10 +278,10 @@ export default function AgencyForm() {
             // Add all form fields to FormData
             (Object.entries(data) as [keyof AgencyFormValues, unknown][]).forEach(([key, value]) => {
                 if (value === undefined || value === null) return;
-                
+
                 // Skip file fields as they're handled separately
                 if (key === 'logo' || key === 'businessLicense') return;
-                
+
                 const stringValue = typeof value === 'boolean' ? String(value) : String(value);
                 formData.append(key, stringValue);
                 console.log(`Added field: ${key}=${stringValue}`);
@@ -331,7 +331,7 @@ export default function AgencyForm() {
                 console.error("API error response:", responseData);
                 // Create a more detailed error message
                 let errorMessage = 'Failed to submit form';
-                
+
                 if (response.status === 500) {
                     errorMessage = 'Server error. Please try again later.';
                     if (responseData.error) {
@@ -348,7 +348,7 @@ export default function AgencyForm() {
                 } else if (response.status === 404) {
                     errorMessage = 'Resource not found. Please refresh the page and try again.';
                 }
-                
+
                 throw new Error(errorMessage);
             }
 
@@ -363,7 +363,7 @@ export default function AgencyForm() {
         } catch (error: unknown) {
             console.error('Submission error:', error);
             let errorMessage = 'Failed to submit form';
-            
+
             if (error instanceof Error) {
                 errorMessage = error.message;
                 // Handle network errors specifically
@@ -371,7 +371,7 @@ export default function AgencyForm() {
                     errorMessage = 'Network error. Please check your connection and try again.';
                 }
             }
-            
+
             toast.error(errorMessage, {
                 duration: 5000, // Show for 5 seconds
                 action: {
@@ -509,18 +509,10 @@ export default function AgencyForm() {
                                                     <SelectItem value="LLP">
                                                         Limited Liability Partnership
                                                     </SelectItem>
-                                                    <SelectItem value="TOUR_OPERATOR">
-                                                        Tour Operator
-                                                    </SelectItem>
-                                                    <SelectItem value="TRAVEL_AGENT">
-                                                        Travel Agent
-                                                    </SelectItem>
-                                                    <SelectItem value="DMC">
-                                                        DMC
-                                                    </SelectItem>
-                                                    <SelectItem value="OTHER">
-                                                        Other
-                                                    </SelectItem>
+                                                    <SelectItem value="TOUR_OPERATOR">Tour Operator</SelectItem>
+                                                    <SelectItem value="TRAVEL_AGENT">Travel Agent</SelectItem>
+                                                    <SelectItem value="DMC">DMC</SelectItem>
+                                                    <SelectItem value="OTHER">Other</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                             {errors.agencyType && (
