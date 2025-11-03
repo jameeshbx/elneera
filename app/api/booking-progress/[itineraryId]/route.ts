@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 import prisma from '@/lib/prisma'
 import { type Prisma, BookingStatus } from "@prisma/client"
 
-
 // Helper function to safely get params
 async function getParams<T extends object>(params: Promise<T>): Promise<T> {
   return await params

@@ -18,7 +18,6 @@ export interface FlightEnquiry {
   assignedStaff?: string | null
   pointOfContact?: string | null
   notes?: string | null
-  leadSource: string
   status: string
   enquiryDate: string
   createdAt?: Date
@@ -43,7 +42,6 @@ export interface AccommodationEnquiry {
   assignedStaff: string | null
   pointOfContact: string | null
   notes: string | null
-  leadSource: string
   status: string
   enquiryDate: string
   createdAt?: string

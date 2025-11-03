@@ -63,7 +63,6 @@ export interface Enquiry {
   notes: string
   assignedStaff: string
   pointOfContact: string
-  leadSource: string
   tags: string
   status: string
   enquiryDate: string
@@ -86,7 +85,6 @@ export interface FlightEnquiry {
   assignedStaff: string
   pointOfContact: string
   notes: string
-  leadSource: string
   status: string
   enquiryDate: string
   createdAt?: string
