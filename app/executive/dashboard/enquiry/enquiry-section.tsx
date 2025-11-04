@@ -481,11 +481,11 @@ const [tempBudget, setTempBudget] = useState(1000);
     if (typeof window !== "undefined") {
       localStorage.setItem("currentEnquiry", JSON.stringify(enquiry))
     }
-    router.push(`/agency-admin/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
+    router.push(`/executive/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
   }
 
   const handleViewLeads = () => {
-    router.push("/agency-admin/dashboard/enquiry/view-leads")
+    router.push("/executive/dashboard/enquiry/view-leads")
   }
 
   const renderTagSpecificFields = () => {

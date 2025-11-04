@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { QrCode } from "lucide-react"
 
-interface AgencyBankDetailsModalProps { 
+interface AgencyBankDetailsModalProps {
   isOpen: boolean
   onClose: () => void
   agencyId?: string | null
@@ -53,7 +53,6 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [existingQrCodeUrl, setExistingQrCodeUrl] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
-  const [hasExistingMethods, setHasExistingMethods] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -68,65 +67,23 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
 
     setLoading(true)
     try {
-      const res = await fetch(`/api/auth/add-bank-details?agencyId=${agencyId}`)
+      const res = await fetch(`/api/agency-bank-details?agencyId=${agencyId}`)
       if (res.ok) {
-        const { paymentMethod } = await res.json()
-        if (paymentMethod) {
-          // Handle bank accounts
-          if (paymentMethod.bank && paymentMethod.bank.length > 0) {
-            setBanks(paymentMethod.bank)
-          } else {
-            // Initialize with empty bank if none exists
-            setBanks([{
-              accountHolderName: "",
-              bankName: "",
-              branchName: "",
-              accountNumber: "",
-              ifscCode: "",
-              bankCountry: "India",
-              currency: "INR",
-              notes: "",
-            }])
+        const data = await res.json()
+        if (data.paymentMethod) {
+          const pm = data.paymentMethod
+          if (pm.bank) {
+            setBanks(Array.isArray(pm.bank) ? pm.bank : [pm.bank])
           }
-
-          // Handle UPI
-          if (paymentMethod.upiProvider) setSelectedUpiProvider(paymentMethod.upiProvider)
-          if (paymentMethod.identifier) setUpiId(paymentMethod.identifier)
-          
-          // Handle payment link
-          if (paymentMethod.paymentLink) setPaymentLink(paymentMethod.paymentLink)
-          
-          // Handle QR code
-          if (paymentMethod.qrCode?.url) {
-            setExistingQrCodeUrl(paymentMethod.qrCode.url)
-          }
-          
-          // Check if we have any existing payment methods
-          const hasPaymentMethods = 
-            (paymentMethod.bank && paymentMethod.bank.length > 0) ||
-            paymentMethod.upiProvider ||
-            paymentMethod.paymentLink ||
-            paymentMethod.qrCode
-            
-          setHasExistingMethods(hasPaymentMethods)
-          setIsUpdating(hasPaymentMethods)
+          if (pm.upiProvider) setSelectedUpiProvider(pm.upiProvider)
+          if (pm.identifier) setUpiId(pm.identifier)
+          if (pm.paymentLink) setPaymentLink(pm.paymentLink)
+          if (pm.qrCode?.url) setExistingQrCodeUrl(pm.qrCode.url)
+          setIsUpdating(true)
         }
-      } else {
-        const errorData = await res.json().catch(() => ({}))
-        console.error("Failed to load payment data:", errorData)
-        toast({
-          title: "Error",
-          description: errorData.error || "Failed to load payment methods",
-          variant: "destructive",
-        })
       }
     } catch (error) {
       console.error("Error loading payment data:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load payment methods. Please try again.",
-        variant: "destructive",
-      })
     } finally {
       setLoading(false)
     }
@@ -134,208 +91,106 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
 
   const updateBank = (idx: number, key: keyof Bank, value: string) => {
     const next = [...banks]
-    next[idx] = { ...next[idx], [key]: value }
+    next[idx][key] = value
     setBanks(next)
   }
 
-  const handleSaveOrUpdate = async () => {
-    console.log('Save/Update button clicked');
-    console.log('Current agencyId:', agencyId);
-    
-    // Check for agencyId and ensure it's a string
-    const currentAgencyId = agencyId || '';
-    if (!currentAgencyId) {
-      console.error('No agencyId provided');
-      toast({
-        title: "Session Error",
-        description: "Unable to verify your session. Please refresh the page and try again.",
-        variant: "destructive",
-        duration: 5000,
-      });
-      return;
-    }
 
-    console.log('Starting save/update with agencyId:', agencyId);
-    setSaving(true);
-    
-    // Add a small delay to ensure the loading state is visible
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    try {
-      // Filter out empty bank accounts
-      const banksToSave = banks
-        .map(bank => ({
-          ...bank,
-          accountHolderName: bank.accountHolderName?.trim() || '',
-          bankName: bank.bankName?.trim() || '',
-          accountNumber: bank.accountNumber?.trim() || '',
-        }))
-        .filter(bank => bank.accountHolderName || bank.bankName || bank.accountNumber);
-      
-      console.log('Banks to save:', banksToSave);
+ // In your handleSaveOrUpdate function, add proper error boundaries:
+ const handleSaveOrUpdate = async () => {
+  if (!agencyId) {
+    toast({
+      title: "Error",
+      description: "Agency ID is required",
+      variant: "destructive",
+    })
+    return
+  }
 
-      // Validate at least one payment method is provided
-      const hasBankDetails = banksToSave.length > 0;
-      const hasUpiDetails = upiId?.trim() !== "";
-      const hasPaymentLink = paymentLink?.trim() !== "";
-      const hasQrCode = qrFile || existingQrCodeUrl;
-      
-      if (!hasBankDetails && !hasUpiDetails && !hasPaymentLink && !hasQrCode) {
-        toast({
-          title: "No Payment Method",
-          description: "Please add at least one payment method (bank, UPI, payment link, or QR code)",
-          variant: "destructive",
-          duration: 5000,
-        });
-        setSaving(false);
-        return;
-      }
+  setSaving(true)
+  try {
+    const banksToSave = banks.filter((b) => 
+      b.accountHolderName.trim() || b.bankName.trim() || b.accountNumber.trim()
+    )
 
-      const formData = new FormData()
-      formData.append("agencyId", currentAgencyId)
-      console.log('Created FormData with agencyId:', currentAgencyId);
-      
-      // Only include bank details if they exist
-      if (hasBankDetails) {
-        formData.append("bank", JSON.stringify(banksToSave))
-      }
-      
-      // Only include UPI details if they exist
-      if (hasUpiDetails && upiId) {
-        formData.append("upiProvider", selectedUpiProvider)
-        formData.append("upiId", upiId)
-      }
-      
-      // Only include payment link if it exists
-      if (hasPaymentLink && paymentLink) {
-        formData.append("paymentLink", paymentLink)
-      }
-      
-      // Include QR code file if a new one is uploaded
-      if (qrFile) {
-        formData.append("qrCode", qrFile)
-      }
-
-      console.log("Sending request to API with:", {
-        agencyId,
-        banksCount: banksToSave.length,
-        hasUpi: hasUpiDetails,
-        hasPaymentLink,
-        hasQrFile: !!qrFile,
-        isUpdate: isUpdating
-      })
-
-      try {
-        console.log('Sending request to /api/auth/add-bank-details', {
-          method: isUpdating ? 'PUT' : 'POST',
-          body: Array.from(formData.entries()).map(([key, value]) => ({
-            key,
-            value: value instanceof File ? `[File: ${value.name}]` : value
-          }))
-        });
-        
-        const res = await fetch("/api/auth/add-bank-details", {
-          method: isUpdating ? "PUT" : "POST",
-          body: formData,
-          // Don't set Content-Type header - let the browser set it with the correct boundary
-        });
-        
-        console.log('Received response status:', res.status);
-
-        // Define response type
-        type ApiResponse = {
-          success: boolean;
-          data?: {
-            id: string;
-            accountHolderName: string;
-            bankName: string;
-            accountNumber: string;
-            ifscCode?: string;
-            branchName?: string;
-            bankCountry?: string;
-            currency?: string;
-            notes?: string;
-          };
-          error?: string;
-          message?: string;
-        };
-        
-        // Handle response
-        let data: ApiResponse
-        try {
-          data = await res.json() as ApiResponse;
-          console.log("API response:", data);
-        } catch (jsonError) {
-          console.error("Failed to parse JSON response:", jsonError);
-          throw new Error("Invalid response from server");
-        }
-
-        if (!res.ok) {
-          const errorMsg = data?.error || data?.message || `HTTP ${res.status}: Failed to ${isUpdating ? 'update' : 'save'} payment methods`
-          throw new Error(errorMsg)
-        }
-
-        // Show success message
-        toast({
-          title: "Success",
-          description: isUpdating 
-            ? "Payment methods updated successfully" 
-            : "Payment methods saved successfully",
-        })
-
-        // Set updating to true for future updates
-        setIsUpdating(true)
-        
-        // If we have a new QR code, update the existing URL
-        if (qrFile) {
-          setExistingQrCodeUrl(URL.createObjectURL(qrFile))
-        }
-
-        // Trigger refresh in other components
-        window.dispatchEvent(new CustomEvent('bankDetailsUpdated'))
-        
-        // Close the modal after a short delay
-        setTimeout(() => {
-          onClose()
-        }, 1500)
-        
-      } catch (error) {
-        console.error("API request failed:", error)
-        throw error // Re-throw to be caught by the outer catch block
-      }
-      
-    } catch (error) {
-      console.error("Error in handleSaveOrUpdate:", error)
-      
-      let errorMessage = isUpdating 
-        ? "Failed to update payment methods. " 
-        : "Failed to save payment methods. "
-      
-      if (error instanceof Error) {
-        // Handle specific error messages
-        if (error.message.includes('network') || error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
-          errorMessage += "Please check your internet connection and try again."
-        } else if (error.message.includes('401') || error.message.includes('403')) {
-          errorMessage += "You don't have permission to perform this action. Please log in again."
-        } else if (error.message.includes('500')) {
-          errorMessage += "Server error. Please try again later."
-        } else {
-          errorMessage += error.message
-        }
-      } else {
-        errorMessage += "An unexpected error occurred. Please try again."
-      }
-      
+    // Validate at least one payment method
+    if (banksToSave.length === 0 && !upiId.trim() && !paymentLink.trim() && !qrFile) {
       toast({
         title: "Error",
-        description: errorMessage,
+        description: "Please add at least one payment method (bank, UPI, or payment link)",
         variant: "destructive",
-        duration: 5000, // Show for 5 seconds to allow reading longer messages
       })
-    } finally {
-      setSaving(false)
+      return
     }
+
+    const formData = new FormData()
+    formData.append("agencyId", agencyId)
+    formData.append("bank", JSON.stringify(banksToSave))
+    formData.append("upiProvider", selectedUpiProvider)
+    formData.append("upiId", upiId)
+    formData.append("paymentLink", paymentLink)
+    if (qrFile) formData.append("qrCode", qrFile)
+
+    console.log("Sending request to API with:", {
+      agencyId,
+      banksCount: banksToSave.length,
+      hasUpi: !!upiId,
+      hasPaymentLink: !!paymentLink,
+      hasQrFile: !!qrFile
+    })
+
+    const res = await fetch("/api/auth/add-bank-details", {
+      method: isUpdating ? "PUT" : "POST",
+      body: formData,
+    })
+
+    // Check if response is HTML (error page)
+    const contentType = res.headers.get("content-type") || ""
+    let data
+
+    if (contentType.includes("application/json")) {
+      data = await res.json()
+      console.log("API JSON response:", data)
+    } else {
+      // Handle HTML/error responses
+      const textContent = await res.text()
+      console.error("Non-JSON response from API:", textContent.substring(0, 500))
+      
+      // Check if it's a Next.js error page
+      if (textContent.includes("<!DOCTYPE html>") || textContent.includes("<html")) {
+        throw new Error("Server encountered an internal error. Please check the server logs.")
+      } else {
+        throw new Error(`Unexpected server response: ${textContent.substring(0, 200)}...`)
+      }
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}: Failed to save/update payment methods`)
+    }
+
+    toast({
+      title: "Success",
+      description: isUpdating ? "Payment methods updated successfully" : "Payment methods saved successfully",
+    })
+
+    onClose()
+  } catch (error) {
+    console.error("Error in handleSaveOrUpdate:", error)
+    
+    let errorMessage = "Failed to save/update payment methods"
+    if (error instanceof Error) {
+      errorMessage = error.message
+    }
+    
+    toast({
+      title: "Error",
+      description: errorMessage,
+      variant: "destructive",
+    })
+  } finally {
+    setSaving(false)
   }
+}
 
   return (
     <>
@@ -548,13 +403,7 @@ export function AgencyBankDetailsModal({ isOpen, onClose, agencyId = null }: Age
                   onClick={handleSaveOrUpdate}
                   disabled={saving || loading}
                 >
-                  {saving 
-                    ? hasExistingMethods 
-                      ? "Updating..." 
-                      : "Saving..." 
-                    : hasExistingMethods 
-                      ? "Update Details" 
-                      : "Save Details"}
+                  {saving ? "Saving..." : isUpdating ? "Update Details" : "Save Details"}
                 </Button>
               </div>
             </div>

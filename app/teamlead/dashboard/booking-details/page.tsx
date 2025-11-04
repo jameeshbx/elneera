@@ -1,6 +1,6 @@
 "use client";
 import React, { Suspense } from "react";
-import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "@/app/teamlead/dashboard/breadcrumbs-tab/breadcrumbs-tab";
 
 import KashmirBookingDashboard from "@/app/teamlead/dashboard/booking-details/booking";
 

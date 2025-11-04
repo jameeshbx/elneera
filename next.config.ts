@@ -55,11 +55,6 @@ const nextConfig: NextConfig = {
   // Enable React Strict Mode
   reactStrictMode: true,
 
-  // Configure webpack
-  webpack: (config, { isServer }) => {
-    return config;
-  },
-
   // Configure headers for API routes
   async headers() {
     return [
@@ -86,7 +81,6 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-
 };
 
 // Log configuration for debugging
