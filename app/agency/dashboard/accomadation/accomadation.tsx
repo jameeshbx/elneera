@@ -24,7 +24,6 @@ interface AccommodationEnquiry {
   assignedStaff: string
   pointOfContact: string
   notes: string
-  leadSource: string
   status: string
   enquiryDate: string
   createdAt?: string
@@ -115,7 +114,6 @@ export default function AccommodationDashboard() {
     assignedStaff: "",
     pointOfContact: "",
     notes: "",
-    leadSource: "Direct",
   })
 
   useEffect(() => {
@@ -271,7 +269,6 @@ export default function AccommodationDashboard() {
       assignedStaff: "",
       pointOfContact: "",
       notes: "",
-      leadSource: "Direct",
     })
   }
 
@@ -489,32 +486,7 @@ export default function AccommodationDashboard() {
             <div className="p-4 sm:p-6">
               <h2 className="text-lg sm:text-xl font-semibold mb-4">Add Accommodation Enquiry</h2>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                {/* Lead source */}
-                <div className="col-span-3 space-y-2">
-                  <label className="text-sm font-medium">Lead source</label>
-                  <div className="flex gap-6">
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        value="Direct"
-                        checked={newAccommodationEnquiry.leadSource === "Direct"}
-                        onChange={(e) => handleInputChange("leadSource", e.target.value)}
-                        className="h-4 w-4 text-green-600"
-                      />
-                      <span className="text-sm">Direct</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        value="Sub agent"
-                        checked={newAccommodationEnquiry.leadSource === "Sub agent"}
-                        onChange={(e) => handleInputChange("leadSource", e.target.value)}
-                        className="h-4 w-4 text-green-600"
-                      />
-                      <span className="text-sm">Sub agent</span>
-                    </label>
-                  </div>
-                </div>
+                
                 {/* Name */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Name *</label>

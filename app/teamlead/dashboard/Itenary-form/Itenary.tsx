@@ -534,7 +534,6 @@ function ItineraryFormContent() {
           body: JSON.stringify(dataToSend),
         })
       }
-
       if (!response.ok) {
         let errorMessage = "Failed to process itinerary"
         try {

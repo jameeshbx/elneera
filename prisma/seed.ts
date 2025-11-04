@@ -42,7 +42,6 @@ async function main() {
       budget: 5000,
       enquiryDate: "2024-05-01", // Changed to string
       assignedStaff: "Alice Cooper",
-      leadSource: "Website",
       tags: "luxury, cultural, couples",
       mustSeeSpots: "Eiffel Tower, Colosseum, Sagrada Familia",
       flightsRequired: "yes",
@@ -64,7 +63,6 @@ async function main() {
       budget: 4000,
       enquiryDate: "2024-05-15", // Changed to string
       assignedStaff: "Bob Wilson",
-      leadSource: "Referral",
       tags: "adventure, solo, photography",
       mustSeeSpots: "Mount Fuji, Fushimi Inari, Osaka Castle",
      

@@ -1,21 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { PrismaClient, type Prisma, BookingStatus } from "@prisma/client"
+import prisma from '@/lib/prisma'
+import { type Prisma, BookingStatus } from "@prisma/client"
 
-type RouteHandlerContext = {
-  params: Promise<{
-    itineraryId: string
-  }>
+// Helper function to safely get params
+async function getParams<T extends object>(params: Promise<T>): Promise<T> {
+  return await params
 }
 
-// Type for the PUT handler context
-type PutRouteHandlerContext = {
-  params: Promise<{
-    itineraryId: string
-  }>
-}
-
-// Create a Prisma client instance
-const prisma = new PrismaClient()
+// Use shared Prisma client from lib/prisma to avoid multiple engine instances during dev HMR
 
 // Import specific types we need
 import type { BookingProgress } from "@prisma/client"
@@ -34,11 +26,14 @@ function parseBookingStatus(status: unknown): BookingStatus {
 }
 
 // Get booking progress by itineraryId or enquiryId
-export async function GET(request: NextRequest, context: RouteHandlerContext) {
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ itineraryId: string }> }
+) {
   try {
     const { searchParams } = new URL(request.url)
     const enquiryId = searchParams.get("enquiryId")
-    const { itineraryId } = await context.params
+    const { itineraryId } = await getParams(context.params)
 
     console.log("GET /api/booking-progress called with:", { itineraryId, enquiryId })
 
@@ -152,7 +147,10 @@ export async function GET(request: NextRequest, context: RouteHandlerContext) {
 }
 
 // Create new booking progress
-export async function POST(request: NextRequest, context: RouteHandlerContext) {
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ itineraryId: string }> }
+) {
   const { searchParams } = new URL(request.url)
   const enquiryId = searchParams.get("enquiryId")
   const { itineraryId } = await context.params
@@ -231,16 +229,15 @@ export async function POST(request: NextRequest, context: RouteHandlerContext) {
 }
 
 // Update existing booking progress
-export async function PUT(request: NextRequest, context: PutRouteHandlerContext) {
-  const { itineraryId } = await context.params
-
+export async function PUT(
+  request: NextRequest) {
   try {
     const body = await request.json()
     const { id, date, service, status, dmcNotes } = body
-    
+
     if (!id) {
       return NextResponse.json(
-        { success: false, error: "Booking progress ID is required in the request body" },
+        { success: false, error: "Booking progress ID is required" },
         { status: 400 }
       )
     }

@@ -243,18 +243,10 @@ export async function PUT(
 
 // POST - Create new payment record
 export async function POST(
-  request: NextRequest,
+  request: NextRequest
 ) {
   try {
-    const requestData = await request.json();
-    const { id, ...paymentData } = requestData;
-
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Payment record ID is required in the request body' },
-        { status: 400 }
-      );
-    }
+    const paymentData = await request.json();
 
     // Validate required fields for new payment
     const requiredFields = ['customerName', 'itineraryReference', 'totalCost'];
@@ -286,8 +278,11 @@ export async function POST(
       );
     }
 
+    // Generate a new ID for the payment record
+    const paymentId = `pay_${Date.now()}`;
+    
     const newPaymentRecord: CustomerPaymentData = {
-      id,
+      id: paymentId,
       customerName: paymentData.customerName,
       itineraryReference: paymentData.itineraryReference,
       totalCost,
@@ -296,7 +291,7 @@ export async function POST(
       remainingBalance: totalCost - amountPaid,
       paymentStatus: amountPaid >= totalCost ? 'Paid' : amountPaid > 0 ? 'Partial' : 'Pending',
       shareMethod: paymentData.shareMethod || 'whatsapp',
-      paymentLink: paymentData.paymentLink || `https://payment.example.com/${id}`,
+      paymentLink: paymentData.paymentLink || `https://payment.example.com/${paymentId}`,
       currency: paymentData.currency || 'USD'
     };
 
@@ -333,11 +328,11 @@ export async function DELETE(
   request: NextRequest
 ) {
   try {
-    const { id } = await request.json();
+    const id = request.nextUrl.searchParams.get('id');
     
     if (!id) {
       return NextResponse.json(
-        { error: 'Payment record ID is required in the request body' },
+        { error: 'Payment ID is required' },
         { status: 400 }
       );
     }

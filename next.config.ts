@@ -1,41 +1,55 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Enable Turbopack
+  // Explicitly configure Turbopack
   experimental: {
-    // Server Actions configuration
     serverActions: {
       bodySizeLimit: '2mb',
     },
   },
-  // Turbopack is enabled by default in development with 'next dev --turbo'
-  // No need to configure it in next.config.ts
   
-  // Image configuration
+  // Configure Turbopack with empty config to use webpack
+  // This prevents the build error while keeping webpack as the default bundler
+  turbopack: {
+    // Empty config to use webpack instead
+  },
+  /* config options here */
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '**',
+        hostname: 'images.unsplash.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 's.gravatar.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'trekkingb2b.vercel.app',
+      },
+      {
+        protocol: 'https',
+        hostname: 'flagcdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'trekkingmiles-generated-itinerary.s3.eu-north-1.amazonaws.com',
       },
     ],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    // Allow local images with query parameters
-    dangerouslyAllowSVG: true,
-    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
-    // Configure local image patterns
-    unoptimized: true, // Disable optimization to allow query parameters
-    // Add local image domains
-    domains: ['localhost'],
-    // Allow any path for local images
-    path: '/_next/image',
-    // Configure local patterns to allow query parameters
-    loader: 'custom',
-    loaderFile: './image-loader.js',
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
   
-  // Configure page extensions to include API routes
+   // Configure page extensions to include API routes
   pageExtensions: ['tsx', 'ts', 'jsx', 'js', 'api.ts'],
 
   // Enable React Strict Mode

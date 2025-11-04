@@ -41,7 +41,6 @@ interface Enquiry {
   numberOfKids: string
   travelingWithPets: string
   flightsRequired: string
-  leadSource: string
   tags: string
   mustSeeSpots: string
   status: string
@@ -61,6 +60,11 @@ interface UserData {
   name: string;
   status: string;
 }
+interface ApiResponse {
+  success: boolean;
+  data: UserData[];
+}
+
 
 
 const generateUniqueId = () => {
@@ -154,7 +158,6 @@ const [tempBudget, setTempBudget] = useState(1000);
     numberOfKids: "",
     travelingWithPets: "no",
     flightsRequired: "no",
-    leadSource: "Direct",
     tags: "sightseeing",
     mustSeeSpots: "",
     
@@ -175,15 +178,37 @@ const [tempBudget, setTempBudget] = useState(1000);
         method: "GET",
         headers: { "Content-Type": "application/json" },
       })
-      const data = await response.json()
-if (response.ok && data?.success && Array.isArray(data.data)) {
-  const mapped = data.data
-    .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
-    .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
-  setStaffUsers(mapped)
-} else {
-  setStaffUsers([])
-}
+      // Handle non-OK responses and empty / invalid JSON bodies gracefully
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => null)
+        console.warn('/api/auth/agency-add-user returned', response.status, bodyText)
+        setStaffUsers([])
+        return
+      }
+
+      const text = await response.text().catch(() => null)
+      if (!text) {
+        setStaffUsers([])
+        return
+      }
+
+    let data: ApiResponse | null = null;
+      try {
+        data = JSON.parse(text)
+      } catch (err) {
+        console.error('Failed to parse /api/auth/agency-add-user JSON', err, text)
+        setStaffUsers([])
+        return
+      }
+
+      if (data?.success && Array.isArray(data.data)) {
+        const mapped = data.data
+          .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
+          .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
+        setStaffUsers(mapped)
+      } else {
+        setStaffUsers([])
+      }
     } catch (e) {
       console.error("Failed to fetch staff users", e)
       setStaffUsers([])
@@ -378,7 +403,6 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
       numberOfKids: "",
       travelingWithPets: "no",
       flightsRequired: "no",
-      leadSource: "Direct",
       tags: "sightseeing",
       mustSeeSpots: "",
       
@@ -569,15 +593,8 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
               <ChevronDown className="h-4 w-4" />
             </Button>
             <Button
-              onClick={() => setIsDialogOpen(true)}
-              className="bg-white hover:bg-white text-green-800 border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add enquiry</span>
-            </Button>
-            <Button
               onClick={handleViewLeads}
-              className="bg-green-800 hover:bg-green-800 text-white border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
+              className="bg-white hover:bg-white text-green-800 border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
             >
               <Eye className="h-4 w-4" />
               <span>View Leads</span>
@@ -605,21 +622,32 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                     >
                       {/* Column header */}
                       <div className="p-3 sm:p-4 shadow-sm rounded-t-lg bg-white">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-amber-100 p-2 sm:p-3 rounded-md">
-                            <Image
-                              src={
-                                column.icon?.startsWith("//")
-                                  ? column.icon.replace("//", "/")
-                                  : column.icon || "/Vectors.png"
-                              }
-                              alt={column.title}
-                              width={32}
-                              height={32}
-                              className="w-6 h-6 sm:w-8 sm:h-8"
-                            />
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-amber-100 p-2 sm:p-3 rounded-md">
+                              <Image
+                                src={
+                                  column.icon?.startsWith("//")
+                                    ? column.icon.replace("//", "/")
+                                    : column.icon || "/Vectors.png"
+                                }
+                                alt={column.title}
+                                width={32}
+                                height={32}
+                                className="w-6 h-6 sm:w-8 sm:h-8"
+                              />
+                            </div>
+                            <h3 className="font-semibold text-sm sm:text-base font-poppins">{column.title}</h3>
                           </div>
-                          <h3 className="font-semibold text-sm sm:text-base font-poppins">{column.title}</h3>
+                          {column.id === "enquiry" && (
+                            <Button
+                              onClick={() => setIsDialogOpen(true)}
+                              size="sm"
+                              className="bg-green-700 hover:bg-green-800 text-white h-7 w-7 p-0 rounded-full"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
 
@@ -697,37 +725,6 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
           <div className="p-4 sm:p-6">
             <DialogTitle className="text-lg sm:text-xl font-semibold font-poppins">Add Enquiry</DialogTitle>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-4">
-              {/* Lead source */}
-              <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Lead source</label>
-                <RadioGroup
-                  value={newEnquiry.leadSource}
-                  onValueChange={(value: string) => handleInputChange("leadSource", value)}
-                >
-                  <div className="flex gap-6">
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Direct"
-                        id="lead-direct"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-direct" className="text-sm">
-                        Direct
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Sub agent"
-                        id="lead-agent"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-agent" className="text-sm">
-                        Sub agent
-                      </Label>
-                    </div>
-                  </div>
-                </RadioGroup>
-              </div>
 
               {/* Tags */}
               <div className="space-y-1 sm:space-y-2">
@@ -935,74 +932,74 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
               </div>
 
               {/* Budget */}
-             <div className="col-span-3 space-y-1 sm:space-y-2 font-poppins">
-  <div className="flex justify-between items-center">
-    <label className="text-xs sm:text-sm font-medium">Budget</label>
-    {!isEditingBudget && (
-      <button
-        onClick={() => {
-          setTempBudget(newEnquiry.budget || 1000);
-          setIsEditingBudget(true);
-        }}
-        type="button"
-        className="text-xs text-blue-600 hover:text-blue-800"
-      >
-        Edit
-      </button>
-    )}
-  </div>
-  <div className="pt-2 px-2">
-   <Slider
-  defaultValue={[newEnquiry.budget || 1000]}
-  max={newEnquiry.currency === 'INR' ? 200000 : 50000}
-  min={100}
-  step={100}
-  onValueChange={(value: number[]) => handleInputChange("budget", value[0])}
-/>
-    <div className="flex justify-between items-center mt-2 text-xs sm:text-sm text-gray-500">
-      <span>{getCurrencySymbol(newEnquiry.currency)}100</span>
-      {isEditingBudget ? (
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            value={tempBudget}
-            onChange={(e) => setTempBudget(Number(e.target.value))}
-            className="w-24 h-8 text-sm"
-            min={100}
-            max={newEnquiry.currency === 'INR' ? 200000 : 50000}
-            step={100}
-          />
-          <button
-            onClick={() => {
-              handleInputChange("budget", tempBudget);
-              setIsEditingBudget(false);
-            }}
-            className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
-          >
-            Save
-          </button>
-          <button
-            onClick={() => setIsEditingBudget(false)}
-            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <div 
-          className="bg-green-100 px-2 py-1 rounded text-green-800 cursor-pointer hover:bg-green-200"
-          onClick={() => {
-            setTempBudget(newEnquiry.budget || 1000);
-            setIsEditingBudget(true);
-          }}
-        >
-          {getCurrencySymbol(newEnquiry.currency)}{newEnquiry.budget || 1000}
-        </div>
-      )}
-      <span>{getCurrencySymbol(newEnquiry.currency)}{newEnquiry.currency === 'INR' ? '200000' : '50000'}</span>
-    </div>
-  </div>
-</div>
+              <div className="col-span-3 space-y-1 sm:space-y-2 font-poppins">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs sm:text-sm font-medium">Budget</label>
+                  {!isEditingBudget && (
+                    <button
+                      onClick={() => {
+                        setTempBudget(newEnquiry.budget || 1000);
+                        setIsEditingBudget(true);
+                      }}
+                      type="button"
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+                <div className="pt-2 px-2">
+                  <Slider
+                    defaultValue={[newEnquiry.budget || 1000]}
+                    max={newEnquiry.currency === 'INR' ? 200000 : 50000}
+                    min={100}
+                    step={100}
+                    onValueChange={(value: number[]) => handleInputChange("budget", value[0])}
+                  />
+                  <div className="flex justify-between items-center mt-2 text-xs sm:text-sm text-gray-500">
+                    <span>{getCurrencySymbol(newEnquiry.currency)}100</span>
+                    {isEditingBudget ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={tempBudget}
+                          onChange={(e) => setTempBudget(Number(e.target.value))}
+                          className="w-24 h-8 text-sm"
+                          min={100}
+                          max={newEnquiry.currency === 'INR' ? 200000 : 50000}
+                          step={100}
+                        />
+                        <button
+                          onClick={() => {
+                            handleInputChange("budget", tempBudget);
+                            setIsEditingBudget(false);
+                          }}
+                          className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setIsEditingBudget(false)}
+                          className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        className="bg-green-100 px-2 py-1 rounded text-green-800 cursor-pointer hover:bg-green-200"
+                        onClick={() => {
+                          setTempBudget(newEnquiry.budget || 1000);
+                          setIsEditingBudget(true);
+                        }}
+                      >
+                        {getCurrencySymbol(newEnquiry.currency)}{newEnquiry.budget || 1000}
+                      </div>
+                    )}
+                    <span>{getCurrencySymbol(newEnquiry.currency)}{newEnquiry.currency === 'INR' ? '200000' : '50000'}</span>
+                  </div>
+                </div>
+              </div>
 
               {/* Traveling with pets */}
               <div className="col-span-3 space-y-1 sm:space-y-2">

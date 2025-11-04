@@ -5,7 +5,6 @@ generator client {
 datasource db {
   provider     = "postgresql"
   url          = env("DATABASE_URL")
-  relationMode = "prisma"
 }
 
 model File {
@@ -59,6 +58,7 @@ model User {
   createdEnquiries enquiries[]    @relation("UserEnquiries")
 
   agencyForms AgencyForm[] @relation("AgencyFormCreator")
+  agencyUsers   UserForm[]  @relation("AgencyUsers")
 
   @@index([email])
   @@index([role])
@@ -288,6 +288,7 @@ model UserForm {
   id               String     @id @default(uuid())
   name             String
   phoneNumber      String
+  agencyId         String?
   phoneExtension   String     @default("+91")
   email            String     @unique
   username         String     @unique
@@ -298,6 +299,8 @@ model UserForm {
   updatedAt        DateTime   @updatedAt
   createdBy        String
   resetToken       String?
+  agency            User?     @relation("AgencyUsers", fields: [agencyId], references: [id], onDelete: SetNull)
+
   resetTokenExpiry DateTime?
   userType         String?
   profileImage     File?      @relation("UserProfileImage", fields: [profileImageId], references: [id])
@@ -306,6 +309,7 @@ model UserForm {
   @@index([createdBy])
   @@index([email])
   @@index([username])
+  @@index([agencyId])
   @@map("user_form")
 }
 
@@ -345,7 +349,6 @@ model enquiries {
   notes              String?
   assignedStaff      String?
   pointOfContact     String?
-  leadSource         String?             @default("Direct")
   flightsRequired    String?             @default("no")
   pickupLocation     String?
   dropLocation       String?
@@ -666,7 +669,6 @@ model FlightEnquiry {
   assignedStaff         String?
   pointOfContact        String?
   notes                 String?
-  leadSource            String   @default("Direct")
   status                String   @default("enquiry")
   enquiryDate           String
   createdAt             DateTime @default(now())
@@ -699,7 +701,6 @@ model AccommodationEnquiry {
   assignedStaff     String?
   pointOfContact    String?
   notes             String?
-  leadSource        String   @default("Direct")
   status            String   @default("enquiry")
   enquiryDate       DateTime @default(now())
   createdAt         DateTime @default(now())
@@ -1032,6 +1033,7 @@ enum Role {
   USER
   ADMIN
   SUPER_ADMIN
+  TRAVEL_AGENCY
   AGENT_USER
   AGENT_ADMIN
   DMC_USER
@@ -1047,6 +1049,7 @@ enum Role {
 
 enum UserType {
   USER
+  TRAVEL_AGENCY
   AGENCY_ADMIN
   AGENCY_MANAGER
   TEAM_LEAD

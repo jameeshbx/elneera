@@ -176,6 +176,13 @@ const BookingProgressDashboard = () => {
   const [showServiceDropdown, setShowServiceDropdown] = useState(false);
   const [assignedStaffName, setAssignedStaffName] = useState("Not Assigned");
 
+  const handleNextClick = () => {
+    if (enquiryId) {
+      window.location.href = `/agency-admin/dashboard/feedback?enquiryId=${enquiryId} & itineraryId=${csvItineraryId}`;
+    } else {
+      alert('No enquiry ID available');
+    }
+  };
 
   const getCsvFilenameForLocation = (loc: string): string => {
     const normalized = (loc || '').toLowerCase();
@@ -1004,12 +1011,26 @@ useEffect(() => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Booking Progress Dashboard
-          </h1>
-          <p className="text-gray-600">
-            {itineraryData?.package || 'Loading...'} - {csvItineraryId || itineraryId}
-          </p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                Booking Progress Dashboard
+              </h1>
+              <p className="text-gray-600">
+                {itineraryData?.package || 'Loading...'} - {csvItineraryId || itineraryId}
+              </p>
+            </div>
+            <button
+              onClick={handleNextClick}
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors disabled:bg-gray-400"
+              disabled={!enquiryId}
+            >
+              Next
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1305,13 +1326,13 @@ useEffect(() => {
                       <div className="text-gray-900 mt-0.5">{selectedDmcName || 'Loading...'}</div>
                     </div>
                   </div>
-                 <div className="flex items-center gap-2 mt-2">
-  <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
-  <div>
-    <span className="text-sm font-medium text-gray-600">Assigned Staff:</span>
-    <span className="text-sm text-gray-900 ml-1">{ assignedStaffName}</span>
-  </div>
-</div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Assigned Staff:</span>
+                      <span className="text-sm text-gray-900 ml-1">{assignedStaffName}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

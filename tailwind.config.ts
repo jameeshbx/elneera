@@ -11,13 +11,13 @@ const config: Config = {
       colors: {
         primary: "#183F30",
       },
-      fontFamily: {
-        raleway: ['Raleway', 'sans-serif'],
-        poppins: ['Poppins', 'sans-serif'],
-        nunito: ['var(--font-nunito)', 'sans-serif'],
-        source: ['"Source Sans Pro"', 'sans-serif'],
-        sans: ['var(--font-nunito)', 'sans-serif'], // Using Nunito as default sans font
-      },
+    },
+    fontFamily: {
+      raleway: ['var(--font-raleway)', 'sans-serif'],
+      poppins: ['var(--font-poppins)', 'sans-serif'],
+      nunito: ['Nunito', 'sans-serif'],
+      source: ['"Source Sans Pro"', 'sans-serif'],
+      sans: ['var(--font-inter)', 'Helvetica', 'Arial', 'sans-serif'],
     },
   },
   plugins: [],

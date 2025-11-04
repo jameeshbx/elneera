@@ -11,7 +11,7 @@ export function getRoleBasedPath(role: UserRole, userType?: UserType): string {
         return '/super-admin/dashboard';
       case 'ADMIN':
         return '/admin/dashboard';
-      case 'AGENCY_ADMIN':
+      case 'TRAVEL_AGENCY':
         return '/agency-admin/dashboard';
       case 'MANAGER':
         return '/agency/dashboard';
@@ -31,7 +31,7 @@ export function getRoleBasedPath(role: UserRole, userType?: UserType): string {
       return '/super-admin/dashboard';
       case 'ADMIN':
         return '/admin/dashboard';
-    case 'AGENCY_ADMIN':
+    case 'TRAVEL_AGENCY':
       return '/agency-admin/dashboard';
     
    
@@ -92,7 +92,7 @@ export function getRoleBasedPath(role: UserRole, userType?: UserType): string {
         ];
   
       case 'AGENT_ADMIN':
-      case 'AGENCY_ADMIN':
+      case 'TRAVEL_AGENCY':
         return [
           '/agency-admin',
           '/agency-manager',
@@ -132,8 +132,8 @@ export function getRoleBasedPath(role: UserRole, userType?: UserType): string {
   // Helper function to redirect users based on their role after login
   export function getPostLoginRedirect(role: UserRole, userType?: UserType,
      agencyFormSubmitted?: boolean): string {
-    // Special case for AGENCY_ADMIN who haven't submitted agency form
-    if ((role === 'AGENT_ADMIN' || role === 'AGENCY_ADMIN') && agencyFormSubmitted === false) {
+    // Special case for TRAVEL_AGENCY who haven't submitted agency form
+    if ((role === 'AGENT_ADMIN' || role === 'TRAVEL_AGENCY') && agencyFormSubmitted === false) {
       return '/agency-admin/agency-form';
     }
 
