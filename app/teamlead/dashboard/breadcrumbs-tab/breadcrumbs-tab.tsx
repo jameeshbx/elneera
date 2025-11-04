@@ -64,19 +64,49 @@ const BreadcrumbNavigation = () => {
       id: "generate",
       label: "Generate Itinerary",
       icon: Edit3,
-      path: `/executive/dashboard/Itenary-form${enquiryId ? `?enquiryId=${enquiryId}` : ""}`,
+      path: `/teamlead/dashboard/Itenary-form${enquiryId ? `?enquiryId=${enquiryId}` : ""}`,
     },
     {
       id: "itineraries",
       label: "Itineraries",
       icon: FileText,
-      path: `/executive/dashboard/Itenary-view${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+      path: `/teamlead/dashboard/Itenary-view${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
     },
     {
       id: "share-customer",
       label: "Share to Customer",
       icon: Share,
-      path: `/executive/dashboard/share-customer${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+      path: `/teamlead/dashboard/share-customer${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+    },
+    {
+      id: "share-dmc",
+      label: "Share to DMC",
+      icon: MessageSquare,
+      path: `/teamlead/dashboard/share-dmc${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+    },
+    {
+      id: "customer-transaction",
+      label: "Customer payment",
+      icon: CreditCard,
+      path: `/teamlead/dashboard/customer-payment${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+    },
+    {
+      id: "dmc-payout",
+      label: "DMC payment",
+      icon: Banknote,
+      path: `/teamlead/dashboard/dmc-payment${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+    },
+    {
+      id: "booking-details",
+      label: "Booking details",
+      icon: Download,
+      path: `/teamlead/dashboard/booking-details${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+    },
+    {
+      id: "feedbacks",
+      label: "Feedbacks",
+      icon: ThumbsUp,
+      path: `/teamlead/dashboard/feedback${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
     },
   ]
 

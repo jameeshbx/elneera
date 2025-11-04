@@ -1,36 +1,45 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  images: {
-    domains: [
-      'images.unsplash.com', 
-      'res.cloudinary.com', 
-      'lh3.googleusercontent.com', 
-      's.gravatar.com', 
-      'localhost', 
-      'trekkingb2b.vercel.app',
-      'flagcdn.com',
-      'trekkingmiles-generated-itinerary.s3.eu-north-1.amazonaws.com' 
-    ],
-  },
-  
-   // Experimental features
-   experimental: {
+  // Enable Turbopack
+  experimental: {
+    // Server Actions configuration
     serverActions: {
       bodySizeLimit: '2mb',
     },
   },
+  // Turbopack is enabled by default in development with 'next dev --turbo'
+  // No need to configure it in next.config.ts
+  
+  // Image configuration
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    // Allow local images with query parameters
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    // Configure local image patterns
+    unoptimized: true, // Disable optimization to allow query parameters
+    // Add local image domains
+    domains: ['localhost'],
+    // Allow any path for local images
+    path: '/_next/image',
+    // Configure local patterns to allow query parameters
+    loader: 'custom',
+    loaderFile: './image-loader.js',
+  },
+  
   // Configure page extensions to include API routes
   pageExtensions: ['tsx', 'ts', 'jsx', 'js', 'api.ts'],
 
   // Enable React Strict Mode
   reactStrictMode: true,
-
-  // Configure webpack
-  webpack: (config, { isServer }) => {
-    return config;
-  },
 
   // Configure headers for API routes
   async headers() {
@@ -57,11 +66,6 @@ const nextConfig: NextConfig = {
         ],
       },
     ];
-  },
-
-  // Configure cookies
-  cookies: {
-    // Add any custom cookie configuration here
   },
 };
 

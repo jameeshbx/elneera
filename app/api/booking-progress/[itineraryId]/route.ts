@@ -11,7 +11,6 @@ type RouteHandlerContext = {
 type PutRouteHandlerContext = {
   params: Promise<{
     itineraryId: string
-    id: string
   }>
 }
 
@@ -233,11 +232,18 @@ export async function POST(request: NextRequest, context: RouteHandlerContext) {
 
 // Update existing booking progress
 export async function PUT(request: NextRequest, context: PutRouteHandlerContext) {
-  const { id } = await context.params
+  const { itineraryId } = await context.params
 
   try {
     const body = await request.json()
-    const { date, service, status, dmcNotes } = body
+    const { id, date, service, status, dmcNotes } = body
+    
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "Booking progress ID is required in the request body" },
+        { status: 400 }
+      )
+    }
 
     console.log(`Updating booking progress ${id} with data:`, { date, service, status, dmcNotes })
 

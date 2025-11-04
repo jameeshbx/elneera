@@ -318,7 +318,7 @@ function ItineraryViewContent() {
     });
 
     if (typeof window !== "undefined") {
-      window.location.href = `/executive/dashboard/Itenary-form?${queryParams.toString()}`;
+      window.location.href = `/teamlead/dashboard/Itenary-form?${queryParams.toString()}`;
     }
   };
 
@@ -357,7 +357,7 @@ function ItineraryViewContent() {
     });
 
     if (typeof window !== "undefined") {
-      window.location.href = `/executive/dashboard/share-customer?${queryParams.toString()}`;
+      window.location.href = `/teamlead/dashboard/share-customer?${queryParams.toString()}`;
     }
   };
 

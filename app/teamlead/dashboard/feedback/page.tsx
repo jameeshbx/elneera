@@ -1,9 +1,9 @@
 "use client"
 
 
-import BreadcrumbDemo from "@/app/executive/dashboard/breadcrumbs-tab/breadcrumbs-tab"
+import BreadcrumbDemo from "@/app/teamlead/dashboard/breadcrumbs-tab/breadcrumbs-tab"
 
-import TravelBookingSystem from "@/app/executive/dashboard/feedback/feedback"
+import TravelBookingSystem from "@/app/teamlead/dashboard/feedback/feedback"
 
 export default function Enquiry() {
   return (

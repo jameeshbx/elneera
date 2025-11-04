@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
-import LoadingComponent from "@/app/executive/dashboard/Itenary-form/loading"
+import LoadingComponent from "@/app/agency/dashboard/Itenary-form/loading"
 
 // Define types for the itinerary data (matching ItineraryView)
 interface Activity {
@@ -586,7 +586,7 @@ function ItineraryFormContent() {
 
           // Redirect to share customer page with the generated itinerary
           router.push(
-            `/executive/dashboard/Itenary-view?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+            `/teamlead/dashboard/Itenary-view?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
           )
         } else {
           let pdfErrorMessage = "PDF generation failed"
@@ -617,7 +617,7 @@ function ItineraryFormContent() {
 
           // Still redirect to share customer page
           router.push(
-            `/executive/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+            `/teamlead/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
           )
         }
       } catch (pdfError) {
@@ -626,7 +626,7 @@ function ItineraryFormContent() {
 
         // Still redirect to share customer page
         router.push(
-          `/executive/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
+          `/agency/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
         )
       }
     } catch (error) {
