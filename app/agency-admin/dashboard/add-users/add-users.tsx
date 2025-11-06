@@ -178,11 +178,13 @@ export default function AddUsers() {
 
   const fetchUsers = async () => {
     try {
+      // Let the API resolve the agency admin from the server session
       const response = await fetch('/api/auth/agency-add-user', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
       });
       
       if (!response.ok) {

@@ -481,12 +481,22 @@ export async function POST(req: Request) {
 }
 export async function GET() {
   try {
-    console.log("📄 Fetching users list...");
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const agencyAdminUserId = session.user.id;
     
-    // Ensure table exists before proceeding
-    await ensureTablesExist();
-    
+
+    if (!agencyAdminUserId) {
+      return NextResponse.json({
+        success: false,
+        error: 'agencyId is required (or authenticate as an agency admin)'
+      }, { status: 400 });
+    }
+
     const users = await prisma.userForm.findMany({
+      where: { createdBy: agencyAdminUserId },
       include: {
         profileImage: true
       },
@@ -494,9 +504,9 @@ export async function GET() {
         createdAt: 'desc'
       }
     });
-    
-    console.log(`✅ Found ${users.length} users`);
-    
+
+    console.log(`✅ Found ${users.length} users for agency admin ${agencyAdminUserId}`);
+
     return NextResponse.json({
       success: true,
       data: users.map((user: User) => ({

@@ -4,7 +4,6 @@ import type React from "react"
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import { Eye} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useSession } from "next-auth/react"
 import { AgencyBankDetailsModal } from "./add-bank-details"
@@ -64,6 +63,7 @@ interface CompanyInformation {
   yearOfRegistration: string
   panNo: string
   panType: string
+  status: string
   headquarters: string
   yearsOfOperation: string
   landingPageColor: string
@@ -81,7 +81,6 @@ interface ApiResponse {
 export default function ProfilePage() {
   const { data: session, status } = useSession()
   const [showComments, setShowComments] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
   const [commentText, setCommentText] = useState("")
   const [color, setColor] = useState("#0F9D58")
   const [, setTempColor] = useState("#0F9D58")
@@ -266,6 +265,7 @@ export default function ProfilePage() {
     yearOfRegistration: "",
     panNo: "",
     panType: "",
+    status: "",
     headquarters: "",
     yearsOfOperation: "",
     landingPageColor: "#0F9D58",
@@ -323,27 +323,12 @@ export default function ProfilePage() {
 
         if (data.teamMembers) setTeamMembers(data.teamMembers)
         if (typeof data.commentData !== "undefined") setCommentData(data.commentData ?? null)
-        if (data.companyInformation) {
-          setCompanyInformation(data.companyInformation)
-          setColor(data.companyInformation.landingPageColor || "#0F9D58")
-          setTempColor(data.companyInformation.landingPageColor || "#0F9D58")
-        }
       } catch (error) {
         console.error("Error fetching profile data:", error)
         setError(error instanceof Error ? error.message : "Failed to fetch profile data")
       } finally {
         if (!cancelled) setIsLoading(false)
       }
-    }
-
-    if (status === "loading") {
-      return
-    }
-
-    if (status === "unauthenticated") {
-      setError("Please log in to view your profile")
-      setIsLoading(false)
-      return
     }
 
     if (session) {
@@ -353,7 +338,65 @@ export default function ProfilePage() {
     return () => {
       cancelled = true
     }
-  }, [session, status])
+  }, [session])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchCompanyInfo = async () => {
+      if (status !== "authenticated") return
+      try {
+        const res = await fetch("/api/agencyform", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        })
+        console.log("res", res);
+        
+        if (!res.ok) return
+        const json = await res.json()
+        if (cancelled) return
+        const data = json?.data
+        if (!data) return
+        setCompanyInformation((prev) => ({
+          ...prev,
+          name: data.name ?? prev.name,
+          contactPerson: data.contactPerson ?? prev.contactPerson,
+          agencyType: data.agencyType ?? prev.agencyType,
+          designation: data.designation ?? prev.designation,
+          gstRegistration: typeof data.gstRegistered === "boolean" ? (data.gstRegistered ? "Yes" : "No") : prev.gstRegistration,
+          gstNo: data.gstNumber ?? prev.gstNo,
+          ownerName: data.ownerName ?? prev.ownerName,
+          mobile: data.phoneNumber ?? prev.mobile,
+          email: data.email ?? prev.email,
+          website: data.website ?? prev.website,
+          logo: data.logoPath ?? prev.logo,
+          country: data.country ?? prev.country,
+          yearOfRegistration: data.yearOfRegistration ?? prev.yearOfRegistration,
+          panNo: data.panNumber ?? prev.panNo,
+          panType: data.panType ?? prev.panType,
+          status: data.status ?? prev.status,
+          headquarters: data.headquarters ?? prev.headquarters,
+          yearsOfOperation: data.yearsOfOperation ?? prev.yearsOfOperation,
+          landingPageColor: data.landingPageColor ?? prev.landingPageColor,
+          businessLicense: data.businessLicensePath ?? prev.businessLicense,
+        }))
+        console.log("companyInformation", companyInformation);
+        
+        if (data.landingPageColor) {
+          setColor(data.landingPageColor)
+          setTempColor(data.landingPageColor)
+        }
+      } catch (error) {
+        console.error("Error fetching company information:", error)
+      }
+    }
+
+    fetchCompanyInfo()
+    return () => {
+      cancelled = true
+    }
+  }, [session])
 
   const handleDownloadBusinessLicense = async () => {
     if (!companyInformation.businessLicense) {
@@ -505,10 +548,11 @@ export default function ProfilePage() {
       <div className="container mx-auto p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* Profile Information */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <h2 className="text-lg font-semibold mb-4">Profile Information</h2>
+          <div className="bg-white rounded-lg shadow-sm p-6 overflow-x-auto">
+            <div className="min-w-[320px]">
+              <h2 className="text-lg font-semibold mb-4">Profile Information</h2>
 
-            <div className="space-y-4">
+              <div className="space-y-4">
               <div className="grid grid-cols-3 gap-2">
                 <span className="text-sm font-medium">Full Name:</span>
                 <span className="text-sm text-gray-600 col-span-2">{profileData.fullName || "N/A"}</span>
@@ -529,133 +573,124 @@ export default function ProfilePage() {
                 <span className="text-sm text-gray-600 col-span-2">{companyInformation.country}</span>
               </div>
               
-
+              </div>
             </div>
           </div>
 
           {/* Account Information */}
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold whitespace-nowrap mr-4">Account Information</h2>
+          <div className="bg-white rounded-lg shadow-sm p-6 overflow-x-auto">
+            <div className="min-w-[420px]">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold whitespace-nowrap mr-4">Account Information</h2>
 
-              <Button
-                variant="default"
-                className="bg-emerald-500 text-white rounded-full flex items-center gap-1 text-xs px-3 py-1.5 hover:bg-emerald-600 whitespace-nowrap"
-                onClick={() => {
-                  console.log("Opening bank details modal")
-                  setShowBankDetailsModal(true)
-                }}
-              >
-                <PlusCircle className="w-3 h-3" />
-                <span>Add bank details</span>
-              </Button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Username:</span>
-                <span className="text-sm text-gray-600 col-span-2 flex items-center">
-                  {accountData.username}
-                  <span className="ml-2 inline-flex items-center justify-center w-4 h-4 bg-teal-500 rounded-full">
-                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M9 1L3.5 6.5L1 4"
-                        stroke="white"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Password:</span>
-                <div className="flex items-center col-span-2">
-                  <span className="text-sm text-gray-600 mr-2">
-                    {showPassword ? "password123" : accountData.password}
-                  </span>
-                  <button
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="text-[#0F3F2F] hover:text-[#0F3F2F]/80"
-                  >
-                    <Eye size={16} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Role:</span>
-                <span className="text-sm text-gray-600 col-span-2">{accountData.role}</span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Location:</span>
-                <span className="text-sm text-gray-600 col-span-2">{accountData.location || "N/A"}</span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Account Status:</span>
-                <span
-                  className={`text-sm font-medium col-span-2 ${accountData.status === "Active" ? "text-green-600" : "text-gray-600"}`}
+                <Button
+                  variant="default"
+                  className="bg-emerald-500 text-white rounded-full flex items-center gap-1 text-xs px-3 py-1.5 hover:bg-emerald-600 whitespace-nowrap"
+                  onClick={() => {
+                    console.log("Opening bank details modal")
+                    setShowBankDetailsModal(true)
+                  }}
                 >
-                  {accountData.status}
-                </span>
+                  <PlusCircle className="w-3 h-3" />
+                  <span>Add bank details</span>
+                </Button>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                <span className="text-sm font-medium">Last logged in:</span>
-                <span className="text-sm text-gray-600 col-span-2">{accountData.lastLoggedIn}</span>
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-sm font-medium">Username:</span>
+                  <span className="text-sm text-gray-600 col-span-2 flex items-center">
+                    {accountData.username}
+                    <span className="ml-2 inline-flex items-center justify-center w-4 h-4 bg-teal-500 rounded-full">
+                      <svg width="10" height="8" viewBox="0 0 10 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                          d="M9 1L3.5 6.5L1 4"
+                          stroke="white"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </span>
+                </div>
+
+                
+
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-sm font-medium">Role:</span>
+                  <span className="text-sm text-gray-600 col-span-2">{accountData.role}</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-sm font-medium">Location:</span>
+                  <span className="text-sm text-gray-600 col-span-2">{companyInformation.country}</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-sm font-medium">Account Status:</span>
+                  <span
+                    className={`text-sm font-medium col-span-2 ${["Active", "APPROVED"].includes(companyInformation.status) ? "text-green-600" : "text-gray-600"}`}
+                  >
+                    {companyInformation.status || "PENDING"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-sm font-medium">Last logged in:</span>
+                  <span className="text-sm text-gray-600 col-span-2">{accountData.lastLoggedIn}</span>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Team Section */}
-          <div className="bg-white rounded-lg shadow-sm p-6 md:col-span-2 xl:col-span-1">
-            <div className="flex items-center gap-2 mb-4">
-              <Image
-                src="/placeholder.svg?height=16&width=16"
-                alt="Team icon"
-                width={16}
-                height={16}
-                className="w-4 h-4"
-              />
-              <span className="font-semibold text-sm">TEAM</span>
-            </div>
+          <div className="bg-white rounded-lg shadow-sm p-6 md:col-span-2 xl:col-span-1 overflow-x-auto">
+            <div className="min-w-[320px]">
+              <div className="flex items-center gap-2 mb-4">
+                <Image
+                  src="/placeholder.svg?height=16&width=16"
+                  alt="Team icon"
+                  width={16}
+                  height={16}
+                  className="w-4 h-4"
+                />
+                <span className="font-semibold text-sm">TEAM</span>
+              </div>
 
-            <div className="space-y-4">
-              {teamMembers.length === 0 ? (
-                <p className="text-gray-500 text-sm">No team members found</p>
-              ) : (
-                teamMembers.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-10 w-10 rounded-full overflow-hidden ${member.avatarColor}`}>
-                        <Image
-                          src={member.avatarUrl || "/placeholder.svg?height=40&width=40&query=team member"}
-                          alt={member.name}
-                          width={40}
-                          height={40}
-                          className="h-full w-full object-cover"
-                        />
+              <div className="space-y-4">
+                {teamMembers.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No team members found</p>
+                ) : (
+                  teamMembers.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`h-10 w-10 rounded-full overflow-hidden ${member.avatarColor}`}>
+                          <Image
+                            src={member.avatarUrl || "/placeholder.svg?height=40&width=40&query=team member"}
+                            alt={member.name}
+                            width={40}
+                            height={40}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <div>
+                          <p className="font-medium text-sm">{member.name}</p>
+                          <p className="text-xs text-gray-500">Last logged in at {member.lastLoggedIn}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">{member.name}</p>
-                        <p className="text-xs text-gray-500">Last logged in at {member.lastLoggedIn}</p>
-                      </div>
+                      <Button
+                        variant="default"
+                        className="bg-emerald-500 text-white rounded-full flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4 py-1 sm:py-2 hover:bg-emerald-600"
+                        onClick={() => setShowComments(true)}
+                      >
+                        <PlusCircle className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span>Add comment</span>
+                      </Button>
                     </div>
-                    <Button
-                      variant="default"
-                      className="bg-emerald-500 text-white rounded-full flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-2 sm:px-4 py-1 sm:py-2 hover:bg-emerald-600"
-                      onClick={() => setShowComments(true)}
-                    >
-                      <PlusCircle className="w-3 h-3 sm:w-4 sm:h-4" />
-                      <span>Add comment</span>
-                    </Button>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
