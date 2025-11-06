@@ -76,18 +76,18 @@ const generateUniqueId = () => {
 }
 
 const initialColumns: Column[] = [
-  { id: "enquiry", title: "Enquiry", icon: "/Vectors.png?height=32&width=32", enquiries: [] },
-  { id: "itinerary_creation", title: "Itinerary Creation", icon: "/Vectors1.png?height=32&width=32", enquiries: [] },
-  { id: "customer_feedback", title: "Customer Feedback", icon: "/Vectors2.png?height=32&width=32", enquiries: [] },
-  { id: "itinerary_confirmed", title: "Itinerary Confirmed", icon: "/Vectors3.png?height=32&width=32", enquiries: [] },
-  { id: "dmc_quotation", title: "DMC Quotation", icon: "//Vectors4.png?height=32&width=32", enquiries: [] },
-  { id: "price_finalization", title: "Price Finalization", icon: "//Vectors5.png?height=32&width=32", enquiries: [] },
-  { id: "booking_request", title: "Booking Request", icon: "//Vectors1.png?height=32&width=32", enquiries: [] },
-  { id: "cancelled", title: "Cancelled", icon: "/Vectors4.png?height=32&width=32", enquiries: [] },
-  { id: "booking_progress", title: "Booking Progress", icon: "/Vectors3.png?height=32&width=32", enquiries: [] },
-  { id: "payment_forex", title: "Payment & Forex", icon: "/Vectors4.png?height=32&width=32", enquiries: [] },
-  { id: "trip_in_progress", title: "Trip In Progress", icon: "/Vectors5.png?height=32&width=32", enquiries: [] },
-  { id: "completed", title: "Completed", icon: "/Vectors2.png?height=32&width=32", enquiries: [] },
+  { id: "enquiry", title: "Enquiry", icon: "/Vectors.png", enquiries: [] },
+  { id: "itinerary_creation", title: "Itinerary Creation", icon: "/Vectors1.png", enquiries: [] },
+  { id: "customer_feedback", title: "Customer Feedback", icon: "/Vectors2.png", enquiries: [] },
+  { id: "itinerary_confirmed", title: "Itinerary Confirmed", icon: "/Vectors3.png", enquiries: [] },
+  { id: "dmc_quotation", title: "DMC Quotation", icon: "/Vectors4.png", enquiries: [] },
+  { id: "price_finalization", title: "Price Finalization", icon: "/Vectors5.png", enquiries: [] },
+  { id: "booking_request", title: "Booking Request", icon: "/Vectors1.png", enquiries: [] },
+  { id: "cancelled", title: "Cancelled", icon: "/Vectors4.png", enquiries: [] },
+  { id: "booking_progress", title: "Booking Progress", icon: "/Vectors3.png", enquiries: [] },
+  { id: "payment_forex", title: "Payment & Forex", icon: "/Vectors4.png", enquiries: [] },
+  { id: "trip_in_progress", title: "Trip In Progress", icon: "/Vectors5.png", enquiries: [] },
+  { id: "completed", title: "Completed", icon: "/Vectors2.png", enquiries: [] },
 ]
 
 const columnMessages: Record<string, string> = {
@@ -481,11 +481,11 @@ const [tempBudget, setTempBudget] = useState(1000);
     if (typeof window !== "undefined") {
       localStorage.setItem("currentEnquiry", JSON.stringify(enquiry))
     }
-    router.push(`/agency-admin/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
+    router.push(`/teamlead/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
   }
 
   const handleViewLeads = () => {
-    router.push("/agency-admin/dashboard/enquiry/view-leads")
+    router.push("/teamlead/dashboard/enquiry/view-leads")
   }
 
   const renderTagSpecificFields = () => {

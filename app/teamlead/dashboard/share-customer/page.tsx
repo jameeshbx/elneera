@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "@/app/teamlead/dashboard/breadcrumbs-tab/breadcrumbs-tab";
 
 import ShareCustomerDashboard from "@/app/teamlead/dashboard/share-customer/share-customer";
 

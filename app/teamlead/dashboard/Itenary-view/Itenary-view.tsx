@@ -375,7 +375,7 @@ function ItineraryViewContent(): React.ReactElement {
     });
 
     if (typeof window !== "undefined") {
-      window.location.href = `/agency-admin/dashboard/Itenary-form?${queryParams.toString()}`;
+      window.location.href = `/teamlead/dashboard/Itenary-form?${queryParams.toString()}`;
     }
   };
 
@@ -402,7 +402,7 @@ function ItineraryViewContent(): React.ReactElement {
   });
 
   if (typeof window !== "undefined") {
-    window.location.href = `/agency-admin/dashboard/share-customer?${queryParams.toString()}`;
+    window.location.href = `/teamlead/dashboard/share-customer?${queryParams.toString()}`;
   }
 };
 
@@ -657,7 +657,7 @@ function ItineraryViewContent(): React.ReactElement {
     });
 
     if (typeof window !== "undefined") {
-      window.location.href = `/agency-admin/dashboard/share-customer?${redirectParams.toString()}`;
+      window.location.href = `/teamlead/dashboard/share-customer?${redirectParams.toString()}`;
     }
 
   } catch (error) {

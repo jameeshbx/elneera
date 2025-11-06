@@ -1,7 +1,7 @@
 "use client"
 
 
-import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab"
+import BreadcrumbDemo from "@/app/teamlead/dashboard/breadcrumbs-tab/breadcrumbs-tab"
 
 import TravelBookingSystem from "@/app/teamlead/dashboard/feedback/feedback"
 

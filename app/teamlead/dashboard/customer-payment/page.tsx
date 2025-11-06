@@ -1,7 +1,7 @@
 "use client";
 import React, { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import BreadcrumbDemo from "../breadcrumbs-tab/breadcrumbs-tab";
+import BreadcrumbDemo from "@/app/teamlead/dashboard/breadcrumbs-tab/breadcrumbs-tab";
 
 import PaymentOverviewForm from "@/app/teamlead/dashboard/customer-payment/customer";
 
