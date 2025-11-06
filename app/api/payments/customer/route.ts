@@ -243,11 +243,9 @@ export async function PUT(
 
 // POST - Create new payment record
 export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest
 ) {
   try {
-    const { id } = await params;
     const paymentData = await request.json();
 
     // Validate required fields for new payment
@@ -280,8 +278,11 @@ export async function POST(
       );
     }
 
+    // Generate a new ID for the payment record
+    const paymentId = `pay_${Date.now()}`;
+    
     const newPaymentRecord: CustomerPaymentData = {
-      id,
+      id: paymentId,
       customerName: paymentData.customerName,
       itineraryReference: paymentData.itineraryReference,
       totalCost,
@@ -290,7 +291,7 @@ export async function POST(
       remainingBalance: totalCost - amountPaid,
       paymentStatus: amountPaid >= totalCost ? 'Paid' : amountPaid > 0 ? 'Partial' : 'Pending',
       shareMethod: paymentData.shareMethod || 'whatsapp',
-      paymentLink: paymentData.paymentLink || `https://payment.example.com/${id}`,
+      paymentLink: paymentData.paymentLink || `https://payment.example.com/${paymentId}`,
       currency: paymentData.currency || 'USD'
     };
 
@@ -324,11 +325,17 @@ export async function POST(
 
 // DELETE - Remove payment record
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  request: NextRequest
 ) {
   try {
-    const {  } = await params;
+    const id = request.nextUrl.searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Payment ID is required' },
+        { status: 400 }
+      );
+    }
 
     // Delete from database
     // const deleted = await prisma.customerPayment.delete({

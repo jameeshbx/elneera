@@ -1,37 +1,19 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient} from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { sendEmail } from "@/lib/email";
 import { getWelcomeEmail } from "@/emails/welcome-email";
-import { USER_TYPES } from "@/types/user";
 
 const prisma = new PrismaClient();
 
-// Define UserType based on your Prisma schema enum values
-type UserType = 
-  | 'USER'
-  | 'AGENCY_ADMIN'
-  | 'AGENCY_MANAGER'
-  | 'TEAM_LEAD'
-  | 'EXECUTIVE'
-  | 'DMC'
-  | 'AGENCY'
-  | 'CUSTOMER'
-  | 'TEKKING_MYLES'
-  | 'MANAGER'
-  | 'TL'
-  | 'SUPER_ADMIN'
-  | 'ADMIN';
 
 const signupSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   companyName: z.string().min(2, "Company name must be at least 2 characters"),
-  userType: z.enum(USER_TYPES, {
-    message: `User type must be one of: ${USER_TYPES.join(", ")}`
-  }),
+  userType: z.literal('TRAVEL_AGENCY') // This enforces exactly 'TRAVEL_AGENCY'
 });
 
 export async function POST(req: Request) {
@@ -53,21 +35,28 @@ export async function POST(req: Request) {
 
     // Hash password
     const hashedPassword = await bcrypt.hash(validatedData.password, 10);
-
+const validUserTypes = ['TRAVEL_AGENCY'] as const;
+if (!validUserTypes.includes(validatedData.userType)) {
+  return NextResponse.json(
+    { error: "Invalid user type" },
+    { status: 400 }
+  );
+}
     // Create user with proper typing for Prisma
     const user = await prisma.user.create({
-      data: {
-        name: validatedData.name,
-        email: validatedData.email,
-        password: hashedPassword,
-        userType: validatedData.userType as UserType, // Cast to UserType
-        profileCompleted: validatedData.userType === 'AGENCY_ADMIN' ? false : true,
-        companyName: validatedData.companyName,
-        businessType: 'AGENCY',
-        emailVerified: null,
-        status: 'ACTIVE',
-      },
-    });
+  data: {
+    name: validatedData.name,
+    email: validatedData.email,
+    password: hashedPassword,
+    userType: 'TRAVEL_AGENCY' as const, // Explicitly type as 'TRAVEL_AGENCY'
+    role: 'TRAVEL_AGENCY' as const, // Explicitly type as 'TRAVEL_AGENCY'
+    profileCompleted: false, // Since we know it's TRAVEL_AGENCY
+    companyName: validatedData.companyName,
+    businessType: 'AGENCY',
+    emailVerified: null,
+    status: 'ACTIVE',
+  },
+});
 
     // Remove password from response
     const { password, ...userWithoutPassword } = user;

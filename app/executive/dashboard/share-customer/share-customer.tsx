@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import {  useSearchParams } from "next/navigation"
 import { Download, Plus, X, AlertCircle, CheckCircle, Clock, FileText, Eye, RefreshCw } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/hooks/use-toast"
@@ -18,7 +18,6 @@ import type {
 } from "@/types/customer"
 
 const ShareCustomerDashboard = () => {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [formData, setFormData] = useState<FormData>({
     name: "",
@@ -93,12 +92,11 @@ const ShareCustomerDashboard = () => {
           if (restoreCustomerId) params.set("customerId", restoreCustomerId)
           if (restoreEnquiryId) params.set("enquiryId", restoreEnquiryId)
           if (restoreItineraryId) params.set("itineraryId", restoreItineraryId)
-          router.replace(`/agency/dashboard/share-customer?${params.toString()}`)
 
           fetchCustomerData(restoreCustomerId, restoreEnquiryId, restoreItineraryId)
           return
         }
-      } catch {}
+      } catch { }
     }
 
     setError("Either Customer ID or Enquiry ID is required")
@@ -121,10 +119,10 @@ const ShareCustomerDashboard = () => {
       const newCustomerId = currentParams.get("customerId")
       const newEnquiryId = currentParams.get("enquiryId")
       const newItineraryId = currentParams.get("itineraryId")
-      
-      if ((newCustomerId && newCustomerId !== customerId) || 
-          (newEnquiryId && newEnquiryId !== enquiryId) ||
-          (newItineraryId && newItineraryId !== itineraryId)) {
+
+      if ((newCustomerId && newCustomerId !== customerId) ||
+        (newEnquiryId && newEnquiryId !== enquiryId) ||
+        (newItineraryId && newItineraryId !== itineraryId)) {
         // Force refresh data when parameters change
         setTimeout(() => {
           fetchCustomerData(newCustomerId, newEnquiryId, newItineraryId, true)
@@ -359,7 +357,7 @@ const ShareCustomerDashboard = () => {
         email: formData.email.trim(),
         whatsappNumber: formData.whatsappNumber.trim(),
         notes: formData.notes?.trim() || null,
-     
+
       }
 
       console.log(" Sending request to API:", requestBody)
@@ -437,7 +435,7 @@ const ShareCustomerDashboard = () => {
         setFormData((prev) => ({
           ...prev,
           notes: "",
-         
+
         }))
 
         toast({
@@ -453,7 +451,12 @@ const ShareCustomerDashboard = () => {
         if (customerId) dmcParams.set("customerId", customerId)
         if (enquiryId) dmcParams.set("enquiryId", enquiryId)
         if (itineraryId) dmcParams.set("itineraryId", itineraryId)
-        router.push(`/agency/dashboard/share-dmc?${dmcParams.toString()}`)
+
+        toast({
+          title: "✅ Email Sent Successfully!",
+          description: "Email sent successfully! The customer will receive the itinerary shortly.",
+          duration: 5000, // Show for 5 seconds
+        })
       } else {
         throw new Error(result.error || "Failed to send itinerary")
       }
@@ -768,11 +771,9 @@ const ShareCustomerDashboard = () => {
                       itineraries.map((item, index) => (
                         <tr
                           key={item.id}
-                          className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${
-                            selectedItinerary?.id === item.id ? "ring-2 ring-green-500 bg-green-50" : ""
-                          } ${
-                            item.activeStatus ? "border-l-4 border-l-green-500" : ""
-                          } cursor-pointer hover:bg-green-50`}
+                          className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${selectedItinerary?.id === item.id ? "ring-2 ring-green-500 bg-green-50" : ""
+                            } ${item.activeStatus ? "border-l-4 border-l-green-500" : ""
+                            } cursor-pointer hover:bg-green-50`}
                           onClick={() => handleSelectItinerary(item)}
                         >
                           <td className="p-4">
@@ -795,9 +796,8 @@ const ShareCustomerDashboard = () => {
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               <div
-                                className={`w-6 h-8 rounded flex items-center justify-center text-white text-sm font-medium ${
-                                  item.pdfUrl ? "bg-green-500" : "bg-gray-400"
-                                }`}
+                                className={`w-6 h-8 rounded flex items-center justify-center text-white text-sm font-medium ${item.pdfUrl ? "bg-green-500" : "bg-gray-400"
+                                  }`}
                               >
                                 {item.pdfUrl ? "✓" : "×"}
                               </div>
@@ -821,14 +821,12 @@ const ShareCustomerDashboard = () => {
                                 e.stopPropagation()
                                 handleToggleActiveStatus(item)
                               }}
-                              className={`w-12 h-6 rounded-full p-1 transition-colors ${
-                                item.activeStatus ? "bg-green-400" : "bg-gray-300"
-                              } hover:opacity-80`}
+                              className={`w-12 h-6 rounded-full p-1 transition-colors ${item.activeStatus ? "bg-green-400" : "bg-gray-300"
+                                } hover:opacity-80`}
                             >
                               <div
-                                className={`w-4 h-4 rounded-full bg-white transition-transform ${
-                                  item.activeStatus ? "translate-x-6" : "translate-x-0"
-                                }`}
+                                className={`w-4 h-4 rounded-full bg-white transition-transform ${item.activeStatus ? "translate-x-6" : "translate-x-0"
+                                  }`}
                               ></div>
                             </button>
                           </td>
@@ -925,7 +923,7 @@ const ShareCustomerDashboard = () => {
                   />
                 </div>
               </div>
-              
+
 
               {/* Selected Itinerary Info */}
               {selectedItinerary && (

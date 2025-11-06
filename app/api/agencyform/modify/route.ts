@@ -14,6 +14,28 @@ export async function GET(request: Request) {
       );
     }
 
+    // First get the current agency to check status
+    const currentAgency = await prisma.agencyForm.findUnique({
+      where: { id: agencyId },
+      select: { status: true }
+    });
+
+    // If already modified, redirect to success page without changing anything
+    if (currentAgency?.status === 'MODIFY') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/agency-modification-required' },
+      });
+    }
+
+    // If already processed with a different status, redirect to appropriate page
+    if (currentAgency?.status === 'REJECTED' || currentAgency?.status === 'ACTIVE') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `/already-processed?status=${currentAgency.status}` },
+      });
+    }
+
     // Update the agency status to MODIFY
     const updatedAgency = await prisma.agencyForm.update({
       where: { id: agencyId },
@@ -30,7 +52,7 @@ export async function GET(request: Request) {
     });
 
     console.log(`Agency ${updatedAgency.id} marked for modification by user ${updatedAgency.creator?.email || 'unknown'}`);
-    
+
     // In a real app, you might want to:
     // 1. Send a notification email to the agency with modification instructions
     // 2. Log this action for audit purposes

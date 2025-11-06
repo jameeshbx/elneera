@@ -52,7 +52,7 @@ export default function ForgotPassword() {
 
           <div className="relative z-10 flex flex-col -mt-32 sm:-mt-38 md:-mt-48 lg:-mt-56 xl:-mt-72">
             {/* Responsive logo */}
-            <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 relative -mb-2 sm:-mb-3 md:-mb-4 self-start">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 relative -mb-2 sm:-mb-3 md:-mb-4 self-start top-[98px] left-[90px]">
               <Image src="/logo/elneeraw.png" alt="Trekking Miles Logo" fill className="object-contain" data-cy="logo" />
             </div>
 

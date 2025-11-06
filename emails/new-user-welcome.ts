@@ -60,7 +60,7 @@ function formatUserType(userType: string): string {
     'MANAGER': 'Manager',
     'TL': 'Telecaller',
     'EXECUTIVE': 'Executive',
-    'AGENCY_ADMIN': 'Agency Admin',
+    'TRAVEL_AGENCY': 'Agency Admin',
     'ADMIN': 'Administrator'
   };
   return typeMap[userType] || userType;
@@ -72,7 +72,7 @@ function getDashboardName(userType: string): string {
     'MANAGER': 'Agency Dashboard',
     'TL': 'Telecaller Dashboard',
     'EXECUTIVE': 'Executive Dashboard',
-    'AGENCY_ADMIN': 'Agency Admin Dashboard',
+    'TRAVEL_AGENCY': 'Agency Admin Dashboard',
     'ADMIN': 'Admin Dashboard'
   };
   return dashboardMap[userType] || 'Dashboard';

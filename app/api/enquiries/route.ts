@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
         numberOfKids: enquiryData.numberOfKids,
         travelingWithPets: enquiryData.travelingWithPets,
         flightsRequired: enquiryData.flightsRequired,
-        leadSource: enquiryData.leadSource,
         tags: enquiryData.tags,
         mustSeeSpots: enquiryData.mustSeeSpots,
         status: enquiryData.status || "enquiry",
@@ -135,14 +134,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "No userId found for user" }, { status: 403 });
     }
 
-    // If enquiryId is provided, fetch single enquiry for this user
+    // If enquiryId is provided, fetch single enquiry if user is creator or assigned
     if (enquiryId) {
       console.log("Fetching single enquiry with ID:", enquiryId, "for userId:", userId);
       try {
         const enquiry = await prisma.enquiries.findFirst({
           where: { 
             id: enquiryId,
-            userId: userId // Only fetch if belongs to this user
+            OR: [
+              { userId }, // User is the creator
+              { assignedStaff: userId } // Exact match for assigned staff
+            ]
           },
         });
         
@@ -161,11 +163,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Fetch all enquiries for this user only
-    console.log(`Fetching all enquiries for userId: ${userId}`);
+    // Fetch all enquiries where user is either the creator or assigned staff
+    console.log(`Fetching enquiries for userId: ${userId}`);
     try {
       const enquiries = await prisma.enquiries.findMany({
-        where: { userId }, // Only fetch enquiries for this user
+        where: {
+          OR: [
+            { userId }, // Enquiries created by this user
+            { assignedStaff: userId } // Enquiries where user is in assignedStaff array
+          ]
+        },
         orderBy: {
           createdAt: 'desc'
         }

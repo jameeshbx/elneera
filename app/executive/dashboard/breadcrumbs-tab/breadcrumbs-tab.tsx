@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Edit3, FileText, Share, MessageSquare, CreditCard, Banknote, Download, ThumbsUp } from "lucide-react"
+import { Edit3, FileText, Share, } from "lucide-react"
 import { useEffect, useState } from "react"
 
 interface NavigationItem {
@@ -64,49 +64,19 @@ const BreadcrumbNavigation = () => {
       id: "generate",
       label: "Generate Itinerary",
       icon: Edit3,
-      path: `/agency/dashboard/Itenary-form${enquiryId ? `?enquiryId=${enquiryId}` : ""}`,
+      path: `/executive/dashboard/Itenary-form${enquiryId ? `?enquiryId=${enquiryId}` : ""}`,
     },
     {
       id: "itineraries",
       label: "Itineraries",
       icon: FileText,
-      path: `/agency/dashboard/Itenary-view${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+      path: `/executive/dashboard/Itenary-view${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
     },
     {
       id: "share-customer",
       label: "Share to Customer",
       icon: Share,
-      path: `/agency/dashboard/share-customer${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
-    },
-    {
-      id: "share-dmc",
-      label: "Share to DMC",
-      icon: MessageSquare,
-      path: `/agency/dashboard/share-dmc${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
-    },
-    {
-      id: "customer-transaction",
-      label: "Customer payment",
-      icon: CreditCard,
-      path: `/agency/dashboard/customer-payment${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
-    },
-    {
-      id: "dmc-payout",
-      label: "DMC payment",
-      icon: Banknote,
-      path: `/agency/dashboard/dmc-payment${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
-    },
-    {
-      id: "booking-details",
-      label: "Booking details",
-      icon: Download,
-      path: `/agency/dashboard/booking-details${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
-    },
-    {
-      id: "feedbacks",
-      label: "Feedbacks",
-      icon: ThumbsUp,
-      path: `/agency/dashboard/feedback${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
+      path: `/executive/dashboard/share-customer${enquiryId && itineraryId ? `?enquiryId=${enquiryId}&itineraryId=${itineraryId}` : ""}`,
     },
   ]
 

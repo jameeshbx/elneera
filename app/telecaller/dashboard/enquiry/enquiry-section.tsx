@@ -1,11 +1,11 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { Search, ChevronDown, Plus, CalendarIcon, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { ArrowUpRight } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -41,7 +41,6 @@ interface Enquiry {
   numberOfKids: string
   travelingWithPets: string
   flightsRequired: string
-  leadSource: string
   tags: string
   mustSeeSpots: string
   status: string
@@ -61,6 +60,11 @@ interface UserData {
   name: string;
   status: string;
 }
+interface ApiResponse {
+  success: boolean;
+  data: UserData[];
+}
+
 
 
 const generateUniqueId = () => {
@@ -125,6 +129,8 @@ export default function Enquiry() {
   const [hoveredEnquiry, setHoveredEnquiry] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const router = useRouter()
+const [isEditingBudget, setIsEditingBudget] = useState(false);
+const [tempBudget, setTempBudget] = useState(1000);
 
   const [dateRange, setDateRange] = useState<{
     from: Date | undefined
@@ -152,11 +158,13 @@ export default function Enquiry() {
     numberOfKids: "",
     travelingWithPets: "no",
     flightsRequired: "no",
-    leadSource: "Direct",
     tags: "sightseeing",
     mustSeeSpots: "",
     
   })
+
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     setIsClient(true)
@@ -170,15 +178,37 @@ export default function Enquiry() {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       })
-      const data = await response.json()
-if (response.ok && data?.success && Array.isArray(data.data)) {
-  const mapped = data.data
-    .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
-    .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
-  setStaffUsers(mapped)
-} else {
-  setStaffUsers([])
-}
+      // Handle non-OK responses and empty / invalid JSON bodies gracefully
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => null)
+        console.warn('/api/auth/agency-add-user returned', response.status, bodyText)
+        setStaffUsers([])
+        return
+      }
+
+      const text = await response.text().catch(() => null)
+      if (!text) {
+        setStaffUsers([])
+        return
+      }
+
+    let data: ApiResponse | null = null;
+      try {
+        data = JSON.parse(text)
+      } catch (err) {
+        console.error('Failed to parse /api/auth/agency-add-user JSON', err, text)
+        setStaffUsers([])
+        return
+      }
+
+      if (data?.success && Array.isArray(data.data)) {
+        const mapped = data.data
+          .map((u: UserData) => ({ id: u.id, name: u.name, status: u.status }))
+          .filter((u: { status?: string }) => (u.status ? u.status === "ACTIVE" : true))
+        setStaffUsers(mapped)
+      } else {
+        setStaffUsers([])
+      }
     } catch (e) {
       console.error("Failed to fetch staff users", e)
       setStaffUsers([])
@@ -212,15 +242,105 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
     }
   }
 
+  const validateField = (field: string, value: string | number): string => {
+    switch (field) {
+      case "name":
+        if (!value || (typeof value === "string" && value.trim().length === 0)) {
+          return "Name is required"
+        }
+        if (typeof value === "string" && value.trim().length < 2) {
+          return "Name must be at least 2 characters"
+        }
+        if (typeof value === "string" && !/^[a-zA-Z\s]+$/.test(value)) {
+          return "Name should only contain letters"
+        }
+        return ""
+
+      case "phone":
+        if (!value || (typeof value === "string" && value.trim().length === 0)) {
+          return "Phone number is required"
+        }
+        if (typeof value === "string" && !/^\d{10}$/.test(value.replace(/\s/g, ""))) {
+          return "Phone number must be 10 digits"
+        }
+        return ""
+
+      case "email":
+        if (!value || (typeof value === "string" && value.trim().length === 0)) {
+          return "Email is required"
+        }
+        if (typeof value === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          return "Please enter a valid email address"
+        }
+        return ""
+
+      case "numberOfTravellers":
+        if (value && typeof value === "string" && Number(value) < 1) {
+          return "Number of travellers must be at least 1"
+        }
+        if (value && typeof value === "string" && Number(value) > 100) {
+          return "Number of travellers seems too high"
+        }
+        return ""
+
+      case "numberOfKids":
+        if (value && typeof value === "string" && Number(value) < 0) {
+          return "Cannot be negative"
+        }
+        if (value && typeof value === "string" && Number(value) > 50) {
+          return "Number of kids seems too high"
+        }
+        return ""
+
+      default:
+        return ""
+    }
+  }
+
   const handleInputChange = (field: string, value: string | number) => {
     setNewEnquiry((prev) => ({
       ...prev,
       [field]: value,
     }))
+
+    // Validate on change
+    const error = validateField(field, value)
+    setValidationErrors((prev) => ({
+      ...prev,
+      [field]: error,
+    }))
+  }
+
+  const handleBlur = (field: string) => {
+    setTouched((prev) => ({
+      ...prev,
+      [field]: true,
+    }))
   }
 
   const handleAddEnquiry = async () => {
     try {
+      // Validate all required fields
+      const errors: Record<string, string> = {}
+      errors.name = validateField("name", newEnquiry.name)
+      errors.phone = validateField("phone", newEnquiry.phone)
+      errors.email = validateField("email", newEnquiry.email)
+
+      // Mark all required fields as touched
+      setTouched({
+        name: true,
+        phone: true,
+        email: true,
+      })
+
+      // Check if there are any errors
+      const hasErrors = Object.values(errors).some((error) => error !== "")
+      if (hasErrors) {
+        setValidationErrors(errors)
+        toast.error("Please fix the validation errors")
+        return
+      }
+
       if (!newEnquiry.name || !newEnquiry.phone || !newEnquiry.email) {
         toast.error("Please fill in all required fields")
         return
@@ -255,7 +375,7 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
 
       setIsDialogOpen(false)
       resetForm()
-      await fetchEnquiries() // Refresh the data
+      await fetchEnquiries()
     } catch (error) {
       console.error("Error adding enquiry:", error)
       toast.error("Error", {
@@ -283,7 +403,6 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
       numberOfKids: "",
       travelingWithPets: "no",
       flightsRequired: "no",
-      leadSource: "Direct",
       tags: "sightseeing",
       mustSeeSpots: "",
       
@@ -292,6 +411,8 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
       from: undefined,
       to: undefined,
     })
+    setValidationErrors({})
+    setTouched({})
   }
 
   const onDragEnd = async (result: DropResult) => {
@@ -352,15 +473,19 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
     } catch (error) {
       console.error("Error updating enquiry:", error)
       toast.error("Failed to update enquiry status")
-      // Revert the change by refetching data
       await fetchEnquiries()
     }
   }
 
-
+  const handleNavigateToItinerary = (enquiry: Enquiry) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("currentEnquiry", JSON.stringify(enquiry))
+    }
+    router.push(`/agency-admin/dashboard/Itenary-form?enquiryId=${enquiry.id}`)
+  }
 
   const handleViewLeads = () => {
-    router.push("/telecaller/dashboard/enquiry/view-leads")
+    router.push("/agency-admin/dashboard/enquiry/view-leads")
   }
 
   const renderTagSpecificFields = () => {
@@ -468,15 +593,8 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
               <ChevronDown className="h-4 w-4" />
             </Button>
             <Button
-              onClick={() => setIsDialogOpen(true)}
-              className="bg-white hover:bg-white text-green-800 border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add enquiry</span>
-            </Button>
-            <Button
               onClick={handleViewLeads}
-              className="bg-green-800 hover:bg-green-800 text-white border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
+              className="bg-white hover:bg-white text-green-800 border-2 border-green-600 text-sm sm:text-base flex items-center gap-1"
             >
               <Eye className="h-4 w-4" />
               <span>View Leads</span>
@@ -504,21 +622,32 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                     >
                       {/* Column header */}
                       <div className="p-3 sm:p-4 shadow-sm rounded-t-lg bg-white">
-                        <div className="flex items-center gap-3">
-                          <div className="bg-amber-100 p-2 sm:p-3 rounded-md">
-                            <Image
-                              src={
-                                column.icon?.startsWith("//")
-                                  ? column.icon.replace("//", "/")
-                                  : column.icon || "/Vectors.png"
-                              }
-                              alt={column.title}
-                              width={32}
-                              height={32}
-                              className="w-6 h-6 sm:w-8 sm:h-8"
-                            />
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-amber-100 p-2 sm:p-3 rounded-md">
+                              <Image
+                                src={
+                                  column.icon?.startsWith("//")
+                                    ? column.icon.replace("//", "/")
+                                    : column.icon || "/Vectors.png"
+                                }
+                                alt={column.title}
+                                width={32}
+                                height={32}
+                                className="w-6 h-6 sm:w-8 sm:h-8"
+                              />
+                            </div>
+                            <h3 className="font-semibold text-sm sm:text-base font-poppins">{column.title}</h3>
                           </div>
-                          <h3 className="font-semibold text-sm sm:text-base font-poppins">{column.title}</h3>
+                          {column.id === "enquiry" && (
+                            <Button
+                              onClick={() => setIsDialogOpen(true)}
+                              size="sm"
+                              className="bg-green-700 hover:bg-green-800 text-white h-7 w-7 p-0 rounded-full"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
 
@@ -549,8 +678,15 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                                       Enquiry on: {enquiry.enquiryDate}
                                     </p>
                                     <div className="relative group">
-                                    
-                                     
+                                      <button
+                                        className="flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-full border-1 border-black hover:bg-gray-100 transition-colors"
+                                        onClick={() => handleNavigateToItinerary(enquiry)}
+                                      >
+                                        <ArrowUpRight className="w-4 h-4 text-gray-600" />
+                                      </button>
+                                      <div className="absolute bottom-full right-0 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                        Generate Itinerary
+                                      </div>
                                     </div>
                                   </div>
                                   {hoveredEnquiry === enquiry.id && (
@@ -589,37 +725,6 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
           <div className="p-4 sm:p-6">
             <DialogTitle className="text-lg sm:text-xl font-semibold font-poppins">Add Enquiry</DialogTitle>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mt-4">
-              {/* Lead source */}
-              <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Lead source</label>
-                <RadioGroup
-                  value={newEnquiry.leadSource}
-                  onValueChange={(value: string) => handleInputChange("leadSource", value)}
-                >
-                  <div className="flex gap-6">
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Direct"
-                        id="lead-direct"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-direct" className="text-sm">
-                        Direct
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem
-                        value="Sub agent"
-                        id="lead-agent"
-                        className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-600"
-                      />
-                      <Label htmlFor="lead-agent" className="text-sm">
-                        Sub agent
-                      </Label>
-                    </div>
-                  </div>
-                </RadioGroup>
-              </div>
 
               {/* Tags */}
               <div className="space-y-1 sm:space-y-2">
@@ -645,34 +750,56 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                 <Input
                   value={newEnquiry.name}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange("name", e.target.value)}
+                  onBlur={() => handleBlur("name")}
                   placeholder="Client name"
-                  className="text-sm sm:text-base"
+                  className={cn(
+                    "text-sm sm:text-base",
+                    touched.name && validationErrors.name && "border-red-500 focus-visible:ring-red-500"
+                  )}
                   required
                 />
+                {touched.name && validationErrors.name && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.name}</p>
+                )}
               </div>
 
               {/* Phone */}
               <div className="space-y-1 sm:space-y-2">
                 <label className="text-xs sm:text-sm font-medium font-poppins">Phone No. *</label>
-                <div className="flex">
-                  <div className="flex items-center border rounded-l-md px-2 bg-gray-50">
-                    <Image
-                      src="https://flagcdn.com/w20/in.png"
-                      width={20}
-                      height={20}
-                      alt="India flag"
-                      className="mr-1"
+                <div className="flex flex-col">
+                  <div className="flex">
+                    <div className="flex items-center border rounded-l-md px-2 bg-gray-50">
+                      <Image
+                        src="https://flagcdn.com/w20/in.png"
+                        width={20}
+                        height={20}
+                        alt="India flag"
+                        className="mr-1"
+                      />
+                      <span className="text-xs sm:text-sm">+91</span>
+                      <ChevronDown className="h-4 w-4 ml-1 text-gray-400" />
+                    </div>
+                    <Input
+                      value={newEnquiry.phone}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        const value = e.target.value.replace(/\D/g, "")
+                        if (value.length <= 10) {
+                          handleInputChange("phone", value)
+                        }
+                      }}
+                      onBlur={() => handleBlur("phone")}
+                      placeholder="Phone number"
+                      className={cn(
+                        "rounded-l-none text-sm sm:text-base",
+                        touched.phone && validationErrors.phone && "border-red-500 focus-visible:ring-red-500"
+                      )}
+                      required
+                      maxLength={10}
                     />
-                    <span className="text-xs sm:text-sm">+91</span>
-                    <ChevronDown className="h-4 w-4 ml-1 text-gray-400" />
                   </div>
-                  <Input
-                    value={newEnquiry.phone}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange("phone", e.target.value)}
-                    placeholder="Phone number"
-                    className="rounded-l-none text-sm sm:text-base"
-                    required
-                  />
+                  {touched.phone && validationErrors.phone && (
+                    <p className="text-xs text-red-500 mt-1">{validationErrors.phone}</p>
+                  )}
                 </div>
               </div>
 
@@ -683,10 +810,17 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                   type="email"
                   value={newEnquiry.email}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange("email", e.target.value)}
+                  onBlur={() => handleBlur("email")}
                   placeholder="Email address"
-                  className="text-sm sm:text-base"
+                  className={cn(
+                    "text-sm sm:text-base",
+                    touched.email && validationErrors.email && "border-red-500 focus-visible:ring-red-500"
+                  )}
                   required
                 />
+                {touched.email && validationErrors.email && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.email}</p>
+                )}
               </div>
 
               {/* Locations */}
@@ -799,7 +933,21 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
 
               {/* Budget */}
               <div className="col-span-3 space-y-1 sm:space-y-2 font-poppins">
-                <label className="text-xs sm:text-sm font-medium">Budget</label>
+                <div className="flex justify-between items-center">
+                  <label className="text-xs sm:text-sm font-medium">Budget</label>
+                  {!isEditingBudget && (
+                    <button
+                      onClick={() => {
+                        setTempBudget(newEnquiry.budget || 1000);
+                        setIsEditingBudget(true);
+                      }}
+                      type="button"
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
                 <div className="pt-2 px-2">
                   <Slider
                     defaultValue={[newEnquiry.budget || 1000]}
@@ -808,11 +956,46 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                     step={100}
                     onValueChange={(value: number[]) => handleInputChange("budget", value[0])}
                   />
-                  <div className="flex justify-between mt-2 text-xs sm:text-sm text-gray-500">
+                  <div className="flex justify-between items-center mt-2 text-xs sm:text-sm text-gray-500">
                     <span>{getCurrencySymbol(newEnquiry.currency)}100</span>
-                    <div className="bg-green-100 px-2 py-1 rounded text-green-800">
-                      {getCurrencySymbol(newEnquiry.currency)}{newEnquiry.budget || 1000}
-                    </div>
+                    {isEditingBudget ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={tempBudget}
+                          onChange={(e) => setTempBudget(Number(e.target.value))}
+                          className="w-24 h-8 text-sm"
+                          min={100}
+                          max={newEnquiry.currency === 'INR' ? 200000 : 50000}
+                          step={100}
+                        />
+                        <button
+                          onClick={() => {
+                            handleInputChange("budget", tempBudget);
+                            setIsEditingBudget(false);
+                          }}
+                          className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setIsEditingBudget(false)}
+                          className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300 text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        className="bg-green-100 px-2 py-1 rounded text-green-800 cursor-pointer hover:bg-green-200"
+                        onClick={() => {
+                          setTempBudget(newEnquiry.budget || 1000);
+                          setIsEditingBudget(true);
+                        }}
+                      >
+                        {getCurrencySymbol(newEnquiry.currency)}{newEnquiry.budget || 1000}
+                      </div>
+                    )}
                     <span>{getCurrencySymbol(newEnquiry.currency)}{newEnquiry.currency === 'INR' ? '200000' : '50000'}</span>
                   </div>
                 </div>
@@ -937,9 +1120,19 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     handleInputChange("numberOfTravellers", e.target.value)
                   }
+                  onBlur={() => handleBlur("numberOfTravellers")}
                   placeholder="4"
-                  className="text-sm sm:text-base"
+                  className={cn(
+                    "text-sm sm:text-base",
+                    touched.numberOfTravellers &&
+                      validationErrors.numberOfTravellers &&
+                      "border-red-500 focus-visible:ring-red-500"
+                  )}
+                  min="1"
                 />
+                {touched.numberOfTravellers && validationErrors.numberOfTravellers && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.numberOfTravellers}</p>
+                )}
               </div>
 
               {/* No. of kids */}
@@ -951,9 +1144,17 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     handleInputChange("numberOfKids", e.target.value)
                   }
+                  onBlur={() => handleBlur("numberOfKids")}
                   placeholder="2"
-                  className="text-sm sm:text-base"
+                  className={cn(
+                    "text-sm sm:text-base",
+                    touched.numberOfKids && validationErrors.numberOfKids && "border-red-500 focus-visible:ring-red-500"
+                  )}
+                  min="0"
                 />
+                {touched.numberOfKids && validationErrors.numberOfKids && (
+                  <p className="text-xs text-red-500 mt-1">{validationErrors.numberOfKids}</p>
+                )}
               </div>
 
               {/* Source of Lead */}
@@ -1001,7 +1202,6 @@ if (response.ok && data?.success && Array.isArray(data.data)) {
                   </SelectTrigger>
                   <SelectContent>
                     {staffUsers.length > 0 ? (
-                      // Remove duplicates by creating a Map with name as key
                       Array.from(
                         new Map(staffUsers.map(user => [user.name, user])).values()
                       ).map((user) => (

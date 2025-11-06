@@ -1,11 +1,25 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
 import { randomUUID } from "crypto"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/lib/auth" // Adjust path to your auth config
 
 const prisma = new PrismaClient()
 
 export async function GET(request: NextRequest) {
   try {
+    // Get the logged-in user session
+    const session = await getServerSession(authOptions)
+    
+    if (!session || !session.user) {
+      return NextResponse.json(
+        { error: "Unauthorized - Please login" },
+        { status: 401 }
+      )
+    }
+
+    const agencyId = session.user.id // Get the agency user ID from session
+    
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") || ""
     const sortBy = searchParams.get("sortBy") || "createdAt"
@@ -13,15 +27,18 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number.parseInt(searchParams.get("page") || "1"))
     const limit = Math.min(100, Math.max(1, Number.parseInt(searchParams.get("limit") || "10")))
 
-    // Build where clause for search
+    // Build where clause for search - FILTER BY AGENCY ID
     const whereClause: {
+      agencyId: string; // Add agency filter
       OR?: Array<{
         name?: { contains: string; mode: 'insensitive' };
         contactPerson?: { contains: string; mode: 'insensitive' };
         email?: { contains: string; mode: 'insensitive' };
         phoneNumber?: { contains: string; mode: 'insensitive' };
       }>;
-    } = {};
+    } = {
+      agencyId: agencyId, // Only get DMCs for this agency
+    };
     
     if (search) {
       whereClause.OR = [
@@ -39,7 +56,7 @@ export async function GET(request: NextRequest) {
       status?: 'asc' | 'desc';
       createdAt?: 'asc' | 'desc';
     } = {};
-    // Ensure sortOrder is either 'asc' or 'desc'
+    
     const sortDirection = sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc' as const;
     
     switch (sortBy) {
@@ -58,7 +75,7 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    // Fetch DMCs with pagination
+    // Fetch DMCs with pagination - filtered by agencyId
     const [dmcs, totalCount] = await Promise.all([
       prisma.dMCForm.findMany({
         where: whereClause,
@@ -73,6 +90,7 @@ export async function GET(request: NextRequest) {
           designation: true,
           email: true,
           status: true,
+          agencyId: true, // Include agencyId in response
           createdAt: true,
           updatedAt: true,
         },
@@ -90,6 +108,7 @@ export async function GET(request: NextRequest) {
       email: dmc.email || "",
       status: dmc.status === "ACTIVE" ? "Active" : "Inactive",
       joinSource: "Agency",
+      agencyId: dmc.agencyId,
       createdAt: dmc.createdAt,
       updatedAt: dmc.updatedAt,
     }))
@@ -114,6 +133,18 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Get the logged-in user session
+    const session = await getServerSession(authOptions)
+    
+    if (!session || !session.user) {
+      return NextResponse.json(
+        { error: "Unauthorized - Please login" },
+        { status: 401 }
+      )
+    }
+
+    const agencyId = session.user.id // Get the agency user ID from session
+    
     const formData = await request.formData()
     
     // Extract and validate required fields
@@ -150,7 +181,7 @@ export async function POST(request: NextRequest) {
     type DmcPanType = "INDIVIDUAL" | "COMPANY" | "TRUST" | "OTHER"
     const panTypeValue: DmcPanType = (panType?.toUpperCase() as DmcPanType) || "INDIVIDUAL"
 
-    // Create DMC record
+    // Create DMC record with agencyId
     const dmc = await prisma.dMCForm.create({
       data: {
         id: randomUUID(),
@@ -177,6 +208,7 @@ export async function POST(request: NextRequest) {
         country,
         yearsOfExperience: yearOfExperience,
         createdBy: "agency",
+        agencyId: agencyId, // IMPORTANT: Store the agency ID
         status: "ACTIVE" as const,
       },
       select: {
@@ -186,6 +218,7 @@ export async function POST(request: NextRequest) {
         phoneNumber: true,
         email: true,
         status: true,
+        agencyId: true,
         createdAt: true,
         updatedAt: true,
       },

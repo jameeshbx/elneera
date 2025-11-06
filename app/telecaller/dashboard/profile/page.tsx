@@ -1,6 +1,6 @@
 
-import { TopBarContainer } from "@/app/admin/(components)/TobBarContainer";
 import ProfilePage from "@/app/telecaller/dashboard/profile/profile-admin";
+import { TopBarContainer } from "@/app/telecaller/(components)/TopBarContainer";
 
 export default function profile() {
   return (
