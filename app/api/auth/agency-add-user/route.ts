@@ -624,26 +624,22 @@ if (!agencyAdmin || !['AGENCY_ADMIN', 'TRAVEL_AGENCY'].includes(agencyAdmin.user
 // GET - Fetch all users for the agency
 export async function GET() {
   try {
-    console.log("📄 Fetching users list...");
-    
     const session = await getServerSession(authOptions);
     if (!session?.user) {
-      return NextResponse.json({ 
-        success: false, 
-        error: "Unauthorized" 
-      }, { status: 401 });
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const agencyAdminUserId = session.user.id;
+    
+
+    if (!agencyAdminUserId) {
+      return NextResponse.json({
+        success: false,
+        error: 'agencyId is required (or authenticate as an agency admin)'
+      }, { status: 400 });
     }
 
-    const agencyAdminId = session.user.id;
-    console.log("🏢 Fetching users for agency:", agencyAdminId);
-    
-    await ensureTablesExist();
-    
-    // Fetch only users belonging to this agency
     const users = await prisma.userForm.findMany({
-      where: {
-        agencyId: agencyAdminId
-      },
+      where: { createdBy: agencyAdminUserId },
       include: {
         profileImage: true
       },
@@ -651,18 +647,9 @@ export async function GET() {
         createdAt: 'desc'
       }
     });
-    
-    console.log(`✅ Found ${users.length} users for agency ${agencyAdminId}`);
-    
-    // Log sample to verify agencyId
-    if (users.length > 0) {
-      console.log("📊 Sample user:", {
-        id: users[0].id,
-        name: users[0].name,
-        agencyId: users[0].agencyId
-      });
-    }
-    
+
+    console.log(`✅ Found ${users.length} users for agency admin ${agencyAdminUserId}`);
+
     return NextResponse.json({
       success: true,
       data: users.map((user: User) => ({
