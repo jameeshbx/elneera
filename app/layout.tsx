@@ -23,6 +23,9 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: "Elneera",
   description: "Smart Tools for Smarter Agencies",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

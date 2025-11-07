@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Edit3, FileText, Share, MessageSquare, CreditCard, Banknote, Download, ThumbsUp } from "lucide-react"
+import { Edit3, FileText, Share} from "lucide-react"
 import { useEffect, useState } from "react"
 
 interface NavigationItem {
