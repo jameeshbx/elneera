@@ -38,6 +38,8 @@ interface DMCFormContextType {
   setEditingId: (id: string | null) => void
   resetForm: () => void
   updateFormField: (field: keyof DMCFormData, value: any) => void
+  refreshListVersion: number
+  triggerRefresh: () => void
 }
 
 const defaultFormData: DMCFormData = {
@@ -70,6 +72,9 @@ export function DMCFormProvider({ children }: { children: ReactNode }) {
   const [formData, setFormData] = useState<DMCFormData>(defaultFormData)
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [refreshListVersion, setRefreshListVersion] = useState(0)
+
+  const triggerRefresh = () => setRefreshListVersion((v) => v + 1)
 
   const resetForm = () => {
     setFormData(defaultFormData)
@@ -92,6 +97,8 @@ export function DMCFormProvider({ children }: { children: ReactNode }) {
         setEditingId,
         resetForm,
         updateFormField,
+        refreshListVersion,
+        triggerRefresh,
       }}
     >
       {children}
