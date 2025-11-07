@@ -57,7 +57,7 @@ export function DMCTable() {
     totalPages: 0,
   })
 
-  const { setFormData, setIsEditing, setEditingId } = useDMCForm()
+  const { setFormData, setIsEditing, setEditingId, refreshListVersion } = useDMCForm()
   const [showPaymentsModal, setShowPaymentsModal] = useState(false)
   const [selectedDmcId, setSelectedDmcId] = useState<string | null>(null)
 
@@ -122,6 +122,11 @@ export function DMCTable() {
   useEffect(() => {
     fetchDMCs()
   }, [])
+
+  // Refetch when a refresh is triggered elsewhere (e.g., after create)
+  useEffect(() => {
+    fetchDMCs({ page: 1 })
+  }, [refreshListVersion])
 
   // Handle DMC deletion
   const handleDelete = async (id: string) => {

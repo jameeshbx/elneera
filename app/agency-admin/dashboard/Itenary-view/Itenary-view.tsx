@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useRef } from "react";
+import React, { useState, useEffect, Suspense, useRef, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 import {
@@ -177,13 +177,10 @@ const staffMembers = [
 
 function ItineraryViewContent(): React.ReactElement {
   const [itineraryData, setItineraryData] = useState<ItineraryData | null>(null);
-  const [csvItineraryData, setCsvItineraryData] = useState<CsvItineraryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({ 1: true });
   const [showReassignStaffDialog, setShowReassignStaffDialog] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<string>("");
-  const [useCSVData, setUseCSVData] = useState(false);
-  const [, setLocationBasedData] = useState<string>("");
   const [currentItineraryId, setCurrentItineraryId] = useState<string>("");
   const [currentEnquiryId, setCurrentEnquiryId] = useState<string>("");
   const { toast } = useToast();
@@ -193,12 +190,9 @@ function ItineraryViewContent(): React.ReactElement {
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [richTextContent, setRichTextContent] = useState<string>("");
   const [customDailyItineraryHtml, setCustomDailyItineraryHtml] = useState<string>("");
+  const [selectedDayForMap, setSelectedDayForMap] = useState<number | null>(null);
 
   const searchParams = useSearchParams();
-
-  // Use CSV data if available, otherwise fall back to database data
-  const displayData = useCSVData && csvItineraryData ? csvItineraryData : null;
-  const fallbackData = itineraryData;
 
   // Load cached data on component mount
   useEffect(() => {
@@ -234,50 +228,7 @@ function ItineraryViewContent(): React.ReactElement {
         if (enquiryId) setCurrentEnquiryId(enquiryId);
         if (itineraryId) setCurrentItineraryId(itineraryId);
 
-        let enquiryLocation = "";
-
-        // First, fetch enquiry data to get location information
-        if (enquiryId) {
-          try {
-            const enquiryResponse = await fetch(
-              `/api/enquiries?id=${enquiryId}`
-            );
-            if (enquiryResponse.ok) {
-              const enquiryData = await enquiryResponse.json();
-              if (enquiryData && enquiryData.locations) {
-                enquiryLocation = enquiryData.locations;
-                setLocationBasedData(enquiryLocation);
-              }
-            }
-          } catch {
-            console.log("Could not fetch enquiry location data");
-          }
-
-          // Try to fetch CSV itinerary data based on enquiry location
-          try {
-            let csvApiUrl = `/api/itinerary-csv?enquiryId=${enquiryId}`;
-            if (enquiryLocation) {
-              csvApiUrl += `&location=${encodeURIComponent(enquiryLocation)}`;
-            }
-
-            const csvResponse = await fetch(csvApiUrl);
-            if (csvResponse.ok) {
-              const csvData = await csvResponse.json();
-              setCsvItineraryData(csvData);
-              setUseCSVData(true);
-              console.log(
-                `Location-based itinerary loaded for: ${enquiryLocation} -> ${csvData.quoteId}`
-              );
-            }
-          } catch {
-            console.log(
-              "CSV data not available, falling back to database data"
-            );
-            setUseCSVData(false);
-          }
-        }
-
-        // Then fetch database itinerary data as fallback
+        // Fetch database itinerary data (contains AI-generated data)
         let apiUrl = "";
         if (itineraryId) {
           apiUrl = `/api/itineraries?id=${itineraryId}`;
@@ -298,53 +249,88 @@ function ItineraryViewContent(): React.ReactElement {
         const fetchedItinerary = Array.isArray(data) ? data[0] : data;
 
         if (fetchedItinerary) {
+          // Parse AI-generated JSON fields
+          let dailyItinerary: DayItinerary[] = [];
+          if (fetchedItinerary.dailyItinerary) {
+            if (typeof fetchedItinerary.dailyItinerary === "string") {
+              try {
+                dailyItinerary = JSON.parse(fetchedItinerary.dailyItinerary);
+              } catch (parseError) {
+                console.error("Error parsing dailyItinerary:", parseError);
+                dailyItinerary = [];
+              }
+            } else if (Array.isArray(fetchedItinerary.dailyItinerary)) {
+              dailyItinerary = fetchedItinerary.dailyItinerary;
+            }
+          }
+
+          let accommodation: Accommodation[] = [];
+          if (fetchedItinerary.accommodation) {
+            if (typeof fetchedItinerary.accommodation === "string") {
+              try {
+                accommodation = JSON.parse(fetchedItinerary.accommodation);
+              } catch (parseError) {
+                console.error("Error parsing accommodation:", parseError);
+                accommodation = [];
+              }
+            } else if (Array.isArray(fetchedItinerary.accommodation)) {
+              accommodation = fetchedItinerary.accommodation;
+            }
+          }
+
+          let budgetEstimation: BudgetEstimation = {
+            amount: fetchedItinerary.budget || 0,
+            currency: fetchedItinerary.currency || "USD",
+            costTourist: 0,
+          };
+          if (fetchedItinerary.budgetEstimation) {
+            if (typeof fetchedItinerary.budgetEstimation === "string") {
+              try {
+                const parsed = JSON.parse(fetchedItinerary.budgetEstimation);
+                budgetEstimation = {
+                  amount: parsed.amount || fetchedItinerary.budget || 0,
+                  currency: parsed.currency || fetchedItinerary.currency || "USD",
+                  costTourist: parsed.costTourist || 0,
+                };
+              } catch (parseError) {
+                console.error("Error parsing budgetEstimation:", parseError);
+              }
+            } else if (typeof fetchedItinerary.budgetEstimation === "object" && fetchedItinerary.budgetEstimation !== null) {
+              const parsed = fetchedItinerary.budgetEstimation as any;
+              budgetEstimation = {
+                amount: parsed.amount || fetchedItinerary.budget || 0,
+                currency: parsed.currency || fetchedItinerary.currency || "USD",
+                costTourist: parsed.costTourist || 0,
+              };
+            }
+          }
+
+          // Calculate cost per tourist if we have traveler count
+          if (budgetEstimation.amount > 0 && fetchedItinerary.adults) {
+            const totalTravelers = (fetchedItinerary.adults || 0) + (fetchedItinerary.children || 0);
+            if (totalTravelers > 0) {
+              budgetEstimation.costTourist = budgetEstimation.amount / totalTravelers;
+            }
+          }
+
           const mappedData: ItineraryData = {
             ...fetchedItinerary,
-            location:
-              fetchedItinerary.enquiry?.locations || enquiryLocation || "N/A",
-            numberOfDays: fetchedItinerary.enquiry?.estimatedDates || "N/A",
-            travelStyle: fetchedItinerary.enquiry?.tourType || "N/A",
-            budgetEstimation: {
-              amount: fetchedItinerary.enquiry?.budget || 0,
-              currency: fetchedItinerary.enquiry?.currency || "USD",
-              costTourist: 32.3,
-            },
+            location: fetchedItinerary.destinations || fetchedItinerary.enquiry?.locations || "N/A",
+            numberOfDays: dailyItinerary.length.toString() || fetchedItinerary.enquiry?.estimatedDates || "N/A",
+            travelStyle: fetchedItinerary.travelType || fetchedItinerary.enquiry?.tourType || "N/A",
+            budgetEstimation: budgetEstimation,
             enquiryDetails: {
               description:
                 fetchedItinerary.moreDetails ||
                 fetchedItinerary.enquiry?.notes ||
                 "No additional details provided.",
             },
-            dailyItinerary: fetchedItinerary.dailyItinerary || [],
-            accommodation: fetchedItinerary.accommodation || [],
+            dailyItinerary: dailyItinerary,
+            accommodation: accommodation,
           };
 
           setItineraryData(mappedData);
           setSelectedStaff(fetchedItinerary.enquiry?.assignedStaff || "");
-
-          // If we don't have CSV data yet, try to get it based on the enquiry location
-          if (
-            !csvItineraryData &&
-            mappedData.location &&
-            mappedData.location !== "N/A"
-          ) {
-            try {
-              const csvResponse = await fetch(
-                `/api/itinerary-csv?location=${encodeURIComponent(
-                  mappedData.location
-                )}`
-              );
-              if (csvResponse.ok) {
-                const csvData = await csvResponse.json();
-                setCsvItineraryData(csvData);
-                console.log(
-                  `Location-based CSV data loaded for: ${mappedData.location} -> ${csvData.quoteId}`
-                );
-              }
-            } catch {
-              console.log("Could not load location-based CSV data");
-            }
-          }
         } else {
           setItineraryData(null);
         }
@@ -381,55 +367,50 @@ function ItineraryViewContent(): React.ReactElement {
 
 
   const handleShareToCustomer = () => {
-  if (!itineraryData) {
-    console.error("No enquiry data available to generate itinerary.");
-    alert("Please select an enquiry first.");
-    return;
-  }
+    if (!itineraryData) {
+      console.error("No enquiry data available to generate itinerary.");
+      alert("Please select an enquiry first.");
+      return;
+    }
 
-  const searchParams = new URLSearchParams(window.location.search);
-  const enquiryId =
-    searchParams.get("enquiryId") || itineraryData?.enquiryId || "";
-  const itineraryId =
-    searchParams.get("itineraryId") || itineraryData?.id || "";
-  const customerId = searchParams.get("customerId") || "";
+    const searchParams = new URLSearchParams(window.location.search);
+    const enquiryId =
+      searchParams.get("enquiryId") || itineraryData?.enquiryId || "";
+    const itineraryId =
+      searchParams.get("itineraryId") || itineraryData?.id || "";
+    const customerId = searchParams.get("customerId") || "";
 
-  const queryParams = new URLSearchParams({
-    enquiryId,
-    itineraryId,
-    customerId,
-    pdfType: 'generated' // Indicate this is the original generated PDF
-  });
+    const queryParams = new URLSearchParams({
+      enquiryId,
+      itineraryId,
+      customerId,
+      pdfType: 'generated' // Indicate this is the original generated PDF
+    });
 
-  if (typeof window !== "undefined") {
-    window.location.href = `/agency-admin/dashboard/share-customer?${queryParams.toString()}`;
-  }
-};
+    if (typeof window !== "undefined") {
+      window.location.href = `/agency-admin/dashboard/share-customer?${queryParams.toString()}`;
+    }
+  };
 
   const handleEditDailyItinerary = (dayNumber?: number) => {
-    console.log("handleEditDailyItinerary called with dayNumber:", dayNumber);
-    console.log("displayData:", displayData);
-    console.log("fallbackData:", fallbackData);
+    if (!itineraryData) {
+      console.error("No itinerary data available");
+      return;
+    }
+
     if (dayNumber) {
       setEditingDay(dayNumber);
-      // Get the current day's content and convert to rich text format
-      const currentData = displayData || fallbackData;
-      console.log("Current data:", currentData);
-      console.log("displayData:", displayData);
-      console.log("fallbackData:", fallbackData);
-
-      const dayData = currentData?.dailyItinerary?.find(
-        (day: DayItinerary | CsvDayItinerary) => day.day === dayNumber
+      const dayData = itineraryData.dailyItinerary?.find(
+        (day: DayItinerary) => day.day === dayNumber
       );
 
       if (dayData) {
-        console.log("Day data found:", dayData);
         // Convert day data to rich text format
         let richText = `<h2>Day ${dayData.day} - ${dayData.title}</h2>`;
         richText += `<p><strong>Date:</strong> ${dayData.date}</p>`;
         richText += `<h3>Activities:</h3>`;
 
-        dayData.activities.forEach((activity: Activity | CsvActivity) => {
+        dayData.activities.forEach((activity: Activity) => {
           richText += `<div style="margin-bottom: 15px; padding: 10px; border-left: 3px solid #3b82f6;">`;
           richText += `<h4 style="color: #1f2937; margin: 0 0 5px 0;">${activity.time} - ${activity.title}</h4>`;
           richText += `<p style="margin: 0; color: #6b7280;">${activity.description}</p>`;
@@ -437,51 +418,37 @@ function ItineraryViewContent(): React.ReactElement {
           richText += `</div>`;
         });
 
-        console.log("Generated rich text:", richText);
         setRichTextContent(richText);
       } else {
-        console.log("No day data found for day:", dayNumber);
-        // Set some default content if no data found
         setRichTextContent(
           "<h2>No data available</h2><p>Please add some content.</p>"
         );
       }
     } else {
-      // Use actual display data instead of hardcoded sample
-      console.log("Loading actual display data...");
-      const currentData = displayData || fallbackData;
+      // Convert entire itinerary to rich text format
+      if (itineraryData && itineraryData.dailyItinerary) {
+        let richText = `<h1>${itineraryData.destinations || "Itinerary"}</h1>`;
 
-      if (currentData && currentData.dailyItinerary) {
-        console.log("Using current data:", currentData);
-
-        // Convert actual data to rich text format
-        let richText = `<h1>${(currentData as CsvItineraryData).name || "Itinerary"}</h1>`;
-
-        // Add basic info if available
-        if ((currentData as CsvItineraryData).quoteId) {
-          richText += `<p><strong>Quote ID:</strong> ${(currentData as CsvItineraryData).quoteId}</p>`;
+        // Add basic info
+        if (itineraryData.startDate && itineraryData.endDate) {
+          richText += `<p><strong>Duration:</strong> ${itineraryData.startDate} to ${itineraryData.endDate}</p>`;
         }
-        if ((currentData as CsvItineraryData).days && (currentData as CsvItineraryData).nights) {
-          richText += `<p><strong>Duration:</strong> ${(currentData as CsvItineraryData).days} Days / ${(currentData as CsvItineraryData).nights} Nights</p>`;
+        if (itineraryData.budgetEstimation) {
+          const currencySymbol = itineraryData.budgetEstimation.currency === 'USD' ? '$' : '₹';
+          richText += `<p><strong>Budget:</strong> ${currencySymbol}${itineraryData.budgetEstimation.amount.toLocaleString()}</p>`;
         }
-        if (currentData.startDate) {
-          richText += `<p><strong>Start Date:</strong> ${currentData.startDate}</p>`;
-        }
-        if ((currentData as CsvItineraryData).costINR && (currentData as CsvItineraryData).costUSD) {
-          richText += `<p><strong>Cost:</strong> ₹${(currentData as CsvItineraryData).costINR.toLocaleString()} (USD $${(currentData as CsvItineraryData).costUSD})</p>`;
-        }
-        if ((currentData as CsvItineraryData).adults && (currentData as CsvItineraryData).kids) {
-          richText += `<p><strong>Guests:</strong> ${(currentData as CsvItineraryData).adults} Adults, ${(currentData as CsvItineraryData).kids} Kids</p>`;
+        if (itineraryData.adults || itineraryData.children) {
+          richText += `<p><strong>Guests:</strong> ${itineraryData.adults || 0} Adults, ${itineraryData.children || 0} Children</p>`;
         }
         richText += `<hr>`;
 
         // Add all days from the itinerary
-        currentData.dailyItinerary.forEach((day: DayItinerary | CsvDayItinerary) => {
+        itineraryData.dailyItinerary.forEach((day: DayItinerary) => {
           richText += `<h2>Day ${day.day} - ${day.title}</h2>`;
           richText += `<p><strong>Date:</strong> ${day.date}</p>`;
           richText += `<h3>Activities:</h3>`;
 
-          day.activities.forEach((activity: Activity | CsvActivity) => {
+          day.activities.forEach((activity: Activity) => {
             richText += `<div style="margin-bottom: 15px; padding: 10px; border-left: 3px solid #3b82f6; background: #f8fafc;">`;
             richText += `<h4 style="color: #1f2937; margin: 0 0 5px 0;">${activity.time} - ${activity.title}</h4>`;
             richText += `<p style="margin: 0 0 8px 0; color: #6b7280;">${activity.description}</p>`;
@@ -491,90 +458,87 @@ function ItineraryViewContent(): React.ReactElement {
           richText += `<hr style="margin: 20px 0;">`;
         });
 
-        console.log("Rich text generated from actual data:", richText);
         setRichTextContent(richText);
       } else {
-        console.log("No data available, using fallback content");
         setRichTextContent(
           "<h2>No itinerary data available</h2><p>Please ensure the itinerary data is loaded properly.</p>"
         );
       }
     }
 
-    console.log("About to open dialog, richTextContent:", richTextContent);
     setShowRichTextEditor(true);
   };
 
   const handleSaveRichText = async () => {
-  try {
-    // Get current content
-    const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement;
-    const currentContent = editorElement ? editorElement.innerHTML : richTextContent;
-    
-    if (!currentContent?.trim()) {
-      toast({
-        title: "Error",
-        description: "Cannot save empty content",
-        variant: "destructive",
-      });
-      return;
-    }
+    try {
+      // Get current content
+      const editorElement = document.querySelector('[contenteditable="true"]') as HTMLElement;
+      const currentContent = editorElement ? editorElement.innerHTML : richTextContent;
+
+      if (!currentContent?.trim()) {
+        toast({
+          title: "Error",
+          description: "Cannot save empty content",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // First update the itinerary
-     const updateResponse = await fetch("/api/update-itinerary", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: currentItineraryId,
-        editedContent: currentContent.trim()
-      }),
-    });
+      const updateResponse = await fetch("/api/update-itinerary", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: currentItineraryId,
+          editedContent: currentContent.trim()
+        }),
+      });
 
-    if (!updateResponse.ok) {
-      throw new Error("Failed to save changes");
-    }
+      if (!updateResponse.ok) {
+        throw new Error("Failed to save changes");
+      }
 
       // Generate PDF
       const pdfResponse = await fetch("/api/regenerate-pdf", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        itineraryId: currentItineraryId,
-        enquiryId: currentEnquiryId,
-        formData: {
-          customerName: fallbackData?.enquiry?.name || "Guest",
-          customerEmail: fallbackData?.enquiry?.email || "",
-          customerPhone: fallbackData?.enquiry?.phone || "",
-          startDate: fallbackData?.startDate || new Date().toISOString(),
-          endDate: fallbackData?.endDate || new Date().toISOString(),
-          destinations: fallbackData?.destinations?.split(', ') || [],
-          travelType: fallbackData?.travelType || "Standard",
-          budget: fallbackData?.budget || 0,
-          currency: fallbackData?.currency || "INR",
-          adults: fallbackData?.adults || 1,
-          children: fallbackData?.children || 0,
-        },
-        editedContent: currentContent.trim(),
-        isEditedVersion: true
-      }),
-    });
-
-    const pdfResult = await pdfResponse.json();
-    if (!pdfResponse.ok) {
-      console.error('PDF Generation Error:', {
-        status: pdfResponse.status,
-        statusText: pdfResponse.statusText,
-        error: pdfResult
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itineraryId: currentItineraryId,
+          enquiryId: currentEnquiryId,
+          formData: {
+            customerName: itineraryData?.enquiry?.name || "Guest",
+            customerEmail: itineraryData?.enquiry?.email || "",
+            customerPhone: itineraryData?.enquiry?.phone || "",
+            startDate: itineraryData?.startDate || new Date().toISOString(),
+            endDate: itineraryData?.endDate || new Date().toISOString(),
+            destinations: itineraryData?.destinations?.split(', ') || [],
+            travelType: itineraryData?.travelType || "Standard",
+            budget: itineraryData?.budget || 0,
+            currency: itineraryData?.currency || "INR",
+            adults: itineraryData?.adults || 1,
+            children: itineraryData?.children || 0,
+          },
+          editedContent: currentContent.trim(),
+          isEditedVersion: true
+        }),
       });
-      throw new Error(pdfResult.error || pdfResult.message || "Failed to generate PDF");
-    }
+
+      const pdfResult = await pdfResponse.json();
+      if (!pdfResponse.ok) {
+        console.error('PDF Generation Error:', {
+          status: pdfResponse.status,
+          statusText: pdfResponse.statusText,
+          error: pdfResult
+        });
+        throw new Error(pdfResult.error || pdfResult.message || "Failed to generate PDF");
+      }
 
 
       // Update UI state
-    setCustomDailyItineraryHtml(currentContent);
-    setShowRichTextEditor(false);
-    setEditingDay(null);
-    setRichTextContent("");
+      setCustomDailyItineraryHtml(currentContent);
+      setShowRichTextEditor(false);
+      setEditingDay(null);
+      setRichTextContent("");
 
 
       // Update itinerary data
@@ -618,93 +582,69 @@ function ItineraryViewContent(): React.ReactElement {
         status: itineraryData?.status ?? "",
         createdAt: itineraryData?.createdAt ?? "",
         updatedAt: itineraryData?.updatedAt ?? "",
-         enquiry: {
-    ...(itineraryData?.enquiry || {}),
-    // Ensure all required fields are included
-    id: itineraryData?.enquiry?.id ?? "",
-    name: itineraryData?.enquiry?.name ?? "",
-    phone: itineraryData?.enquiry?.phone ?? "",
-    email: itineraryData?.enquiry?.email ?? "",
-    locations: itineraryData?.enquiry?.locations ?? "",
-    tourType: itineraryData?.enquiry?.tourType ?? "",
-    estimatedDates: itineraryData?.enquiry?.estimatedDates ?? "",
-    currency: itineraryData?.enquiry?.currency ?? "INR",
-    budget: itineraryData?.enquiry?.budget ?? 0,
-    enquiryDate: itineraryData?.enquiry?.enquiryDate ?? new Date().toISOString(),
-    assignedStaff: itineraryData?.enquiry?.assignedStaff ?? null,
-    pointOfContact: itineraryData?.enquiry?.pointOfContact ?? null,
-    notes: itineraryData?.enquiry?.notes ?? null,
-    // Add the required numberOfTravelers with a default value if not present
-    numberOfTravelers: itineraryData?.enquiry?.numberOfTravelers ?? 1,
-  },
+        enquiry: {
+          ...(itineraryData?.enquiry || {}),
+          // Ensure all required fields are included
+          id: itineraryData?.enquiry?.id ?? "",
+          name: itineraryData?.enquiry?.name ?? "",
+          phone: itineraryData?.enquiry?.phone ?? "",
+          email: itineraryData?.enquiry?.email ?? "",
+          locations: itineraryData?.enquiry?.locations ?? "",
+          tourType: itineraryData?.enquiry?.tourType ?? "",
+          estimatedDates: itineraryData?.enquiry?.estimatedDates ?? "",
+          currency: itineraryData?.enquiry?.currency ?? "INR",
+          budget: itineraryData?.enquiry?.budget ?? 0,
+          enquiryDate: itineraryData?.enquiry?.enquiryDate ?? new Date().toISOString(),
+          assignedStaff: itineraryData?.enquiry?.assignedStaff ?? null,
+          pointOfContact: itineraryData?.enquiry?.pointOfContact ?? null,
+          notes: itineraryData?.enquiry?.notes ?? null,
+          // Add the required numberOfTravelers with a default value if not present
+          numberOfTravelers: itineraryData?.enquiry?.numberOfTravelers ?? 1,
+        },
       };
 
       setItineraryData(updatedItinerary);
       localStorage.setItem('itineraryData_' + (updatedItinerary.id || currentItineraryId), JSON.stringify(updatedItinerary));
 
-       toast({
-      title: "Success!",
-      description: "Changes saved and PDF generated successfully",
-      variant: "default",
-    });
+      toast({
+        title: "Success!",
+        description: "Changes saved and PDF generated successfully",
+        variant: "default",
+      });
 
-   // Redirect to share-customer section with updated PDF
-    const redirectParams = new URLSearchParams({
-      enquiryId: currentEnquiryId,
-      itineraryId: currentItineraryId,
-      pdfGenerated: 'true', // Flag to indicate new PDF was generated
-      pdfType: 'regenerated' // Indicate this is a regenerated PDF
-    });
+      // Redirect to share-customer section with updated PDF
+      const redirectParams = new URLSearchParams({
+        enquiryId: currentEnquiryId,
+        itineraryId: currentItineraryId,
+        pdfGenerated: 'true', // Flag to indicate new PDF was generated
+        pdfType: 'regenerated' // Indicate this is a regenerated PDF
+      });
 
-    if (typeof window !== "undefined") {
-      window.location.href = `/agency-admin/dashboard/share-customer?${redirectParams.toString()}`;
+      if (typeof window !== "undefined") {
+        window.location.href = `/agency-admin/dashboard/share-customer?${redirectParams.toString()}`;
+      }
+
+    } catch (error) {
+      console.error('Error in handleSaveRichText:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+      });
     }
-
-  } catch (error) {
-    console.error('Error in handleSaveRichText:', error);
-    toast({
-      variant: "destructive",
-      title: "Error",
-      description: error instanceof Error ? error.message : "An unknown error occurred",
-    });
-  }
-};
+  };
 
   const handleGenerateOtherPlan = async () => {
     if (!itineraryData) return;
 
-    try {
-      // Try to load a different template based on similar locations
-      //const currentLocationLower = itineraryData.location.toLowerCase()
-      const alternativeQuotes = [
-        "KASH001",
-        "KER001",
-        "GOA001",
-        "RAJ001",
-        "EVER001",
-        "THAI001",
-      ];
-      const currentQuoteId = csvItineraryData?.quoteId;
+    // Redirect to itinerary form to generate a new plan
+    const queryParams = new URLSearchParams({
+      enquiryId: itineraryData.enquiryId,
+      edit: "false",
+    });
 
-      // Filter out current quote and get alternatives
-      const alternatives = alternativeQuotes.filter(
-        (id) => id !== currentQuoteId
-      );
-      const randomAlternative =
-        alternatives[Math.floor(Math.random() * alternatives.length)];
-
-      const csvResponse = await fetch(
-        `/api/itinerary-csv?quoteId=${randomAlternative}`
-      );
-      if (csvResponse.ok) {
-        const csvData = await csvResponse.json();
-        setCsvItineraryData(csvData);
-        setUseCSVData(true);
-        alert(`Generated alternative plan: ${csvData.name}`);
-      }
-    } catch (error) {
-      console.error("Error generating alternative plan:", error);
-      alert("Failed to generate alternative plan");
+    if (typeof window !== "undefined") {
+      window.location.href = `/agency-admin/dashboard/Itenary-form?${queryParams.toString()}`;
     }
   };
 
@@ -743,8 +683,7 @@ function ItineraryViewContent(): React.ReactElement {
     } catch (error) {
       console.error("Error reassigning staff:", error);
       alert(
-        `Failed to reassign staff: ${
-          error instanceof Error ? error.message : String(error)
+        `Failed to reassign staff: ${error instanceof Error ? error.message : String(error)
         }`
       );
     }
@@ -849,14 +788,14 @@ function ItineraryViewContent(): React.ReactElement {
 
     // Safely handle html content
     const getSafeHtml = () => {
-      return {__html: richTextContent || "<p>Start typing your content here...</p>"};
+      return { __html: richTextContent || "<p>Start typing your content here...</p>" };
     };
-  
+
     const applyFormat = (command: string, value?: string) => {
       document.execCommand(command, false, value);
       editorRef.current?.focus();
     };
-  
+
     return (
       <Dialog open={showRichTextEditor} onOpenChange={setShowRichTextEditor}>
         <DialogContent className="max-w-5xl h-[90vh] flex flex-col">
@@ -866,7 +805,7 @@ function ItineraryViewContent(): React.ReactElement {
               {editingDay ? `Day ${editingDay}` : "Daily Itinerary"}
             </DialogTitle>
           </DialogHeader>
-  
+
           {/* Toolbar - Fixed height */}
           <div className="flex items-center gap-2 p-3 border-b bg-gray-50 flex-wrap flex-shrink-0">
             <Button variant="outline" size="sm" onClick={() => applyFormat("bold")} className="h-8 w-8 p-0" title="Bold">
@@ -905,7 +844,7 @@ function ItineraryViewContent(): React.ReactElement {
               </SelectContent>
             </Select>
           </div>
-  
+
           {/* Editor - Flexible height */}
           <div className="flex-1 p-4 overflow-hidden">
             <div
@@ -917,13 +856,13 @@ function ItineraryViewContent(): React.ReactElement {
               suppressContentEditableWarning={true}
             />
           </div>
-  
+
           {/* Footer - Fixed at bottom */}
           <DialogFooter className="flex-shrink-0 border-t pt-4">
             <Button variant="outline" onClick={() => setShowRichTextEditor(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSaveRichText}
               className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
             >
@@ -936,6 +875,82 @@ function ItineraryViewContent(): React.ReactElement {
     );
   };
 
+  // Extract addresses from itinerary data for map component
+  // This function is defined before early returns to ensure hooks are called in consistent order
+  const getDynamicAddresses = (): string[] => {
+    if (!itineraryData) {
+      return [];
+    }
+
+    const addresses: string[] = [];
+
+    // Extract destinations from itinerary
+    if (itineraryData.destinations) {
+      const destinations = itineraryData.destinations.split(',').map(d => d.trim());
+      destinations.forEach(dest => {
+        // Try to create a proper address format
+        if (dest.toLowerCase().includes('kashmir') || dest.toLowerCase().includes('srinagar')) {
+          addresses.push(`${dest}, Jammu and Kashmir, India`);
+        } else if (dest.toLowerCase().includes('kerala') || dest.toLowerCase().includes('kochi') || dest.toLowerCase().includes('munnar') || dest.toLowerCase().includes('alleppey')) {
+          addresses.push(`${dest}, Kerala, India`);
+        } else if (dest.toLowerCase().includes('goa')) {
+          addresses.push(`${dest}, Goa, India`);
+        } else if (dest.toLowerCase().includes('rajasthan') || dest.toLowerCase().includes('jaipur') || dest.toLowerCase().includes('jodhpur') || dest.toLowerCase().includes('udaipur')) {
+          addresses.push(`${dest}, Rajasthan, India`);
+        } else if (dest.toLowerCase().includes('thailand') || dest.toLowerCase().includes('bangkok') || dest.toLowerCase().includes('phuket')) {
+          addresses.push(`${dest}, Thailand`);
+        } else {
+          // Default: add destination with country
+          addresses.push(`${dest}, India`);
+        }
+      });
+    }
+
+    // Extract locations from activities if available
+    if (itineraryData.dailyItinerary && itineraryData.dailyItinerary.length > 0) {
+      itineraryData.dailyItinerary.forEach(day => {
+        day.activities.forEach(activity => {
+          // Try to extract location from activity title or description
+          const text = `${activity.title} ${activity.description}`.toLowerCase();
+          if (text.includes('srinagar') && !addresses.some(a => a.toLowerCase().includes('srinagar'))) {
+            addresses.push('Srinagar, Jammu and Kashmir, India');
+          }
+          if (text.includes('gulmarg') && !addresses.some(a => a.toLowerCase().includes('gulmarg'))) {
+            addresses.push('Gulmarg, Jammu and Kashmir, India');
+          }
+          if (text.includes('kochi') && !addresses.some(a => a.toLowerCase().includes('kochi'))) {
+            addresses.push('Kochi, Kerala, India');
+          }
+          if (text.includes('munnar') && !addresses.some(a => a.toLowerCase().includes('munnar'))) {
+            addresses.push('Munnar, Kerala, India');
+          }
+          if (text.includes('alleppey') && !addresses.some(a => a.toLowerCase().includes('alleppey'))) {
+            addresses.push('Alleppey, Kerala, India');
+          }
+        });
+      });
+    }
+
+    // If no addresses found, use destination as fallback
+    if (addresses.length === 0 && itineraryData.destinations) {
+      addresses.push(`${itineraryData.destinations}, India`);
+    }
+
+    // Default fallback if still no addresses
+    if (addresses.length === 0) {
+      return ["New Delhi, India"];
+    }
+
+    return addresses.slice(0, 5); // Limit to 5 addresses for map
+  };
+
+  // Memoize addresses - must be called before early returns to follow Rules of Hooks
+  const dynamicAddresses = useMemo(() => getDynamicAddresses(), [
+    itineraryData?.destinations,
+    itineraryData?.dailyItinerary,
+    itineraryData?.location,
+  ]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center h-screen w-full ">
@@ -947,7 +962,7 @@ function ItineraryViewContent(): React.ReactElement {
     );
   }
 
-  if (!itineraryData && !csvItineraryData) {
+  if (!itineraryData) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -959,61 +974,12 @@ function ItineraryViewContent(): React.ReactElement {
 
   // Get location-specific content
   const currentLocation =
-    displayData?.locationMatched ||
-    fallbackData?.location ||
-    fallbackData?.enquiry?.locations ||
+    itineraryData?.location ||
+    itineraryData?.destinations ||
+    itineraryData?.enquiry?.locations ||
     "";
 
-  // Generate dynamic addresses based on the current location
-  const getDynamicAddresses = (location: string) => {
-    const locationLower = location.toLowerCase();
-
-    if (
-      locationLower.includes("kashmir") ||
-      locationLower.includes("srinagar")
-    ) {
-      return [
-        "Srinagar, Jammu and Kashmir, India",
-        "Gulmarg, Jammu and Kashmir, India",
-        "Pahalgam, Jammu and Kashmir, India",
-      ];
-    } else if (
-      locationLower.includes("kerala") ||
-      locationLower.includes("kochi")
-    ) {
-      return [
-        "Kochi, Kerala, India",
-        "Munnar, Kerala, India",
-        "Alleppey, Kerala, India",
-      ];
-    } else if (locationLower.includes("goa")) {
-      return [
-        "Panaji, Goa, India",
-        "Calangute, Goa, India",
-        "Anjuna, Goa, India",
-      ];
-    } else if (
-      locationLower.includes("rajasthan") ||
-      locationLower.includes("jaipur")
-    ) {
-      return [
-        "Jaipur, Rajasthan, India",
-        "Jodhpur, Rajasthan, India",
-        "Udaipur, Rajasthan, India",
-      ];
-    } else if (
-      locationLower.includes("thailand") ||
-      locationLower.includes("bangkok")
-    ) {
-      return ["Bangkok, Thailand", "Phuket, Thailand", "Chiang Mai, Thailand"];
-    }
-
-    // Default fallback
-    return ["New Delhi, India", "Mumbai, India", "Bangalore, India"];
-  };
-
   const locationContent = getLocationSpecificContent(currentLocation);
-  const dynamicAddresses = getDynamicAddresses(currentLocation);
 
   return (
     <div id="itineraries" className="flex flex-col min-h-screen bg-gray-100">
@@ -1025,19 +991,6 @@ function ItineraryViewContent(): React.ReactElement {
               <h1 className="text-2xl font-bold text-gray-900">
                 Itinerary Details
               </h1>
-              {displayData && (
-                <div className="flex items-center gap-2">
-                  <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                    CSV Data: {displayData.name}
-                  </span>
-                  <button
-                    onClick={() => setUseCSVData(!useCSVData)}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    {useCSVData ? "Switch to DB Data" : "Switch to CSV Data"}
-                  </button>
-                </div>
-              )}
             </div>
             <div className="flex gap-3">
               {itineraryData?.isEdited && itineraryData.editedAt && (
@@ -1050,27 +1003,27 @@ function ItineraryViewContent(): React.ReactElement {
                 <button
                   onClick={() => window.open(itineraryData?.editedPdfUrl || itineraryData?.pdfUrl, '_blank')}
                   className="flex items-center gap-2 px-4 py-2 border font-semibold border-gray-300 rounded-full hover:bg-gray-100 text-green-500"
-              >
-                <Download className="h-4 w-4" />
-                Export
-              </button>
-              <button
-                onClick={handleEditPlan}
-                className="flex items-center gap-2 px-4 py-2 bg-light-orange hover:bg-yellow-500 text-white font-semibold rounded-full"
-              >
-                <Edit className="h-4 w-4" />
-                Edit plan
-              </button>
-              <button
-                onClick={() => setShowReassignStaffDialog(true)}
-                className="px-4 py-2 border border-green-300 text-gray-600 rounded-lg hover:bg-gray-50"
-              >
-                Reassign Staff
-              </button>
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </button>
+                <button
+                  onClick={handleEditPlan}
+                  className="flex items-center gap-2 px-4 py-2 bg-light-orange hover:bg-yellow-500 text-white font-semibold rounded-full"
+                >
+                  <Edit className="h-4 w-4" />
+                  Edit plan
+                </button>
+                <button
+                  onClick={() => setShowReassignStaffDialog(true)}
+                  className="px-4 py-2 border border-green-300 text-gray-600 rounded-lg hover:bg-gray-50"
+                >
+                  Reassign Staff
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-6">
@@ -1094,7 +1047,7 @@ function ItineraryViewContent(): React.ReactElement {
                 </div>
                 <div className="mt-6">
                   <p className="text-sm text-white leading-relaxed">
-                    {fallbackData?.enquiryDetails.description ||
+                    {itineraryData?.enquiryDetails.description ||
                       locationContent.description}
                   </p>
                 </div>
@@ -1104,16 +1057,62 @@ function ItineraryViewContent(): React.ReactElement {
             {/* Map */}
             <div className="mt-6 bg-white rounded-lg shadow">
               <div className="p-4">
-                <h4 className="font-semibold mb-3 text-sm">Map</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-sm">Map</h4>
+                  {itineraryData?.dailyItinerary && itineraryData.dailyItinerary.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedDayForMap || ""}
+                        onChange={(e) => setSelectedDayForMap(e.target.value ? parseInt(e.target.value) : null)}
+                        className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">All Days</option>
+                        {itineraryData.dailyItinerary.map((day) => (
+                          <option key={day.day} value={day.day}>
+                            Day {day.day} - {day.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
                 <div className="relative">
                   <MapComponent
                     addresses={dynamicAddresses}
+                    itineraryData={itineraryData ? {
+                      dailyItinerary: itineraryData.dailyItinerary,
+                      accommodation: itineraryData.accommodation,
+                    } : undefined}
                     height="400px"
                     showRoute={true}
+                    selectedDay={selectedDayForMap}
                     onLocationClick={(location) => {
                       console.log("Clicked location:", location);
                     }}
                   />
+                </div>
+                {/* Legend */}
+                <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-red-500 border-2 border-red-600"></span>
+                    <span>Landmarks</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-amber-500 border-2 border-amber-600"></span>
+                    <span>Restaurants</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-blue-500 border-2 border-blue-600"></span>
+                    <span>Hotels</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-green-500 border-2 border-green-600"></span>
+                    <span>Activities</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="w-3 h-3 rounded-full bg-indigo-500 border-2 border-indigo-600"></span>
+                    <span>Transport</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1131,7 +1130,7 @@ function ItineraryViewContent(): React.ReactElement {
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">
-                    {displayData?.name || fallbackData?.location || "N/A"}
+                    {itineraryData?.location || itineraryData?.destinations || "N/A"}
                   </span>
                 </div>
               </div>
@@ -1144,8 +1143,8 @@ function ItineraryViewContent(): React.ReactElement {
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">
-                    {displayData?.days || fallbackData?.numberOfDays || "N/A"}{" "}
-                    Days / {displayData?.nights || "N/A"} Nights
+                    {itineraryData?.numberOfDays || (itineraryData?.dailyItinerary?.length || 0).toString()}{" "}
+                    Days / {(itineraryData?.dailyItinerary?.length || 1) - 1} Nights
                   </span>
                 </div>
               </div>
@@ -1158,9 +1157,9 @@ function ItineraryViewContent(): React.ReactElement {
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">
-                    {displayData
-                      ? `${displayData.adults} Adults, ${displayData.kids} Kids`
-                      : fallbackData?.travelStyle || "N/A"}
+                    {itineraryData?.adults ? `${itineraryData.adults} Adults` : ""}
+                    {itineraryData?.children ? `, ${itineraryData.children} Children` : ""}
+                    {!itineraryData?.adults && !itineraryData?.children ? itineraryData?.travelStyle || "N/A" : ""}
                   </span>
                 </div>
               </div>
@@ -1170,36 +1169,33 @@ function ItineraryViewContent(): React.ReactElement {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               {/* Budget Estimation */}
               <div className="bg-white rounded-lg shadow">
-  <div className="p-6">
-    <div className="flex items-center gap-2 mb-4">
-      <h3 className="font-semibold">Budget Estimation</h3>
-      <span className="text-gray-400">ℹ️</span>
-    </div>
-    <div className="flex items-baseline text-3xl font-bold text-violet-600 mb-2">
-      <span>{itineraryData?.enquiry?.currency === 'USD' ? '$' : '₹'}</span>
-      <span className="text-black ml-1">
-        {itineraryData?.enquiry?.budget?.toLocaleString() || 
-         displayData?.costINR?.toLocaleString() ||
-         fallbackData?.budgetEstimation?.amount?.toLocaleString() ||
-         "0"}
-      </span>
-    </div>
-    {itineraryData?.enquiry?.currency === 'INR' && (
-      <p className="text-sm text-gray-600 mb-4">
-        USD: ${" "}
-        {itineraryData?.enquiry?.budget 
-          ? (itineraryData.enquiry.budget / 75).toFixed(2) 
-          : displayData?.costUSD || 
-            (fallbackData?.budgetEstimation?.amount && (fallbackData.budgetEstimation.amount / 75).toFixed(2)) ||
-            "0.00"}
-      </p>
-    )}
-    <p className="text-sm text-gray-600 mb-4">
-      Cost/Tourist: ${" "}
-      {itineraryData?.enquiry?.budget && itineraryData?.enquiry?.numberOfTravelers 
-        ? (itineraryData.enquiry.budget / (itineraryData.enquiry.numberOfTravelers * 75)).toFixed(2) 
-        : fallbackData?.budgetEstimation?.costTourist?.toFixed(2) || "0.00"}
-    </p>
+                <div className="p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <h3 className="font-semibold">Budget Estimation</h3>
+                    <span className="text-gray-400">ℹ️</span>
+                  </div>
+                  <div className="flex items-baseline text-3xl font-bold text-violet-600 mb-2">
+                    <span>{itineraryData?.budgetEstimation?.currency === 'USD' ? '$' : '₹'}</span>
+                    <span className="text-black ml-1">
+                      {itineraryData?.budgetEstimation?.amount?.toLocaleString() ||
+                        itineraryData?.budget?.toLocaleString() ||
+                        "0"}
+                    </span>
+                  </div>
+                  {itineraryData?.budgetEstimation?.currency === 'INR' && (
+                    <p className="text-sm text-gray-600 mb-4">
+                      USD: ${" "}
+                      {itineraryData?.budgetEstimation?.amount
+                        ? (itineraryData.budgetEstimation.amount / 75).toFixed(2)
+                        : "0.00"}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-600 mb-4">
+                    Cost/Tourist: ${" "}
+                    {itineraryData?.budgetEstimation?.costTourist
+                      ? itineraryData.budgetEstimation.costTourist.toFixed(2)
+                      : "0.00"}
+                  </p>
 
 
 
@@ -1212,9 +1208,7 @@ function ItineraryViewContent(): React.ReactElement {
                       <span className="font-medium text-sm">AI Assistant</span>
                     </div>
                     <p className="text-xs text-gray-600">
-                      {displayData
-                        ? "Powered by CSV template data"
-                        : "Powered by intelligent budget estimation"}
+                      Powered by AI-generated budget estimation
                     </p>
                   </div>
                 </div>
@@ -1228,9 +1222,9 @@ function ItineraryViewContent(): React.ReactElement {
                     <span className="text-gray-400">ℹ️</span>
                   </div>
                   <div className="space-y-3">
-                    {fallbackData?.accommodation &&
-                    fallbackData.accommodation.length > 0 ? (
-                      fallbackData.accommodation.map((hotel, index) => (
+                    {itineraryData?.accommodation &&
+                      itineraryData.accommodation.length > 0 ? (
+                      itineraryData.accommodation.map((hotel, index) => (
                         <div key={index} className="flex items-center gap-3">
                           <Image
                             src={
@@ -1272,8 +1266,8 @@ function ItineraryViewContent(): React.ReactElement {
                       </div>
                     )}
                   </div>
-                  {fallbackData?.accommodation &&
-                    fallbackData.accommodation.length > 0 && (
+                  {itineraryData?.accommodation &&
+                    itineraryData.accommodation.length > 0 && (
                       <button className="text-blue-600 text-sm mt-3 hover:underline">
                         See all
                       </button>
@@ -1330,13 +1324,13 @@ function ItineraryViewContent(): React.ReactElement {
                           (Last edited: {itineraryData.editedAt ? new Date(itineraryData.editedAt).toLocaleDateString() : 'Unknown'})
                         </span>
                       </div>
-                      <div className="custom-daily-itinerary-html prose prose-sm max-w-none" 
-                           dangerouslySetInnerHTML={{ __html: customDailyItineraryHtml || itineraryData.editedContent || '' }} />
+                      <div className="custom-daily-itinerary-html prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{ __html: customDailyItineraryHtml || itineraryData.editedContent || '' }} />
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {(displayData?.dailyItinerary || fallbackData?.dailyItinerary || []).map((day: DayItinerary | CsvDayItinerary) => (
+                    {(itineraryData?.dailyItinerary || []).map((day: DayItinerary) => (
                       <div key={day.day} className="rounded-lg">
                         <div
                           className="p-4 bg-gray-100 cursor-pointer flex justify-between items-center hover:bg-gray-200"
@@ -1354,7 +1348,7 @@ function ItineraryViewContent(): React.ReactElement {
                         </div>
                         {expandedDays[day.day] && (
                           <div className="p-4 space-y-4 bg-white">
-                            {day.activities.map((activity: Activity | CsvActivity, index: number) => (
+                            {day.activities.map((activity: Activity, index: number) => (
                               <div key={index} className="flex gap-4 items-start">
                                 <div className="text-sm font-medium text-gray-600 w-16 flex-shrink-0">{activity.time}</div>
                                 <div className="flex-1 flex gap-3">

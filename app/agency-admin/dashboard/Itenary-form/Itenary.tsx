@@ -587,7 +587,7 @@ function ItineraryFormContent() {
       }
   
       const processedItinerary = await response.json()
-  
+  console.log(processedItinerary)
       // Generate PDF after successfully creating/updating itinerary
       // This is the ORIGINAL PDF generation (not edited)
       try {

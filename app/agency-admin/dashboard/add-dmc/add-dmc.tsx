@@ -40,48 +40,20 @@ const dmcSchema = z.object({
 })
 
 // Local fetchDMCs function to avoid external dependency issues
-const fetchDMCs = async (params: {
-  search: string
-  sortBy: string
-  sortOrder: string
-  page: number
-  limit: number
-}) => {
-  const searchParams = new URLSearchParams({
-    search: params.search,
-    sortBy: params.sortBy,
-    sortOrder: params.sortOrder,
-    page: params.page.toString(),
-    limit: params.limit.toString(),
-  })
-
-  const response = await fetch(`/api/auth/agency-add-dmc?${searchParams}`, {
-    method: "GET",
-    credentials: "include",
-  })
-
-  if (!response.ok) {
-    let errorMessage = "Failed to fetch DMCs"
-    try {
-      const errorData = await response.json()
-      errorMessage = errorData.error || errorData.message || `${response.status}: ${response.statusText}`
-    } catch {
-      errorMessage = `${response.status}: ${response.statusText}`
-    }
-    throw new Error(errorMessage)
-  }
-
-  return response.json()
-}
 
 export function DMCRegistrationForm() {
-  const { formData, setFormData, isEditing, editingId, resetForm } = useDMCForm()
+  const { formData, setFormData, isEditing, editingId, resetForm, triggerRefresh } = useDMCForm()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDestinationDropdownOpen, setIsDestinationDropdownOpen] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData({ ...formData, [name]: value })
+    if (errors[name]) {
+      const { ...rest } = errors
+      setErrors(rest)
+    }
   }
 
   // Parse destinations from string to array
@@ -100,50 +72,56 @@ export function DMCRegistrationForm() {
     return []
   }
 
- const handleDestinationToggle = (destination: string) => {
-  const currentDestinations = getDestinationsArray()
+  const handleDestinationToggle = (destination: string) => {
+    const currentDestinations = getDestinationsArray()
   
-  const newDestinations = currentDestinations.includes(destination)
-    ? currentDestinations.filter((d: string) => d !== destination)
-    : [...currentDestinations, destination]
+    const newDestinations = currentDestinations.includes(destination)
+      ? currentDestinations.filter((d: string) => d !== destination)
+      : [...currentDestinations, destination]
   
-  // Convert array back to string before setting
-  setFormData({ 
-    ...formData, 
-    destinationsCovered: JSON.stringify(newDestinations) 
-  })
-}
+    // Convert array back to string before setting
+    setFormData({ 
+      ...formData, 
+      destinationsCovered: JSON.stringify(newDestinations) 
+    })
+  }
 
-const removeDestination = (destination: string) => {
-  const currentDestinations = getDestinationsArray()
+  const removeDestination = (destination: string) => {
+    const currentDestinations = getDestinationsArray()
   
-  const newDestinations = currentDestinations.filter((d: string) => d !== destination)
-  setFormData({ 
-    ...formData, 
-    destinationsCovered: JSON.stringify(newDestinations) 
-  })
-}
+    const newDestinations = currentDestinations.filter((d: string) => d !== destination)
+    setFormData({ 
+      ...formData, 
+      destinationsCovered: JSON.stringify(newDestinations) 
+    })
+  }
 
-  const validateForm = () => {
+  const validateForm = (): { valid: boolean; firstErrorField?: string } => {
     try {
-      // Convert destinations to array for validation
       const dataToValidate = {
         ...formData,
-        destinationsCovered: getDestinationsArray()
+        destinationsCovered: getDestinationsArray(),
       }
       dmcSchema.parse(dataToValidate)
-      return true
+      setErrors({})
+      return { valid: true }
     } catch (error) {
       if (error instanceof z.ZodError) {
-        error.issues.forEach((err: z.ZodIssue) => {
+        const fieldErrors: Record<string, string> = {}
+        error.issues.forEach((issue: z.ZodIssue) => {
+          const field = (issue.path?.[0] as string) || "form"
+          if (!fieldErrors[field]) fieldErrors[field] = issue.message
           toast({
             title: "Validation Error",
-            description: err.message,
+            description: issue.message,
             variant: "destructive",
           })
         })
+        setErrors(fieldErrors)
+        const firstField = Object.keys(fieldErrors)[0]
+        return { valid: false, firstErrorField: firstField }
       }
-      return false
+      return { valid: false }
     }
   }
 
@@ -151,8 +129,13 @@ const removeDestination = (destination: string) => {
     e.preventDefault()
     setIsSubmitting(true)
 
-    if (!validateForm()) {
+    const result = validateForm()
+    if (!result.valid) {
       setIsSubmitting(false)
+      if (result.firstErrorField) {
+        const el = document.getElementById(result.firstErrorField)
+        el?.focus()
+      }
       return
     }
 
@@ -213,20 +196,10 @@ const removeDestination = (destination: string) => {
       // Reset form and editing state
       resetForm()
 
-      // Optionally refresh DMC list
-      try {
-        await fetchDMCs({
-          search: "",
-          sortBy: "createdAt",
-          sortOrder: "desc",
-          page: 1,
-          limit: 10,
-        })
-        console.log("DMC list refreshed successfully")
-      } catch (fetchError) {
-        console.error("Error refreshing DMC list:", fetchError)
-        console.warn("DMC created/updated successfully but failed to refresh list")
-      }
+      // Notify listeners (e.g., table) to refresh
+      triggerRefresh()
+
+      // (Table will refetch via refresh signal)
     } catch (error) {
       console.error("Error submitting form:", error)
       toast({
@@ -242,7 +215,7 @@ const removeDestination = (destination: string) => {
   const selectedDestinations = getDestinationsArray()
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} noValidate className="space-y-6">
       {isEditing && (
         <div className="bg-blue-50 border border-blue-200 rounded-md p-4 mb-6">
           <div className="flex items-center">
@@ -276,6 +249,7 @@ const removeDestination = (destination: string) => {
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
             required
           />
+          {errors.dmcName && (<p className="text-sm text-red-600">{errors.dmcName}</p>)}
         </div>
 
         {/* Primary Contact Person */}
@@ -291,6 +265,7 @@ const removeDestination = (destination: string) => {
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
             required
           />
+          {errors.primaryContact && (<p className="text-sm text-red-600">{errors.primaryContact}</p>)}
         </div>
 
         {/* Phone Number */}
@@ -301,9 +276,15 @@ const removeDestination = (destination: string) => {
           <div className="flex">
             <Select
               value={formData.primaryPhoneExtension}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, primaryPhoneExtension: value }))}
+              onValueChange={(value) => {
+                setFormData((prev) => ({ ...prev, primaryPhoneExtension: value }))
+                if (errors.primaryPhoneExtension) {
+                  const { ...rest } = errors
+                  setErrors(rest)
+                }
+              }}
             >
-              <SelectTrigger className="w-28 h-12 rounded-r-none border-r-0">
+              <SelectTrigger id="primaryPhoneExtension" className="w-28 h-12 rounded-r-none border-r-0">
                 <SelectValue placeholder="+91" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
@@ -341,6 +322,7 @@ const removeDestination = (destination: string) => {
               className="flex-1 h-12 rounded-l-none focus:border-emerald-500 hover:border-emerald-500 transition-colors"
               required
             />
+            {errors.phoneNumber && (<p className="text-sm text-red-600">{errors.phoneNumber}</p>)}
           </div>
         </div>
 
@@ -357,6 +339,7 @@ const removeDestination = (destination: string) => {
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
             required
           />
+          {errors.designation && (<p className="text-sm text-red-600">{errors.designation}</p>)}
         </div>
 
         {/* Owner Name */}
@@ -372,6 +355,7 @@ const removeDestination = (destination: string) => {
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
             required
           />
+          {errors.ownerName && (<p className="text-sm text-red-600">{errors.ownerName}</p>)}
         </div>
 
         {/* Owner Phone Number */}
@@ -382,9 +366,15 @@ const removeDestination = (destination: string) => {
           <div className="flex">
             <Select
               value={formData.ownerPhoneExtension}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, ownerPhoneExtension: value }))}
+              onValueChange={(value) => {
+                setFormData((prev) => ({ ...prev, ownerPhoneExtension: value }))
+                if (errors.ownerPhoneExtension) {
+                  const { ...rest } = errors
+                  setErrors(rest)
+                }
+              }}
             >
-              <SelectTrigger className="w-28 h-12 rounded-r-none border-r-0">
+              <SelectTrigger id="ownerPhoneExtension" className="w-28 h-12 rounded-r-none border-r-0">
                 <SelectValue placeholder="+91" />
               </SelectTrigger>
               <SelectContent className="max-h-60 overflow-y-auto">
@@ -422,6 +412,7 @@ const removeDestination = (destination: string) => {
               className="flex-1 h-12 rounded-l-none focus:border-emerald-500 hover:border-emerald-500 transition-colors"
               required
             />
+            {errors.ownerPhoneNumber && (<p className="text-sm text-red-600">{errors.ownerPhoneNumber}</p>)}
           </div>
         </div>
 
@@ -439,6 +430,7 @@ const removeDestination = (destination: string) => {
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
             required
           />
+          {errors.email && (<p className="text-sm text-red-600">{errors.email}</p>)}
         </div>
 
         {/* Website */}
@@ -453,6 +445,7 @@ const removeDestination = (destination: string) => {
             onChange={handleInputChange}
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
           />
+          {errors.website && (<p className="text-sm text-red-600">{errors.website}</p>)}
         </div>
 
         {/* Primary Country */}
@@ -462,9 +455,15 @@ const removeDestination = (destination: string) => {
           </label>
           <Select
             value={formData.primaryCountry}
-            onValueChange={(value) => setFormData((prev) => ({ ...prev, primaryCountry: value }))}
+            onValueChange={(value) => {
+              setFormData((prev) => ({ ...prev, primaryCountry: value }))
+              if (errors.primaryCountry) {
+                const { ...rest } = errors
+                setErrors(rest)
+              }
+            }}
           >
-            <SelectTrigger className="w-full h-12">
+            <SelectTrigger id="primaryCountry" className="w-full h-12">
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent className="max-h-60 overflow-y-auto">
@@ -475,73 +474,75 @@ const removeDestination = (destination: string) => {
               ))}
             </SelectContent>
           </Select>
+          {errors.primaryCountry && (<p className="text-sm text-red-600">{errors.primaryCountry}</p>)}
         </div>
 
-
-{/* Destinations Covered - Multi-Select */}
-<div className="space-y-2 w-full">
-  <label htmlFor="destinationsCovered" className="block text-sm font-medium text-gray-700 font-Poppins">
-    Destinations Covered
-  </label>
-  <div className="relative">
-    <div
-      onClick={() => setIsDestinationDropdownOpen(!isDestinationDropdownOpen)}
-      className="w-full h-12 px-3 py-2 border border-gray-300 rounded-md cursor-pointer hover:border-emerald-500 focus:border-emerald-500 transition-colors flex items-center justify-between bg-white"
-    >
-      <span className="text-sm text-gray-700">
-        {selectedDestinations.length > 0 
-          ? `${selectedDestinations.length} selected` 
-          : "Select destinations..."}
-      </span>
-      <svg
-        className={`w-4 h-4 transition-transform ${isDestinationDropdownOpen ? 'rotate-180' : ''}`}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-      </svg>
-    </div>
-
-    {isDestinationDropdownOpen && (
-      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-        {destinations.map((destination: string) => (
-          <div
-            key={destination}
-            onClick={() => handleDestinationToggle(destination)}
-            className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
-          >
-            <span className="text-sm">{destination}</span>
-            {selectedDestinations.includes(destination) && (
-              <Check className="w-4 h-4 text-emerald-600" />
-            )}
-          </div>
-        ))}
-      </div>
-    )}
-
-    {/* Selected Destinations Tags - Shows ALL selected destinations */}
-    {selectedDestinations.length > 0 && (
-      <div className="flex flex-wrap gap-2 mt-2">
-        {selectedDestinations.map((destination: string) => (
-          <div
-            key={destination}
-            className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm"
-          >
-            <span>{destination}</span>
-            <button
-              type="button"
-              onClick={() => removeDestination(destination)}
-              className="hover:bg-emerald-200 rounded-full p-0.5"
+        {/* Destinations Covered - Multi-Select */}
+        <div className="space-y-2 w-full">
+          <label htmlFor="destinationsCovered" className="block text-sm font-medium text-gray-700 font-Poppins">
+            Destinations Covered
+          </label>
+          <div className="relative">
+            <div
+              id="destinationsCovered"
+              onClick={() => setIsDestinationDropdownOpen(!isDestinationDropdownOpen)}
+              className="w-full h-12 px-3 py-2 border border-gray-300 rounded-md cursor-pointer hover:border-emerald-500 focus:border-emerald-500 transition-colors flex items-center justify-between bg-white"
             >
-              <X className="w-3 h-3" />
-            </button>
+              <span className="text-sm text-gray-700">
+                {selectedDestinations.length > 0
+                  ? `${selectedDestinations.length} selected`
+                  : "Select destinations..."}
+              </span>
+              <svg
+                className={`w-4 h-4 transition-transform ${isDestinationDropdownOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+
+            {isDestinationDropdownOpen && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                {destinations.map((destination: string) => (
+                  <div
+                    key={destination}
+                    onClick={() => handleDestinationToggle(destination)}
+                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                  >
+                    <span className="text-sm">{destination}</span>
+                    {selectedDestinations.includes(destination) && (
+                      <Check className="w-4 h-4 text-emerald-600" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Selected Destinations Tags - Shows ALL selected destinations */}
+            {selectedDestinations.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {selectedDestinations.map((destination: string) => (
+                  <div
+                    key={destination}
+                    className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm"
+                  >
+                    <span>{destination}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeDestination(destination)}
+                      className="hover:bg-emerald-200 rounded-full p-0.5"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {errors.destinationsCovered && (<p className="text-sm text-red-600 mt-2">{errors.destinationsCovered}</p>)}
           </div>
-        ))}
-      </div>
-    )}
-  </div>
-</div>
+        </div>
 
         {/* Cities */}
         <div className="space-y-2 w-full">
@@ -550,9 +551,15 @@ const removeDestination = (destination: string) => {
           </label>
           <Select
             value={formData.cities}
-            onValueChange={(value) => setFormData((prev) => ({ ...prev, cities: value }))}
+            onValueChange={(value) => {
+              setFormData((prev) => ({ ...prev, cities: value }))
+              if (errors.cities) {
+                const { ...rest } = errors
+                setErrors(rest)
+              }
+            }}
           >
-            <SelectTrigger className="w-full h-12">
+            <SelectTrigger id="cities" className="w-full h-12">
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent className="max-h-60 overflow-y-auto">
@@ -563,18 +570,24 @@ const removeDestination = (destination: string) => {
               ))}
             </SelectContent>
           </Select>
+          {errors.cities && (<p className="text-sm text-red-600">{errors.cities}</p>)}
         </div>
 
         {/* GST Registration */}
         <div className="space-y-2 w-full">
           <label className="block text-sm font-medium text-gray-700 font-Poppins">GST Registration</label>
           <RadioGroup
+            id="gstRegistration"
             value={formData.gstRegistration}
             onValueChange={(value) => {
               setFormData((prev) => ({
                 ...prev,
                 gstRegistration: value as "Yes" | "No",
               }))
+              if (errors.gstRegistration) {
+                const { ...rest } = errors
+                setErrors(rest)
+              }
             }}
             className="flex items-center gap-4"
           >
@@ -587,6 +600,7 @@ const removeDestination = (destination: string) => {
               <Label htmlFor="gst-no">No</Label>
             </div>
           </RadioGroup>
+          {errors.gstRegistration && (<p className="text-sm text-red-600">{errors.gstRegistration}</p>)}
         </div>
 
         {/* GST No. */}
@@ -602,6 +616,7 @@ const removeDestination = (destination: string) => {
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
             disabled={formData.gstRegistration === "No"}
           />
+          {errors.gstNo && (<p className="text-sm text-red-600">{errors.gstNo}</p>)}
         </div>
 
         {/* Year of Registration */}
@@ -621,6 +636,7 @@ const removeDestination = (destination: string) => {
               Years
             </div>
           </div>
+          {errors.yearOfRegistration && (<p className="text-sm text-red-600">{errors.yearOfRegistration}</p>)}
         </div>
 
         {/* PAN No. */}
@@ -635,6 +651,7 @@ const removeDestination = (destination: string) => {
             onChange={handleInputChange}
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
           />
+          {errors.panNo && (<p className="text-sm text-red-600">{errors.panNo}</p>)}
         </div>
 
         {/* PAN Type */}
@@ -644,9 +661,15 @@ const removeDestination = (destination: string) => {
           </label>
           <Select
             value={formData.panType}
-            onValueChange={(value) => setFormData((prev) => ({ ...prev, panType: value }))}
+            onValueChange={(value) => {
+              setFormData((prev) => ({ ...prev, panType: value }))
+              if (errors.panType) {
+                const { ...rest } = errors
+                setErrors(rest)
+              }
+            }}
           >
-            <SelectTrigger className="w-full h-12">
+            <SelectTrigger id="panType" className="w-full h-12">
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent>
@@ -656,6 +679,7 @@ const removeDestination = (destination: string) => {
               <SelectItem value="Other">Other</SelectItem>
             </SelectContent>
           </Select>
+          {errors.panType && (<p className="text-sm text-red-600">{errors.panType}</p>)}
         </div>
 
         {/* Headquarters */}
@@ -670,6 +694,7 @@ const removeDestination = (destination: string) => {
             onChange={handleInputChange}
             className="w-full h-12 focus:border-emerald-500 hover:border-emerald-500 transition-colors"
           />
+          {errors.headquarters && (<p className="text-sm text-red-600">{errors.headquarters}</p>)}
         </div>
 
         {/* Country */}
@@ -679,9 +704,15 @@ const removeDestination = (destination: string) => {
           </label>
           <Select
             value={formData.country}
-            onValueChange={(value) => setFormData((prev) => ({ ...prev, country: value }))}
+            onValueChange={(value) => {
+              setFormData((prev) => ({ ...prev, country: value }))
+              if (errors.country) {
+                const { ...rest } = errors
+                setErrors(rest)
+              }
+            }}
           >
-            <SelectTrigger className="w-full h-12">
+            <SelectTrigger id="country" className="w-full h-12">
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent className="max-h-60 overflow-y-auto">
@@ -692,6 +723,7 @@ const removeDestination = (destination: string) => {
               ))}
             </SelectContent>
           </Select>
+          {errors.country && (<p className="text-sm text-red-600">{errors.country}</p>)}
         </div>
 
         {/* Year of Experience */}
@@ -711,6 +743,7 @@ const removeDestination = (destination: string) => {
               Years
             </div>
           </div>
+          {errors.yearOfExperience && (<p className="text-sm text-red-600">{errors.yearOfExperience}</p>)}
         </div>
       </div>
 

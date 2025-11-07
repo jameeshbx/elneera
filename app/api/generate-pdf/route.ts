@@ -7,16 +7,26 @@ import prisma from "@/lib/prisma"
 
 export async function POST(request: Request) {
   try {
-    console.log("[v0] PDF generation started")
+    console.log("[PDF] PDF generation started")
     const body = await request.json()
-    console.log("[v0] Request body:", body)
+    console.log("[PDF] Request body:", body)
     const { enquiryId, itineraryId, formData } = body
+
+    if (!itineraryId) {
+      return NextResponse.json(
+        {
+          error: "Itinerary ID is required",
+          details: "itineraryId must be provided to generate PDF",
+        },
+        { status: 400 }
+      )
+    }
 
     // Test database connection
     try {
       await prisma.$connect()
     } catch (dbError) {
-      console.error("[v0] Database connection error:", dbError)
+      console.error("[PDF] Database connection error:", dbError)
       return NextResponse.json(
         {
           error: "Database connection failed",
@@ -26,17 +36,65 @@ export async function POST(request: Request) {
       )
     }
 
-    const pdfTemplatePath = path.join(process.cwd(), "lib", "itinerary.pdf")
-    const itineraryDir = path.join(process.cwd(), "public", "itinerary")
+    // Fetch itinerary data from database (includes AI-generated dailyItinerary and accommodation)
+    const itinerary = await prisma.itineraries.findUnique({
+      where: { id: itineraryId },
+      include: {
+        enquiry: true,
+      },
+    })
 
-    console.log("[v0] PDF template path:", pdfTemplatePath)
-    console.log("[v0] Looking for CSV files in:", itineraryDir)
+    if (!itinerary) {
+      return NextResponse.json(
+        {
+          error: "Itinerary not found",
+          details: `Itinerary with ID ${itineraryId} does not exist`,
+        },
+        { status: 404 }
+      )
+    }
+
+    console.log("[PDF] Itinerary loaded from database:", {
+      id: itinerary.id,
+      days: Array.isArray(itinerary.dailyItinerary) ? itinerary.dailyItinerary.length : 0,
+      hotels: Array.isArray(itinerary.accommodation) ? itinerary.accommodation.length : 0,
+    })
+
+    // Fetch enquiry data if not included
+    let enquiry = itinerary.enquiry
+    if (!enquiry && enquiryId) {
+      const fetchedEnquiry = await prisma.enquiries.findUnique({
+        where: { id: enquiryId },
+      })
+      if (fetchedEnquiry) {
+        enquiry = fetchedEnquiry
+      }
+    }
+
+    if (!enquiry) {
+      return NextResponse.json(
+        {
+          error: "Enquiry not found",
+          details: "Enquiry data is required to generate PDF",
+        },
+        { status: 404 }
+      )
+    }
+
+    console.log("[PDF] Enquiry loaded:", {
+      id: enquiry.id,
+      name: enquiry.name,
+      email: enquiry.email,
+    })
+
+    // Load PDF template
+    const pdfTemplatePath = path.join(process.cwd(), "lib", "itinerary.pdf")
 
     try {
       await fs.access(pdfTemplatePath)
-      console.log("[v0] itinerary.pdf file exists at:", pdfTemplatePath)
+      console.log("[PDF] PDF template found at:", pdfTemplatePath)
     } catch (error) {
-      console.error("[v0] itinerary.pdf file not found:", error)
+      console.error("[PDF] PDF template not found:", error)
       return NextResponse.json(
         {
           error: "PDF template not found",
@@ -47,78 +105,11 @@ export async function POST(request: Request) {
       )
     }
 
-    let csvFilePath = null
-    let csvFileName = null
-
-    if (enquiryId) {
-      const availableCSVFiles = ["EVER001.csv", "GOA001.csv", "KASH001.csv", "KER001.csv", "RAJ001.csv", "THAI001.csv"]
-      const matchingFile = availableCSVFiles.find((file) => file.toLowerCase().includes(enquiryId.toLowerCase()))
-      if (matchingFile) {
-        csvFilePath = path.join(itineraryDir, matchingFile)
-        csvFileName = matchingFile
-      }
-    }
-
-    if (!csvFilePath && formData.destinations?.[0]) {
-      const destination = formData.destinations[0].toLowerCase()
-      const destinationMap: { [key: string]: string } = {
-        kerala: "EVER001.csv",
-        kochi: "EVER001.csv",
-        munnar: "EVER001.csv",
-        alleppey: "EVER001.csv",
-        goa: "GOA001.csv",
-        "north goa": "GOA001.csv",
-        "south goa": "GOA001.csv",
-        kashmir: "KASH001.csv",
-        srinagar: "KASH001.csv",
-        gulmarg: "KASH001.csv",
-        rajasthan: "RAJ001.csv",
-        jaipur: "RAJ001.csv",
-        jodhpur: "RAJ001.csv",
-        thailand: "THAI001.csv",
-        bangkok: "THAI001.csv",
-        phuket: "THAI001.csv",
-      }
-
-      for (const [dest, file] of Object.entries(destinationMap)) {
-        if (destination.includes(dest)) {
-          csvFilePath = path.join(itineraryDir, file)
-          csvFileName = file
-          break
-        }
-      }
-    }
-
-    if (!csvFilePath) {
-      const availableCSVFiles = ["EVER001.csv", "GOA001.csv", "KASH001.csv", "KER001.csv", "RAJ001.csv", "THAI001.csv"]
-      csvFileName = availableCSVFiles[0]
-      csvFilePath = path.join(itineraryDir, csvFileName)
-    }
-
-    console.log("[v0] Selected CSV file:", csvFileName)
-    console.log("[v0] CSV file path:", csvFilePath)
-
-    try {
-      await fs.access(csvFilePath)
-      console.log("[v0] CSV file exists at:", csvFilePath)
-    } catch (error) {
-      console.error("[v0] CSV file not found:", error)
-      return NextResponse.json(
-        {
-          error: "CSV template not found",
-          details: `CSV file ${csvFileName} is missing at ${csvFilePath}`,
-          path: csvFilePath,
-          availableFiles: ["EVER001.csv", "GOA001.csv", "KASH001.csv", "KER001.csv", "RAJ001.csv", "THAI001.csv"],
-        },
-        { status: 500 },
-      )
-    }
-
     const formBytes = await fs.readFile(pdfTemplatePath)
-    console.log("[v0] PDF template loaded, size:", formBytes.length)
+    console.log("[PDF] PDF template loaded, size:", formBytes.length)
 
     const pdfDoc = await PDFDocument.load(formBytes)
-    console.log("[v0] PDF document loaded successfully")
+    console.log("[PDF] PDF document loaded successfully")
 
     const pages = pdfDoc.getPages()
     let firstPage = pages[0]
@@ -137,109 +128,135 @@ export async function POST(request: Request) {
       })
     }
 
-    const csvData = await fs.readFile(csvFilePath, "utf-8")
-    console.log("[v0] CSV data loaded from:", csvFilePath)
+    // Parse AI-generated dailyItinerary (stored as JSON in database)
+    let dailyItinerary: Array<{
+      day: number
+      date: string
+      title: string
+      activities: Array<{
+        time: string
+        title: string
+        type: string
+        description: string
+      }>
+    }> = []
 
-    const csvLines = csvData.trim().split("\n")
-    console.log("[v0] CSV lines:", csvLines.length)
-
-    // Parse package info from first section
-    let packageInfo = null
-    const itineraryActivities = []
-    let isActivitySection = false
-
-    for (let i = 0; i < csvLines.length; i++) {
-      const line = csvLines[i].trim()
-      if (!line) continue
-
-      if (line.startsWith("quoteId,")) {
-        continue
-      } else if (line.startsWith("day,time,activity")) {
-        isActivitySection = true
-        continue
-      } else if (!isActivitySection && line.includes(",")) {
-        const parts = line.split(",")
-        if (parts.length >= 10) {
-          packageInfo = {
-            quoteId: parts[0]?.trim(),
-            name: parts[1]?.trim(),
-            days: Number.parseInt(parts[2]?.trim()) || 4,
-            nights: Number.parseInt(parts[3]?.trim()) || 3,
-            startDate: parts[4]?.trim(),
-            costINR: Number.parseInt(parts[5]?.trim()) || 0,
-            costUSD: Number.parseInt(parts[6]?.trim()) || 0,
-            guests: Number.parseInt(parts[7]?.trim()) || 2,
-            adults: Number.parseInt(parts[8]?.trim()) || 2,
-            kids: Number.parseInt(parts[9]?.trim()) || 0,
-          }
+    if (itinerary.dailyItinerary) {
+      if (typeof itinerary.dailyItinerary === "string") {
+        try {
+          dailyItinerary = JSON.parse(itinerary.dailyItinerary) as typeof dailyItinerary
+        } catch (parseError) {
+          console.error("[PDF] Error parsing dailyItinerary:", parseError)
+          dailyItinerary = []
         }
-      } else if (isActivitySection && line.includes(",")) {
-        const parts = line.split(",")
-        if (parts.length >= 3) {
-          const activity = {
-            day: Number.parseInt(parts[0]?.trim()) || 1,
-            time: parts[1]?.trim(),
-            activity: parts[2]?.trim(),
-            description: parts[2]?.trim(),
-            meal: parts[2]?.includes("Breakfast") || parts[2]?.includes("Lunch") || parts[2]?.includes("Dinner") ? parts[2] : "",
-            transport: parts[2]?.includes("Pickup") ? "Private Vehicle" : "",
-            cost: 0,
-          }
-          itineraryActivities.push(activity)
-        }
+      } else if (Array.isArray(itinerary.dailyItinerary)) {
+        dailyItinerary = itinerary.dailyItinerary as typeof dailyItinerary
       }
     }
 
-    console.log("[v0] Parsed activities:", itineraryActivities.length)
+    // Parse accommodation data
+    let accommodation: Array<{
+      name: string
+      rating: number
+      nights: number
+      image: string
+    }> = []
 
-    // Group activities by day
-    const dayWiseActivities = itineraryActivities.reduce(
-      (acc, activity) => {
-        if (!acc[activity.day]) {
-          acc[activity.day] = []
+    if (itinerary.accommodation) {
+      if (typeof itinerary.accommodation === "string") {
+        try {
+          accommodation = JSON.parse(itinerary.accommodation) as typeof accommodation
+        } catch (parseError) {
+          console.error("[PDF] Error parsing accommodation:", parseError)
+          accommodation = []
         }
-        acc[activity.day].push(activity)
-        return acc
-      },
-      {} as Record<number, typeof itineraryActivities>,
-    )
-
-    // Calculate totals
-    const totalDays = packageInfo?.days || Math.max(...itineraryActivities.map((a) => a.day))
-    const totalCost = packageInfo?.costUSD || packageInfo?.costINR || formData.budget || 1000
-    const destination = packageInfo?.name?.split(" ")[1] || formData.destinations?.[0] || "Unknown"
-
-    // Build group size string
-    const groupSizeParts = [`${formData.adults || 2} Adults`]
-    if (formData.children) {
-      groupSizeParts.push(`${formData.children} Children`)
+      } else if (Array.isArray(itinerary.accommodation)) {
+        accommodation = itinerary.accommodation as typeof accommodation
+      }
     }
-    if (formData.under6) {
-      groupSizeParts.push(`${formData.under6} Under 6`)
-    }
-    if (formData.from7to12) {
-      groupSizeParts.push(`${formData.from7to12} Age 7-12`)
-    }
-    const groupSize = groupSizeParts.join(", ")
 
+    // Parse budgetEstimation (stored as JSON in database)
+    type BudgetEstimationType = { amount: number; currency: string; costTourist?: number }
+    let budgetEstimation: BudgetEstimationType | null = null
+    if (itinerary.budgetEstimation) {
+      if (typeof itinerary.budgetEstimation === "string") {
+        try {
+          budgetEstimation = JSON.parse(itinerary.budgetEstimation) as BudgetEstimationType
+        } catch (parseError) {
+          console.error("[PDF] Error parsing budgetEstimation:", parseError)
+        }
+      } else if (typeof itinerary.budgetEstimation === "object" && itinerary.budgetEstimation !== null && !Array.isArray(itinerary.budgetEstimation)) {
+        budgetEstimation = itinerary.budgetEstimation as unknown as BudgetEstimationType
+      }
+    }
+
+    console.log("[PDF] Parsed itinerary data:", {
+      days: dailyItinerary.length,
+      hotels: accommodation.length,
+    })
+
+    // Calculate totals from actual data
+    const totalDays = dailyItinerary.length || 1
+    const totalNights = totalDays > 0 ? totalDays - 1 : 0
+    const totalCost = (budgetEstimation && 'amount' in budgetEstimation ? budgetEstimation.amount : null) || itinerary.budget || 0
+    const currency = itinerary.currency || (budgetEstimation && 'currency' in budgetEstimation ? budgetEstimation.currency : null) || "USD"
+    const destination = itinerary.destinations || enquiry.locations || "Unknown"
+
+    // Build group size string from actual data
+    const groupSizeParts = []
+    if (itinerary.adults && itinerary.adults > 0) {
+      groupSizeParts.push(`${itinerary.adults} Adults`)
+    }
+    if (itinerary.children && itinerary.children > 0) {
+      groupSizeParts.push(`${itinerary.children} Children`)
+    }
+    if (itinerary.under6 && itinerary.under6 > 0) {
+      groupSizeParts.push(`${itinerary.under6} Under 6`)
+    }
+    if (itinerary.from7to12 && itinerary.from7to12 > 0) {
+      groupSizeParts.push(`${itinerary.from7to12} Age 7-12`)
+    }
+    const groupSize = groupSizeParts.length > 0 ? groupSizeParts.join(", ") : "2 Adults"
+
+    // Format dates
+    const startDate = itinerary.startDate || enquiry.estimatedDates?.split(" - ")[0] || new Date().toLocaleDateString()
+    const endDate = itinerary.endDate || enquiry.estimatedDates?.split(" - ")[1] || new Date().toLocaleDateString()
+    const travelDates = `${startDate} to ${endDate}`
+
+    // Get currency symbol
+    const getCurrencySymbol = (code: string) => {
+      switch (code) {
+        case "USD": return "$"
+        case "EUR": return "€"
+        case "GBP": return "£"
+        case "INR": return "₹"
+        default: return code || "$"
+      }
+    }
+
+    // Prepare itinerary data for PDF
     const itineraryData = {
       date: new Date().toLocaleDateString(),
-      travelerName: formData.customerName || formData.name || "Valued Customer",
-      email: formData.customerEmail || formData.email || "customer@example.com",
-      phone: formData.customerPhone || formData.whatsappNumber || "+91-9876543210",
+      travelerName: enquiry.name || "Valued Customer",
+      email: enquiry.email || "",
+      phone: enquiry.phone || "",
       destination: destination,
-      travelDates: `${formData.startDate || formData.checkInDate || new Date().toLocaleDateString()} to ${formData.endDate || formData.checkOutDate || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toLocaleDateString()}`,
+      travelDates: travelDates,
       groupSize: groupSize,
-      travelType: formData.travelType || "Family",
-      budgetRange: `${formData.currency || "USD"} ${formData.budget || totalCost}`,
-      duration: `${totalDays} Days / ${totalDays - 1} Nights`,
-      totalCost: `${formData.currency || "USD"} ${totalCost}`,
-      packageName: packageInfo?.name || `${destination} ${formData.travelType || "Premium"} Package`,
-      dayWiseActivities: dayWiseActivities,
+      travelType: itinerary.travelType || enquiry.tourType || "Family",
+      budgetRange: `${currency} ${totalCost}`,
+      duration: `${totalDays} Days / ${totalNights} Nights`,
+      totalCost: `${getCurrencySymbol(currency)}${totalCost}`,
+      packageName: `${destination} ${itinerary.travelType || "Premium"} Package`,
+      dailyItinerary: dailyItinerary,
       totalDays: totalDays,
     }
 
-    console.log("[v0] Enhanced itinerary data:", itineraryData)
+    console.log("[PDF] Prepared itinerary data for PDF:", {
+      travelerName: itineraryData.travelerName,
+      destination: itineraryData.destination,
+      days: itineraryData.totalDays,
+    })
 
     let yPosition = height - 750
 
@@ -250,20 +267,21 @@ export async function POST(request: Request) {
     yPosition -= 125
 
     // Customer Information
-    drawText(itineraryData.travelerName, 600, yPosition, 40, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.email, 1300, yPosition, 30, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.phone, 2000, yPosition, 30, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.travelDates, 600, yPosition - 60, 40, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.destination, 600, yPosition - 110, 40, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.groupSize, 600, yPosition - 170, 40, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.travelType, 600, yPosition - 220, 40, firstPage, font, rgb(178/255, 190/255, 181/255))
-    drawText(itineraryData.budgetRange, 600, yPosition - 280, 40, firstPage, font, rgb(178/255, 190/255, 181/255))
+    drawText(itineraryData.travelerName, 600, yPosition, 40, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.email, 1300, yPosition, 30, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.phone, 2000, yPosition, 30, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.travelDates, 600, yPosition - 60, 40, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.destination, 600, yPosition - 110, 40, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.groupSize, 600, yPosition - 170, 40, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.travelType, 600, yPosition - 220, 40, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
+    drawText(itineraryData.budgetRange, 600, yPosition - 280, 40, firstPage, font, rgb(178 / 255, 190 / 255, 181 / 255))
 
     yPosition -= 550
 
-    // Day-wise Itinerary
-    for (let day = 1; day <= itineraryData.totalDays; day++) {
-      const activities = dayWiseActivities[day] || []
+    // Day-wise Itinerary using AI-generated data
+    for (const dayItinerary of dailyItinerary) {
+      const day = dayItinerary.day
+      const activities = dayItinerary.activities || []
 
       if (activities.length > 0) {
         if (yPosition < 150) {
@@ -272,9 +290,12 @@ export async function POST(request: Request) {
           firstPage = newPage
         }
 
-        drawText(`Day ${day}:`, 500, yPosition, 30, firstPage, boldFont)
-        yPosition -= 30
+        // Day header with title and date
+        const dayTitle = dayItinerary.title || `Day ${day}`
+        drawText(`${dayTitle} (${dayItinerary.date || ""})`, 500, yPosition, 30, firstPage, boldFont)
+        yPosition -= 40
 
+        // Activities for this day
         activities.forEach((activity) => {
           if (yPosition < 100) {
             const newPage = pdfDoc.addPage([width, height])
@@ -282,17 +303,29 @@ export async function POST(request: Request) {
             firstPage = newPage
           }
 
-          drawText(`${activity.time} - ${activity.activity}`, 580, yPosition, 25)
+          // Activity time and title
+          const activityTitle = activity.title || activity.description || ""
+          drawText(`${activity.time || ""} - ${activityTitle}`, 580, yPosition, 25, firstPage, font)
           yPosition -= 35
-          drawText(`${activity.description}`, 650, yPosition, 25)
-          yPosition -= 30
-          drawText(
-            `Transport: ${activity.transport} | Meal: ${activity.meal} | Cost: $${activity.cost}`,
-            650,
-            yPosition,
-            20,
-          )
-          yPosition -= 50
+
+          // Activity description
+          if (activity.description && activity.description !== activityTitle) {
+            // Truncate long descriptions to fit on page
+            const maxLength = 80
+            const description = activity.description.length > maxLength
+              ? activity.description.substring(0, maxLength) + "..."
+              : activity.description
+            drawText(description, 650, yPosition, 20, firstPage, font, rgb(0.5, 0.5, 0.5))
+            yPosition -= 30
+          }
+
+          // Activity type indicator
+          if (activity.type) {
+            drawText(`Type: ${activity.type}`, 650, yPosition, 18, firstPage, font, rgb(0.6, 0.6, 0.6))
+            yPosition -= 25
+          }
+
+          yPosition -= 20
         })
 
         yPosition -= 35
@@ -300,11 +333,11 @@ export async function POST(request: Request) {
     }
 
     const pdfBytes = await pdfDoc.save()
-    console.log("[v0] PDF generated successfully, size:", pdfBytes.length)
+    console.log("[PDF] PDF generated successfully, size:", pdfBytes.length)
 
     // Check if S3 is configured
     if (!S3Service.isConfigured()) {
-      console.error("[v0] S3 is not configured")
+      console.error("[PDF] S3 is not configured")
       return NextResponse.json(
         {
           error: "S3 configuration missing",
@@ -318,7 +351,7 @@ export async function POST(request: Request) {
     // Upload to S3
     const timestamp = Date.now()
     const pdfFileName = `itinerary-${itineraryId}-${timestamp}.pdf`
-    
+
     try {
       const s3FileInfo = await S3Service.uploadFile(
         Buffer.from(pdfBytes),
@@ -326,9 +359,9 @@ export async function POST(request: Request) {
         'application/pdf',
         'itinerary-pdfs'
       )
-      
-      console.log("[v0] PDF uploaded to S3:", s3FileInfo.key)
-      
+
+      console.log("[PDF] PDF uploaded to S3:", s3FileInfo.key)
+
       // Deactivate all previous versions
       await prisma.pDFVersion.updateMany({
         where: { itineraryId },
@@ -367,8 +400,8 @@ export async function POST(request: Request) {
         },
       })
 
-      console.log("[v0] Database updated with PDF version")
-      
+      console.log("[PDF] Database updated with PDF version")
+
       return NextResponse.json({
         success: true,
         message: "PDF generated and uploaded successfully",
@@ -379,8 +412,8 @@ export async function POST(request: Request) {
         versionId: newVersion.id,
       })
     } catch (s3Error) {
-      console.error("[v0] Error uploading to S3:", s3Error)
-      
+      console.error("[PDF] Error uploading to S3:", s3Error)
+
       return NextResponse.json(
         {
           error: "S3 upload failed",
@@ -391,7 +424,7 @@ export async function POST(request: Request) {
       )
     }
   } catch (error) {
-    console.error("[v0] Error generating PDF:", error)
+    console.error("[PDF] Error generating PDF:", error)
     return NextResponse.json(
       {
         error: "Failed to generate PDF",
@@ -410,6 +443,6 @@ export async function GET() {
     message: "Please use POST method to generate itinerary PDF",
     example: 'curl -X POST /api/generate-pdf -d \'{"enquiryId":"123","itineraryId":"456","formData":{}}\'',
     templateRequired: "lib/itinerary.pdf",
-    csvData: "public/itinerary/[EVER001|GOA001|KASH001|KER001|RAJ001|THAI001].csv",
+    note: "PDF generation now uses AI-generated itinerary data from the database instead of CSV files",
   })
 }
