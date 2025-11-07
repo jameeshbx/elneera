@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { PrismaClient } from "@prisma/client"
+import { generateItinerary } from "@/lib/ai-service"
+import { getUserTierFromRequest } from "@/lib/user-tier"
 
 const prisma = new PrismaClient()
 
@@ -29,14 +31,14 @@ export async function GET(request: NextRequest) {
     } else {
       // Build the where clause
       const where: {
-  enquiryId?: string;
-  userId?: string;
-} = {};
-      
+        enquiryId?: string;
+        userId?: string;
+      } = {};
+
       if (enquiryId) {
         where.enquiryId = enquiryId;
       }
-      
+
       // Add user ID filter if provided
       if (userId) {
         where.userId = userId;
@@ -71,11 +73,94 @@ export async function POST(request: NextRequest) {
     const data = await request.json()
     console.log("Received data for creating itinerary:", data)
 
+    // Determine user tier (default to standard, can be passed in request or determined from user session)
+    const userTier = data.userTier || "standard"
+    const userId = data.userId || null
+
+    // If userId is provided, try to get tier from user
+    const finalUserTier = userId ? await getUserTierFromRequest(userId) : (userTier as "premium" | "standard")
+
+    // Prepare preferences for AI generation
+    const destinations = Array.isArray(data.destinations) ? data.destinations.join(", ") : data.destinations || ""
+    const startDate = data.startDate || ""
+    const endDate = data.endDate || ""
+
+    // Validate required fields for AI generation
+    if (!destinations || !startDate || !endDate) {
+      return NextResponse.json(
+        {
+          error: "Missing required fields for itinerary generation",
+          details: "destinations, startDate, and endDate are required",
+        },
+        { status: 400 },
+      )
+    }
+
+    // Generate itinerary using AI
+    let generatedItinerary
+    try {
+      console.log(`[API] Generating itinerary with ${finalUserTier} tier for destinations: ${destinations}`)
+
+      generatedItinerary = await generateItinerary(
+        {
+          destinations,
+          startDate,
+          endDate,
+          travelType: data.travelType || "",
+          adults: Number(data.adults) || 0,
+          children: Number(data.children) || 0,
+          under6: Number(data.under6) || 0,
+          from7to12: Number(data.from7to12) || 0,
+          budget: Number(data.budget) || 0,
+          currency: data.currency || "USD",
+          activityPreferences: Array.isArray(data.activityPreferences)
+            ? data.activityPreferences.join(", ")
+            : data.activityPreferences || "",
+          hotelPreferences: Array.isArray(data.hotelPreferences)
+            ? data.hotelPreferences.join(", ")
+            : data.hotelPreferences || "",
+          mealPreference: Array.isArray(data.mealPreference)
+            ? data.mealPreference.join(", ")
+            : data.mealPreference || "",
+          dietaryPreference: Array.isArray(data.dietaryPreference)
+            ? data.dietaryPreference.join(", ")
+            : data.dietaryPreference || "",
+          transportPreferences: Array.isArray(data.transportPreferences)
+            ? data.transportPreferences.join(", ")
+            : data.transportPreferences || "",
+          travelingWithPets: data.travelingWithPets || "no",
+          additionalRequests: data.additionalRequests || null,
+          moreDetails: data.moreDetails || null,
+          mustSeeSpots: data.mustSeeSpots || null,
+          pickupLocation: data.pickupLocation || null,
+          dropLocation: data.dropLocation || null,
+          flightsRequired: data.flightsRequired || "no",
+        },
+        finalUserTier,
+      )
+
+      console.log(`[API] Itinerary generated successfully. Days: ${generatedItinerary.dailyItinerary.length}, Hotels: ${generatedItinerary.accommodation.length}`)
+    } catch (aiError) {
+      console.error("[API] Error generating itinerary with AI:", aiError)
+      // Fallback: use provided data or empty arrays
+      generatedItinerary = {
+        dailyItinerary: data.dailyItinerary || [],
+        accommodation: data.accommodation || [],
+        budgetEstimation: {
+          amount: Number(data.budget) || 0,
+          currency: data.currency || "USD",
+          costTourist: Number(data.budget) || 0,
+        },
+      }
+      console.log("[API] Using fallback itinerary data")
+    }
+
+    // Prepare itinerary data for database
     const itineraryData = {
       enquiryId: data.enquiryId,
-      destinations: Array.isArray(data.destinations) ? data.destinations.join(", ") : data.destinations || "",
-      startDate: data.startDate || "",
-      endDate: data.endDate || "",
+      destinations,
+      startDate,
+      endDate,
       travelType: data.travelType || "",
       adults: Number(data.adults) || 0,
       children: Number(data.children) || 0,
@@ -104,8 +189,9 @@ export async function POST(request: NextRequest) {
       moreDetails: data.moreDetails || null,
       mustSeeSpots: data.mustSeeSpots || null,
       status: data.status || "draft",
-      dailyItinerary: data.dailyItinerary || [],
-      accommodation: data.accommodation || [],
+      // Use AI-generated itinerary data
+      dailyItinerary: generatedItinerary.dailyItinerary,
+      accommodation: generatedItinerary.accommodation,
       // Map cancellation fields to actual database columns
       cancellationPolicyType: data.cancellationPolicyType || "DEFAULT",
       customCancellationDeadline: data.customCancellationDeadline ? Number(data.customCancellationDeadline) : null,
@@ -113,7 +199,11 @@ export async function POST(request: NextRequest) {
       agencyCancellationPolicyId: data.agencyCancellationPolicyId || null,
     }
 
-    console.log("Prepared data for database:", itineraryData)
+    console.log("Prepared data for database:", {
+      ...itineraryData,
+      dailyItinerary: `[${generatedItinerary.dailyItinerary.length} days]`,
+      accommodation: `[${generatedItinerary.accommodation.length} hotels]`,
+    })
 
     const newItinerary = await prisma.itineraries.create({
       data: itineraryData,
@@ -206,7 +296,7 @@ export async function PUT(request: NextRequest) {
     console.log("Updated itinerary successfully:", updatedItinerary.id)
     return NextResponse.json(updatedItinerary)
   } catch (error) {
-    console.error("Error updating itinerary:", error) 
+    console.error("Error updating itinerary:", error)
 
     // Handle Prisma errors
     if (error && typeof error === "object" && "code" in error) {
