@@ -201,6 +201,7 @@ export default function AddUsers() {
         phoneNumber: string;
         phoneExtension: string;
         email: string;
+        username?: string;
         userType: 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL';
         password: string;
         maskedPassword: string;
@@ -219,6 +220,7 @@ export default function AddUsers() {
           phoneNumber: user.phoneNumber,
           phoneExtension: user.phoneExtension,
           email: user.email,
+          username: user.username || user.email,
           userType: user.userType || 'TEAM_LEAD',
           password: user.password,
           maskedPassword: "•••••••",
@@ -875,9 +877,6 @@ export default function AddUsers() {
                 <TableHead className="py-3 font-bold font-poppins text-gray-500 hidden lg:table-cell">
                   Username
                 </TableHead>
-                <TableHead className="py-3 font-bold font-poppins text-gray-500 hidden lg:table-cell">
-                  Password
-                </TableHead>
                 <TableHead className="py-3 font-bold font-poppins text-gray-500">
                   <span className="hidden lg:inline">User Type</span>
                   <span className="lg:hidden">Type</span>
@@ -904,22 +903,6 @@ export default function AddUsers() {
                     </TableCell>
                     <TableCell className="py-3 font-poppins hidden sm:table-cell">{user.email}</TableCell>
                     <TableCell className="py-3 font-poppins hidden lg:table-cell">{user.username}</TableCell>
-                    <TableCell className="py-3 font-poppins hidden lg:table-cell">
-                      <div className="flex items-center space-x-2">
-                        <span>{showPassword[user.id] ? user.password : user.maskedPassword}</span>
-                        <button
-                          type="button"
-                          onClick={() => togglePasswordVisibility(user.id)}
-                          className="text-gray-500 hover:text-gray-700"
-                        >
-                          {showPassword[user.id] ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                    </TableCell>
                     <TableCell className="py-3 font-poppins">
                       <Badge 
                         variant="outline" 
