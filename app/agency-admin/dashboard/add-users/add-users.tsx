@@ -211,6 +211,56 @@ export default function AddUsers() {
       
       console.log(`✅ Mapped ${mappedUsers.length} users`);
       
+      if (data.success && Array.isArray(data.data)) {
+        interface ApiUser {
+        id: string;
+        name: string;
+        phoneNumber: string;
+        phoneExtension: string;
+        email: string;
+        username?: string;
+        userType: 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL';
+        password: string;
+        maskedPassword: string;
+        status: 'ACTIVE' | 'INACTIVE';
+        createdAt: string;
+        profileImage?: {
+          name: string;
+          url: string;
+        } | null;
+      }
+
+      const mappedUsers = data.data.map((user: ApiUser) => ({
+          id: user.id,
+          userId: `UID${user.id.slice(0, 4).toUpperCase()}`,
+          name: user.name,
+          phoneNumber: user.phoneNumber,
+          phoneExtension: user.phoneExtension,
+          email: user.email,
+          username: user.username || user.email,
+          userType: user.userType || 'TEAM_LEAD',
+          password: user.password,
+          maskedPassword: "•••••••",
+          status: user.status || 'ACTIVE',
+          createdAt: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+          profileImage: user.profileImage ? {
+            name: user.profileImage.name,
+            url: user.profileImage.url
+          } : null
+        }));
+        
+        console.log('Mapped users:', mappedUsers);
+        
+        setUsers(mappedUsers);
+        setDisplayedUsers(mappedUsers.slice(0, itemsPerPage));
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch users",
+        variant: "destructive",
+      });
       setUsers(mappedUsers);
       setCurrentPage(1);
       setDisplayedUsers(mappedUsers.slice(0, itemsPerPage));
@@ -848,9 +898,6 @@ useEffect(() => {
                 <TableHead className="py-3 font-bold font-poppins text-gray-500 hidden lg:table-cell">
                   Username
                 </TableHead>
-                <TableHead className="py-3 font-bold font-poppins text-gray-500 hidden lg:table-cell">
-                  Password
-                </TableHead>
                 <TableHead className="py-3 font-bold font-poppins text-gray-500">
                   <span className="hidden lg:inline">User Type</span>
                   <span className="lg:hidden">Type</span>
@@ -877,22 +924,6 @@ useEffect(() => {
                     </TableCell>
                     <TableCell className="py-3 font-poppins hidden sm:table-cell">{user.email}</TableCell>
                     <TableCell className="py-3 font-poppins hidden lg:table-cell">{user.username}</TableCell>
-                    <TableCell className="py-3 font-poppins hidden lg:table-cell">
-                      <div className="flex items-center space-x-2">
-                        <span>{showPassword[user.id] ? user.password : user.maskedPassword}</span>
-                        <button
-                          type="button"
-                          onClick={() => togglePasswordVisibility(user.id)}
-                          className="text-gray-500 hover:text-gray-700"
-                        >
-                          {showPassword[user.id] ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                    </TableCell>
                     <TableCell className="py-3 font-poppins">
                       <Badge 
                         variant="outline" 
