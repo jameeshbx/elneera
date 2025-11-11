@@ -696,14 +696,6 @@ function ItineraryFormContent() {
     }))
   }
 
-  const toggleDestination = (destination: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      destinations: prev.destinations.includes(destination)
-        ? prev.destinations.filter((item: string) => item !== destination)
-        : [...prev.destinations, destination],
-    }))
-  }
 
   const toggleHotelPreference = (preference: string) => {
     setFormData((prev) => ({
@@ -728,7 +720,6 @@ function ItineraryFormContent() {
     }))
   }
 
-  const availableDestinations = ["Kashmir", "Goa", "Kerala", "Rajasthan", "Himachal Pradesh", "Uttarakhand"]
 
   const hotelOptions = [
     { value: "no-preference", label: "No Preference" },
@@ -948,24 +939,8 @@ function ItineraryFormContent() {
                         />
                       </Badge>
                     ))}
-                    <ChevronDown className="h-4 w-4 text-gray-400 ml-auto" />
                   </div>
-                  {showDestinationDropdown && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
-                      {availableDestinations.map((destination) => (
-                        <div
-                          key={destination}
-                          className={`p-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${
-                            formData.destinations.includes(destination) ? "bg-green-50" : ""
-                          }`}
-                          onClick={() => toggleDestination(destination)}
-                        >
-                          <span>{destination}</span>
-                          {formData.destinations.includes(destination) && <Check className="h-4 w-4 text-green-600" />}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  
                 </div>
 
                 {/* Date Selection */}
@@ -1439,12 +1414,13 @@ function ItineraryFormContent() {
                         key={transport.id}
                         variant="outline"
                         className={cn(
-                          "h-10 justify-center text-xs border-2 bg-gray-400",
+                          "h-10 justify-center text-xs border-2 ",
                           formData.transportPreferences.includes(transport.id)
-                            ? transport.color
-                            : "border-gray-200 hover:border-gray-300",
+                          ? `${transport.color} bg-gray-600 text-white`
+ : "bg-white border-white hover:border-gray-900",
                         )}
                         onClick={() => toggleTransportPreference(transport.id)}
+                        
                       >
                         {transport.label}
                       </Button>

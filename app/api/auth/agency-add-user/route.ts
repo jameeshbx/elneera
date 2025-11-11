@@ -142,6 +142,7 @@ async function ensureTablesExist() {
 }
 
 interface User {
+  updatedAt: Date | null;
   id: string;
   name: string | null;
   phoneNumber: string | null;
@@ -492,24 +493,29 @@ if (!agencyAdmin || !['AGENCY_ADMIN', 'TRAVEL_AGENCY'].includes(agencyAdmin.user
 }
 
 // GET - Fetch all users for the agency
+// Replace the GET function with this updated version:
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    const agencyAdminUserId = session.user.id;
     
+    const agencyAdminUserId = session.user.id;
+    console.log("📊 Fetching users for agency admin:", agencyAdminUserId);
 
     if (!agencyAdminUserId) {
       return NextResponse.json({
         success: false,
-        error: 'agencyId is required (or authenticate as an agency admin)'
+        error: 'Agency ID is required'
       }, { status: 400 });
     }
 
+    // Query user_form table with agencyId filter
     const users = await prisma.userForm.findMany({
-      where: { createdBy: agencyAdminUserId },
+      where: { 
+        agencyId: agencyAdminUserId  // KEY CHANGE: Use agencyId
+      },
       include: {
         profileImage: true
       },
@@ -518,10 +524,16 @@ export async function GET() {
       }
     });
 
-    console.log(`✅ Found ${users.length} users for agency admin ${agencyAdminUserId}`);
+    console.log(`✅ Found ${users.length} users with agencyId: ${agencyAdminUserId}`);
+    
+    // Debug: Log first user's agencyId
+    if (users.length > 0) {
+      console.log("Sample user agencyId:", users[0].agencyId);
+    }
 
     return NextResponse.json({
       success: true,
+      count: users.length,
       data: users.map((user: User) => ({
         id: user.id,
         name: user.name || '',
@@ -533,6 +545,7 @@ export async function GET() {
         status: user.status,
         agencyId: user.agencyId,
         createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
         profileImage: user.profileImage,
         maskedPassword: "•••••••"
       }))
@@ -548,7 +561,6 @@ export async function GET() {
     await prisma.$disconnect();
   }
 }
-
 // PATCH - Reveal password (returns masked for security)
 export async function PATCH(req: Request) {
   try {

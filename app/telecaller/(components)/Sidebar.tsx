@@ -706,11 +706,12 @@ const isCollapsed = isMobile ? !expanded : !expanded
               <p className="mb-1 md:mb-2 text-[11px] md:text-[13px] text-white font-poppins">
                 Please check our docs
               </p>
-              <button 
+              <button
+                onClick={() => window.location.href = 'tel:+919633779922'}
                 className="w-full px-2 py-1 md:px-3 md:py-2 text-xs md:text-[13px] text-center text-white font-poppins rounded-md transition-colors"
                 style={{ backgroundColor: themeColor }}
               >
-                DOCUMENTATION
+                Call Us
               </button>
             </div>
           </div>
