@@ -142,6 +142,7 @@ async function ensureTablesExist() {
 }
 
 interface User {
+  updatedAt: Date | null;
   id: string;
   name: string | null;
   phoneNumber: string | null;
@@ -297,140 +298,10 @@ if (!agencyAdmin || !['AGENCY_ADMIN', 'TRAVEL_AGENCY'].includes(agencyAdmin.user
 
     if (existingUserForm || existingUser) {
       console.log("ℹ️ User already exists with email:", email);
-
-      // Generate reset token
-      const resetToken = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-      const resetTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-      let updatedUser;
-
-      if (existingUserForm) {
-        console.log("🔄 Updating existing user_form with agencyId:", agencyAdminId);
-
-        updatedUser = await prisma.userForm.update({
-          where: { email },
-          data: {
-            name: name || existingUserForm.name,
-            phoneNumber: phoneNumber || existingUserForm.phoneNumber,
-            userType: userType,
-            password: await hash(password, 10),
-           agencyId: agencyAdminId,  // Use agencyId instead of agency
-            updatedAt: new Date(),
-            resetToken,
-            resetTokenExpiry
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            userType: true,
-            phoneNumber: true,
-            agencyId: true,
-            createdAt: true,
-            updatedAt: true,
-          }
-        });
-
-        console.log("✅ User updated with agencyId:", updatedUser.agencyId);
-      } else if (existingUser) {
-        await prisma.passwordReset.upsert({
-          where: { userId: existingUser.id },
-          update: {
-            token: resetToken,
-            expiresAt: resetTokenExpiry
-          },
-          create: {
-            token: resetToken,
-            expiresAt: resetTokenExpiry,
-            user: {
-              connect: { id: existingUser.id }
-            }
-          }
-        });
-
-        updatedUser = await prisma.user.update({
-          where: { email },
-          data: {
-            name: name || existingUser.name,
-            phone: phoneNumber || existingUser.phone,
-            userType: userType as 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL' | 'TRAVEL_AGENCY',
-            password: await hash(password, 10), // Update password
-            updatedAt: new Date(),
-            businessType: 'AGENCY'
-          },
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            userType: true,
-            phone: true,
-            createdAt: true,
-            updatedAt: true,
-          }
-        });
-      }
-
-      // Send updated credentials email
-      try {
-        const loginUrl = new URL('/login', process.env.NEXTAUTH_URL || 'http://localhost:3000');
-        loginUrl.searchParams.set('email', email);
-
-        await sendEmail({
-          to: email,
-          subject: 'Account Updated - New Login Credentials',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #2563eb;">Account Updated!</h2>
-              <p>Hello ${name},</p>
-              <p>Your account has been updated by an administrator with new login credentials.</p>
-              
-              <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                <p><strong>Email:</strong> ${email}</p>
-                <p><strong>New Password:</strong> ${password}</p>
-                <p><strong>User Type:</strong> ${userType}</p>
-              </div>
-              
-              <p>You can now log in to your account using the button below:</p>
-              
-              <div style="margin: 25px 0; text-align: center;">
-                <a href="${loginUrl.toString()}" 
-                   style="display: inline-block; background-color: #2563eb; color: white; 
-                          padding: 12px 24px; text-decoration: none; border-radius: 6px;
-                          font-weight: 600;">
-                  Login to Your Account
-                </a>
-              </div>
-              
-              <p style="font-size: 14px; color: #64748b;">
-                Or copy and paste this link in your browser:<br>
-                <a href="${loginUrl.toString()}" style="color: #3b82f6; word-break: break-all;">
-                  ${loginUrl.toString()}
-                </a>
-              </p>
-              
-              <p style="margin-top: 30px; font-size: 14px; color: #64748b;">
-                For security reasons, please change your password after logging in.
-              </p>
-            </div>
-          `,
-        });
-      } catch (emailError) {
-        console.error('Error sending update email:', emailError);
-      }
-
       return NextResponse.json({
-        success: true,
-        message: 'User updated successfully. New credentials sent to email.',
-        data: {
-          id: updatedUser!.id,
-          name: updatedUser!.name,
-          email: updatedUser!.email,
-          userType: updatedUser!.userType,
-          agencyId: 'agencyId' in updatedUser! ? updatedUser!.agencyId : null
-        }
-      });
+        success: false,
+        error: 'User already exists with this email',
+      }, { status: 409 });
     }
 
     // Create new user
@@ -622,24 +493,29 @@ if (!agencyAdmin || !['AGENCY_ADMIN', 'TRAVEL_AGENCY'].includes(agencyAdmin.user
 }
 
 // GET - Fetch all users for the agency
+// Replace the GET function with this updated version:
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    const agencyAdminUserId = session.user.id;
     
+    const agencyAdminUserId = session.user.id;
+    console.log("📊 Fetching users for agency admin:", agencyAdminUserId);
 
     if (!agencyAdminUserId) {
       return NextResponse.json({
         success: false,
-        error: 'agencyId is required (or authenticate as an agency admin)'
+        error: 'Agency ID is required'
       }, { status: 400 });
     }
 
+    // Query user_form table with agencyId filter
     const users = await prisma.userForm.findMany({
-      where: { createdBy: agencyAdminUserId },
+      where: { 
+        agencyId: agencyAdminUserId  // KEY CHANGE: Use agencyId
+      },
       include: {
         profileImage: true
       },
@@ -648,10 +524,16 @@ export async function GET() {
       }
     });
 
-    console.log(`✅ Found ${users.length} users for agency admin ${agencyAdminUserId}`);
+    console.log(`✅ Found ${users.length} users with agencyId: ${agencyAdminUserId}`);
+    
+    // Debug: Log first user's agencyId
+    if (users.length > 0) {
+      console.log("Sample user agencyId:", users[0].agencyId);
+    }
 
     return NextResponse.json({
       success: true,
+      count: users.length,
       data: users.map((user: User) => ({
         id: user.id,
         name: user.name || '',
@@ -663,6 +545,7 @@ export async function GET() {
         status: user.status,
         agencyId: user.agencyId,
         createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
         profileImage: user.profileImage,
         maskedPassword: "•••••••"
       }))
@@ -678,7 +561,6 @@ export async function GET() {
     await prisma.$disconnect();
   }
 }
-
 // PATCH - Reveal password (returns masked for security)
 export async function PATCH(req: Request) {
   try {

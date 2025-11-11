@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
-import { ChevronDown, Minus, Plus, Calendar, Check, Edit, X } from "lucide-react"
+import { ChevronDown, Minus, Plus, Calendar, Check, Edit, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -258,6 +258,21 @@ function ItineraryFormContent() {
   const [showDestinationDropdown, setShowDestinationDropdown] = useState(false)
   const [showHotelDropdown, setShowHotelDropdown] = useState(false)
   const [showCalendar, setShowCalendar] = useState({ start: false, end: false })
+  const [calendarView, setCalendarView] = useState<{ start: Date; end: Date }>({ start: new Date(), end: new Date() })
+  const formatDisplayDate = (date: Date) => {
+    const d = date.getDate()
+    const m = date.toLocaleString("en-US", { month: "short" })
+    const y = String(date.getFullYear()).slice(-2)
+    return `${d} ${m} ${y}`
+  }
+  const formatMonthLabel = (date: Date) => date.toLocaleString("en-US", { month: "long", year: "numeric" })
+  const changeMonth = (which: "start" | "end", delta: number) => {
+    setCalendarView((prev) => {
+      const base = prev[which]
+      const next = new Date(base.getFullYear(), base.getMonth() + delta, 1)
+      return { ...prev, [which]: next }
+    })
+  }
   const [isGenerating, setIsGenerating] = useState(false)
   const [isGenerated, setIsGenerated] = useState(false)
   const router = useRouter()
@@ -936,7 +951,13 @@ function ItineraryFormContent() {
                     <div className="relative">
                       <div
                         className="h-12 px-3 border border-gray-300 rounded-md bg-white cursor-pointer flex items-center justify-between"
-                        onClick={() => setShowCalendar((prev) => ({ ...prev, start: !prev.start }))}
+                        onClick={() => {
+                          setShowCalendar((prev) => ({ ...prev, start: !prev.start }))
+                          setCalendarView((prev) => {
+                            const base = formData.startDate ? new Date(formData.startDate) : new Date()
+                            return { ...prev, start: new Date(base.getFullYear(), base.getMonth(), 1) }
+                          })
+                        }}
                       >
                         <span className={formData.startDate ? "text-gray-900" : "text-gray-400"}>
                           {formData.startDate || "Select start date"}
@@ -945,19 +966,31 @@ function ItineraryFormContent() {
                       </div>
                       {showCalendar.start && (
                         <div className="absolute z-10 mt-1 p-4 bg-white border border-gray-300 rounded-md shadow-lg">
-                          <div className="text-sm text-gray-600 mb-2">March 2025</div>
+                          <div className="flex items-center justify-between mb-2">
+                            <button type="button" onClick={() => changeMonth("start", -1)} className="p-1 hover:bg-gray-100 rounded">
+                              <ChevronLeft className="h-4 w-4 text-gray-600" />
+                            </button>
+                            <div className="text-sm text-gray-600">{formatMonthLabel(calendarView.start)}</div>
+                            <button type="button" onClick={() => changeMonth("start", 1)} className="p-1 hover:bg-gray-100 rounded">
+                              <ChevronRight className="h-4 w-4 text-gray-600" />
+                            </button>
+                          </div>
                           <div className="grid grid-cols-7 gap-1 text-xs">
-                            {["S", "M", "T", "W", "T", "F", "S"].map((day) => (
-                              <div key={day} className="p-2 text-center font-medium text-gray-400">
-                                {day}
-                              </div>
+                            {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+                              <div key={`${d}-${i}`} className="p-2 text-center font-medium text-gray-400">{d}</div>
                             ))}
-                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                            {Array.from({ length: new Date(calendarView.start.getFullYear(), calendarView.start.getMonth(), 1).getDay() }).map((_, i) => (
+                              <div key={`blank-${i}`} className="p-2" />
+                            ))}
+                            {Array.from({ length: new Date(calendarView.start.getFullYear(), calendarView.start.getMonth() + 1, 0).getDate() }, (_, i) => i + 1).map((day) => (
                               <div
                                 key={day}
                                 className="p-2 text-center cursor-pointer hover:bg-green-100 rounded"
                                 onClick={() => {
-                                  updateFormData("startDate", `${day} Mar 25`)
+                                  const y = calendarView.start.getFullYear()
+                                  const m = calendarView.start.getMonth()
+                                  const selected = new Date(y, m, day)
+                                  updateFormData("startDate", formatDisplayDate(selected) as any)
                                   setShowCalendar((prev) => ({ ...prev, start: false }))
                                 }}
                               >
@@ -976,7 +1009,13 @@ function ItineraryFormContent() {
                     <div className="relative">
                       <div
                         className="h-12 px-3 border border-gray-300 rounded-md bg-white cursor-pointer flex items-center justify-between"
-                        onClick={() => setShowCalendar((prev) => ({ ...prev, end: !prev.end }))}
+                        onClick={() => {
+                          setShowCalendar((prev) => ({ ...prev, end: !prev.end }))
+                          setCalendarView((prev) => {
+                            const base = formData.endDate ? new Date(formData.endDate) : new Date()
+                            return { ...prev, end: new Date(base.getFullYear(), base.getMonth(), 1) }
+                          })
+                        }}
                       >
                         <span className={formData.endDate ? "text-gray-900" : "text-gray-400"}>
                           {formData.endDate || "Select end date"}
@@ -985,19 +1024,31 @@ function ItineraryFormContent() {
                       </div>
                       {showCalendar.end && (
                         <div className="absolute z-10 mt-1 p-4 bg-white border border-gray-300 rounded-md shadow-lg">
-                          <div className="text-sm text-gray-600 mb-2">March 2025</div>
+                          <div className="flex items-center justify-between mb-2">
+                            <button type="button" onClick={() => changeMonth("end", -1)} className="p-1 hover:bg-gray-100 rounded">
+                              <ChevronLeft className="h-4 w-4 text-gray-600" />
+                            </button>
+                            <div className="text-sm text-gray-600">{formatMonthLabel(calendarView.end)}</div>
+                            <button type="button" onClick={() => changeMonth("end", 1)} className="p-1 hover:bg-gray-100 rounded">
+                              <ChevronRight className="h-4 w-4 text-gray-600" />
+                            </button>
+                          </div>
                           <div className="grid grid-cols-7 gap-1 text-xs">
-                            {["S", "M", "T", "W", "T", "F", "S"].map((day) => (
-                              <div key={day} className="p-2 text-center font-medium text-gray-400">
-                                {day}
-                              </div>
+                            {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+                              <div key={`${d}-${i}`} className="p-2 text-center font-medium text-gray-400">{d}</div>
                             ))}
-                            {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                            {Array.from({ length: new Date(calendarView.end.getFullYear(), calendarView.end.getMonth(), 1).getDay() }).map((_, i) => (
+                              <div key={`blank-e-${i}`} className="p-2" />
+                            ))}
+                            {Array.from({ length: new Date(calendarView.end.getFullYear(), calendarView.end.getMonth() + 1, 0).getDate() }, (_, i) => i + 1).map((day) => (
                               <div
                                 key={day}
                                 className="p-2 text-center cursor-pointer hover:bg-green-100 rounded"
                                 onClick={() => {
-                                  updateFormData("endDate", `${day} Mar 25`)
+                                  const y = calendarView.end.getFullYear()
+                                  const m = calendarView.end.getMonth()
+                                  const selected = new Date(y, m, day)
+                                  updateFormData("endDate", formatDisplayDate(selected) as any)
                                   setShowCalendar((prev) => ({ ...prev, end: false }))
                                 }}
                               >
