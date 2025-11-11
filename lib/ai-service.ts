@@ -35,10 +35,10 @@ export function getAIModel(userTier: UserTier): string {
 // Get max tokens based on user tier
 function getMaxTokensForTier(userTier: UserTier): number {
   const tokenLimits = {
-    standard: 2000, // ~1500 words
-    premium: 4000, // ~3000 words
+    standard: 3000, // ~2250 words (increased to reduce truncation)
+    premium: 6000, // ~4500 words (increased to reduce truncation)
   }
-  return tokenLimits[userTier] || 2000
+  return tokenLimits[userTier] || 3000
 }
 
 // Calculate cost based on usage
@@ -331,12 +331,262 @@ export async function generateItinerary(
       throw new Error("No content received from OpenAI")
     }
 
+    // Check if response was truncated
+    const finishReason = response.choices[0]?.finish_reason
+    if (finishReason === "length") {
+      console.warn("[AI Service] Response was truncated due to token limit. Consider increasing max_tokens.")
+    }
+
+    // Clean and prepare JSON content
+    let cleanedContent = content.trim()
+    
+    // Remove markdown code blocks if present
+    cleanedContent = cleanedContent.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "")
+    
+    // Try to extract JSON if wrapped in other text
+    const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      cleanedContent = jsonMatch[0]
+    }
+
+    // Function to repair JSON with unescaped quotes and control characters
+    function repairJSON(jsonString: string): string {
+      let result = ""
+      let inString = false
+      let escapeNext = false
+      
+      for (let i = 0; i < jsonString.length; i++) {
+        const char = jsonString[i]
+        const prevChar = i > 0 ? jsonString[i - 1] : ""
+        
+        if (escapeNext) {
+          result += char
+          escapeNext = false
+          continue
+        }
+        
+        if (char === "\\") {
+          result += char
+          escapeNext = true
+          continue
+        }
+        
+        if (char === '"') {
+          if (inString) {
+            // We're inside a string - check if this quote should end the string
+            // Look ahead to see if this is followed by structural characters
+            const lookAhead = jsonString.substring(i + 1, i + 20).trim()
+            // If followed by colon, comma, closing brace/bracket, or whitespace then end of string, it's structural
+            if (lookAhead.match(/^[,\]:}\]]/)) {
+              // This ends the string
+              inString = false
+              result += char
+            } else {
+              // This is an unescaped quote inside a string - escape it
+              result += '\\"'
+            }
+          } else {
+            // We're not in a string - this starts a new string
+            inString = true
+            result += char
+          }
+        } else if (inString) {
+          // Handle control characters in strings
+          if (char === "\n") {
+            result += "\\n"
+          } else if (char === "\r") {
+            result += "\\r"
+          } else if (char === "\t") {
+            result += "\\t"
+          } else if (char === "\b") {
+            result += "\\b"
+          } else if (char === "\f") {
+            result += "\\f"
+          } else {
+            result += char
+          }
+        } else {
+          result += char
+        }
+      }
+      
+      return result
+    }
+
     let itinerary
     try {
-      itinerary = JSON.parse(content)
+      itinerary = JSON.parse(cleanedContent)
     } catch (parseError) {
+      // Log more details about the parsing error
+      const errorPosition = parseError instanceof SyntaxError && 'position' in parseError 
+        ? (parseError as any).position 
+        : null
+      
       console.error("[AI Service] Failed to parse JSON response:", parseError)
-      throw new Error("Invalid JSON response from AI")
+      console.error("[AI Service] Content length:", cleanedContent.length)
+      console.error("[AI Service] Finish reason:", finishReason)
+      console.error("[AI Service] Error position:", errorPosition)
+      
+      if (errorPosition !== null && errorPosition < cleanedContent.length) {
+        const start = Math.max(0, errorPosition - 200)
+        const end = Math.min(cleanedContent.length, errorPosition + 200)
+        console.error("[AI Service] Content around error position:", cleanedContent.substring(start, end))
+      } else {
+        console.error("[AI Service] Last 500 characters of content:", cleanedContent.substring(Math.max(0, cleanedContent.length - 500)))
+      }
+      
+      // Try to repair JSON
+      try {
+        console.log("[AI Service] Attempting to repair JSON...")
+        const repairedContent = repairJSON(cleanedContent)
+        itinerary = JSON.parse(repairedContent)
+        console.log("[AI Service] Successfully parsed JSON after repair")
+      } catch (repairError) {
+        // If repair failed and response was truncated, try to close the JSON structure
+        if (finishReason === "length") {
+          try {
+            console.log("[AI Service] Attempting to close truncated JSON...")
+            // First, try to repair the JSON
+            let repairedContent = repairJSON(cleanedContent)
+            
+            // Find the last complete value by working backwards
+            // Look for the last comma, closing brace, or closing bracket that's not in a string
+            let lastValidPos = -1
+            let inString = false
+            let escapeNext = false
+            let depth = 0
+            let bracketDepth = 0
+            let braceDepth = 0
+            let foundCompleteValue = false
+            
+            // First pass: find where we are in the structure
+            for (let i = 0; i < repairedContent.length; i++) {
+              const char = repairedContent[i]
+              
+              if (escapeNext) {
+                escapeNext = false
+                continue
+              }
+              
+              if (char === "\\") {
+                escapeNext = true
+                continue
+              }
+              
+              if (char === '"') {
+                inString = !inString
+                continue
+              }
+              
+              if (!inString) {
+                if (char === '[') bracketDepth++
+                else if (char === ']') bracketDepth--
+                else if (char === '{') braceDepth++
+                else if (char === '}') braceDepth--
+                else if (char === ',' && bracketDepth >= 0 && braceDepth >= 0) {
+                  // This is a valid comma after a complete value
+                  lastValidPos = i
+                  foundCompleteValue = true
+                } else if ((char === '}' || char === ']') && bracketDepth >= 0 && braceDepth >= 0) {
+                  // This is a valid closing bracket/brace
+                  lastValidPos = i
+                  foundCompleteValue = true
+                }
+              }
+            }
+            
+            let truncatedContent = repairedContent
+            
+            // If we found a complete value, trim to that point
+            if (foundCompleteValue && lastValidPos >= 0) {
+              truncatedContent = repairedContent.substring(0, lastValidPos + 1)
+              // If we ended on a comma, we need to remove it before closing structures
+              if (truncatedContent.trim().endsWith(',')) {
+                truncatedContent = truncatedContent.replace(/,\s*$/, '')
+              }
+            } else {
+              // No complete value found - try to find the last closing bracket/brace
+              for (let i = repairedContent.length - 1; i >= 0; i--) {
+                const char = repairedContent[i]
+                if (char === '}' || char === ']') {
+                  // Check if it's in a string
+                  inString = false
+                  escapeNext = false
+                  for (let j = 0; j < i; j++) {
+                    if (escapeNext) {
+                      escapeNext = false
+                      continue
+                    }
+                    if (repairedContent[j] === '\\') {
+                      escapeNext = true
+                      continue
+                    }
+                    if (repairedContent[j] === '"') {
+                      inString = !inString
+                    }
+                  }
+                  if (!inString) {
+                    lastValidPos = i
+                    truncatedContent = repairedContent.substring(0, i + 1)
+                    break
+                  }
+                }
+              }
+            }
+            
+            // Close any unclosed strings
+            let quoteCount = 0
+            let escapeNextForQuote = false
+            for (let i = 0; i < truncatedContent.length; i++) {
+              if (escapeNextForQuote) {
+                escapeNextForQuote = false
+                continue
+              }
+              if (truncatedContent[i] === "\\") {
+                escapeNextForQuote = true
+                continue
+              }
+              if (truncatedContent[i] === '"') {
+                quoteCount++
+              }
+            }
+            
+            if (quoteCount % 2 === 1) {
+              truncatedContent += '"'
+            }
+            
+            // Count and close open structures
+            const openBraces = (truncatedContent.match(/\{/g) || []).length
+            const closeBraces = (truncatedContent.match(/\}/g) || []).length
+            const openBrackets = (truncatedContent.match(/\[/g) || []).length
+            const closeBrackets = (truncatedContent.match(/\]/g) || []).length
+            
+            // Add missing closing brackets/braces
+            for (let i = 0; i < openBrackets - closeBrackets; i++) {
+              truncatedContent += "]"
+            }
+            for (let i = 0; i < openBraces - closeBraces; i++) {
+              truncatedContent += "}"
+            }
+            
+            itinerary = JSON.parse(truncatedContent)
+            console.log("[AI Service] Successfully parsed truncated JSON after closing structure")
+          } catch (truncatedError) {
+            console.error("[AI Service] Failed to repair truncated JSON:", truncatedError)
+            // Log the error position for debugging
+            const errorPos = truncatedError instanceof SyntaxError && 'position' in truncatedError 
+              ? (truncatedError as any).position 
+              : null
+            if (errorPos !== null) {
+              console.error("[AI Service] Truncation error at position:", errorPos)
+            }
+            throw new Error(`Invalid JSON response from AI (truncated): ${parseError instanceof Error ? parseError.message : String(parseError)}. Consider increasing max_tokens.`)
+          }
+        } else {
+          console.error("[AI Service] JSON repair failed:", repairError)
+          throw new Error(`Invalid JSON response from AI: ${parseError instanceof Error ? parseError.message : String(parseError)}`)
+        }
+      }
     }
 
     // Validate and format the response
