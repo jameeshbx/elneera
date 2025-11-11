@@ -54,10 +54,10 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
   const [profileData, setProfileData] = useState(initialProfileData)
   const [profileImageKey, setProfileImageKey] = useState(Date.now())
 
-  
+
   // Internal expanded state for when no external control is provided
   const [internalExpanded, setInternalExpanded] = useState(true)
-  
+
   // Use external expanded state if provided, otherwise use internal
   const expanded = externalExpanded !== undefined ? externalExpanded : internalExpanded
 
@@ -73,8 +73,8 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
   useEffect(() => {
     const fetchCompanyData = async () => {
       try {
-     const userId = session?.user?.id || session?.user?.email || undefined   
-      const url = userId ? `/api/auth/agency-profile-admin?userId=${encodeURIComponent(userId)}` : "/api/auth/agency-profile-admin"
+        const userId = session?.user?.id || session?.user?.email || undefined
+        const url = userId ? `/api/auth/agency-profile-admin?userId=${encodeURIComponent(userId)}` : "/api/auth/agency-profile-admin"
 
         const response = await fetch(url, {
           method: "GET",
@@ -91,13 +91,13 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         console.log('Logo URL:', data?.companyInformation?.logo)
         console.log('Landing Page Color:', data?.companyInformation?.landingPageColor)
         console.log('Profile Data:', data?.profileData)
-        
+
         const companyInfo = {
           name: data?.companyInformation?.name || 'Agency',
           logoUrl: data?.companyInformation?.logo || null,
           landingPageColor: data?.companyInformation?.landingPageColor || "#4ECDC4"
         }
-        
+
         setCompanyData(companyInfo)
         setThemeColor(companyInfo.landingPageColor)
 
@@ -124,7 +124,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         } catch {
           // ignore silently if dispatch not available
         }
-        
+
       } catch (error) {
         console.error('Failed to fetch company data:', error)
         setCompanyData({
@@ -137,7 +137,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         setIsLoading(false)
       }
     }
-  
+
     if (session) {
       fetchCompanyData()
     }
@@ -164,7 +164,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
           ...prev,
           landingPageColor: event.detail.color
         } : null)
-        
+
         document.documentElement.style.setProperty('--theme-color', event.detail.color)
         document.documentElement.style.setProperty('--theme-color-light', event.detail.color + '20')
         document.documentElement.style.setProperty('--theme-color-dark', adjustBrightness(event.detail.color, -20))
@@ -190,7 +190,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
     window.addEventListener('logoUpdated', handleLogoUpdate as EventListener)
     window.addEventListener('themeUpdated', handleThemeUpdate as EventListener)
     window.addEventListener('profileUpdated', handleProfileUpdate as EventListener)
-    
+
     return () => {
       window.removeEventListener('logoUpdated', handleLogoUpdate as EventListener)
       window.removeEventListener('themeUpdated', handleThemeUpdate as EventListener)
@@ -215,12 +215,12 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
 
   // Toggle function that works with both internal and external state
   const toggleSidebar = () => {
-  if (setExpanded) {
-    setExpanded(!expanded)
-  } else {
-    setInternalExpanded(!expanded)
+    if (setExpanded) {
+      setExpanded(!expanded)
+    } else {
+      setInternalExpanded(!expanded)
+    }
   }
-}
 
   const menuItems: MenuItem[] = [
     {
@@ -233,59 +233,59 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
       href: "/agency-admin/dashboard/enquiry",
       icon: <Image src="/login.svg" alt="Enquiries" width={20} height={20} className="min-w-[20px]" />,
     },
-   /*  {
-      title: "Flights",
-      href: "/agency-admin/dashboard/flights",
-      icon: <Image src="/flight.png" alt="Flights" width={20} height={20} className="min-w-[20px]" />,
-    },
+    /*  {
+       title: "Flights",
+       href: "/agency-admin/dashboard/flights",
+       icon: <Image src="/flight.png" alt="Flights" width={20} height={20} className="min-w-[20px]" />,
+     },
+     {
+       title: "Accommodation",
+       href: "/agency-admin/dashboard/accomadation",
+       icon: <Image src="/sleep.png" alt="Accommodation" width={20} height={20} className="min-w-[20px]" />,
+     },
+     {
+       title: "Reports",
+       href: "/agency-admin/dashboard/reports",
+       icon: (
+         <Image
+           src="/subscription.svg"
+           alt="Reports"
+           width={20}
+           height={20}
+           className="min-w-[20px]"
+         />
+       ),
+       isDropdown: true,
+       dropdownItems: [
+         {
+           name: "Bookings",
+           href: "/agency-admin/dashboard/reports/recent-booking",
+           logo: <Image src="/dmcagency.svg" alt="Bookings" width={16} height={16} className="mr-2 min-w-[16px]" />,
+         },
+         {
+           name: "Revenue by Destinations",
+           href: "agency-admin/dashboard/reports/revenue-destination",
+           logo: (
+             <Image
+               src="/dmcagency.svg"
+               alt="Revenue by Destinations"
+               width={16}
+               height={16}
+               className="mr-2 min-w-[16px]"
+             />
+           ),
+         },
+         {
+           name: "Revenue by DMC",
+           href: "/agency-admin/dashboard/reports/revenue-dmc",
+           logo: (
+             <Image src="/dmcagency.svg" alt="Revenue by DMC" width={16} height={16} className="mr-2 min-w-[16px]" />
+           ),
+         },
+       ],
+     }, */
     {
-      title: "Accommodation",
-      href: "/agency-admin/dashboard/accomadation",
-      icon: <Image src="/sleep.png" alt="Accommodation" width={20} height={20} className="min-w-[20px]" />,
-    },
-    {
-      title: "Reports",
-      href: "/agency-admin/dashboard/reports",
-      icon: (
-        <Image
-          src="/subscription.svg"
-          alt="Reports"
-          width={20}
-          height={20}
-          className="min-w-[20px]"
-        />
-      ),
-      isDropdown: true,
-      dropdownItems: [
-        {
-          name: "Bookings",
-          href: "/agency-admin/dashboard/reports/recent-booking",
-          logo: <Image src="/dmcagency.svg" alt="Bookings" width={16} height={16} className="mr-2 min-w-[16px]" />,
-        },
-        {
-          name: "Revenue by Destinations",
-          href: "agency-admin/dashboard/reports/revenue-destination",
-          logo: (
-            <Image
-              src="/dmcagency.svg"
-              alt="Revenue by Destinations"
-              width={16}
-              height={16}
-              className="mr-2 min-w-[16px]"
-            />
-          ),
-        },
-        {
-          name: "Revenue by DMC",
-          href: "/agency-admin/dashboard/reports/revenue-dmc",
-          logo: (
-            <Image src="/dmcagency.svg" alt="Revenue by DMC" width={16} height={16} className="mr-2 min-w-[16px]" />
-          ),
-        },
-      ],
-    }, */
-    {
-      title: "Add Users", 
+      title: "Add Users",
       href: "/agency-admin/dashboard/add-users",
       icon: (
         <Image
@@ -319,21 +319,21 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         />
       ),
     },
-   /*  {
-      title: "Settings",
-      href: "/agency-admin/dashboard/settings",
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-          />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-    }, */
+    /*  {
+       title: "Settings",
+       href: "/agency-admin/dashboard/settings",
+       icon: (
+         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+           <path
+             strokeLinecap="round"
+             strokeLinejoin="round"
+             strokeWidth={2}
+             d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+           />
+           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+         </svg>
+       ),
+     }, */
     {
       title: "Logout",
       href: "#",
@@ -351,27 +351,26 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
     },
   ]
 
-const isCollapsed = isMobile ? !expanded : !expanded
+  const isCollapsed = isMobile ? !expanded : !expanded
 
   const getLogoUrl = (logoPath: string | null | undefined) => {
     if (!logoPath) return null
-    
+
     if (logoPath.startsWith('http')) {
       return logoPath
     }
-    
+
     if (logoPath.startsWith('/')) {
       return `${process.env.NEXT_PUBLIC_BASE_URL || ''}${logoPath}`
     }
-    
+
     return `${process.env.NEXT_PUBLIC_BASE_URL || ''}/uploads/${logoPath}`
   }
 
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 h-full bg-white shadow-lg transition-all duration-300 ${
-        isMobile ? "w-16" : expanded ? "w-64" : "w-16"
-      }`}
+      className={`fixed inset-y-0 left-0 z-40 h-full bg-white shadow-lg transition-all duration-300 ${isMobile ? "w-16" : expanded ? "w-64" : "w-16"
+        }`}
       data-cy="sidebar"
     >
       {/* Toggle Button - Only show on desktop */}
@@ -448,11 +447,10 @@ const isCollapsed = isMobile ? !expanded : !expanded
                     onClick={toggleReports}
                     onMouseEnter={() => setHoveredItem(item.title)}
                     onMouseLeave={() => setHoveredItem(null)}
-                    className={`flex items-center w-full ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors ${
-                      pathname.startsWith("/agency/dashboard/reports")
+                    className={`flex items-center w-full ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors ${pathname.startsWith("/agency/dashboard/reports")
                         ? "text-white"
                         : "text-gray-700 hover:bg-gray-100"
-                    }`}
+                      }`}
                     style={{
                       backgroundColor: pathname.startsWith("/agency/dashboard/reports") ? themeColor : 'transparent'
                     }}
@@ -479,11 +477,10 @@ const isCollapsed = isMobile ? !expanded : !expanded
                         <Link
                           key={dropdownItem.href}
                           href={dropdownItem.href}
-                          className={`flex items-center px-3 py-2 text-sm rounded-lg ${
-                            pathname === dropdownItem.href
+                          className={`flex items-center px-3 py-2 text-sm rounded-lg ${pathname === dropdownItem.href
                               ? "text-white"
                               : "text-gray-600 hover:bg-gray-100"
-                          }`}
+                            }`}
                           style={{
                             backgroundColor: pathname === dropdownItem.href ? themeColor : 'transparent'
                           }}
@@ -501,9 +498,8 @@ const isCollapsed = isMobile ? !expanded : !expanded
                   href={item.href}
                   onMouseEnter={() => setHoveredItem(item.title)}
                   onMouseLeave={() => setHoveredItem(null)}
-                  className={`flex items-center ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors relative ${
-                    pathname === item.href ? "text-white" : "text-gray-700 hover:bg-gray-100"
-                  }`}
+                  className={`flex items-center ${isCollapsed ? "justify-center p-3" : "p-2 md:p-3"} rounded-lg transition-colors relative ${pathname === item.href ? "text-white" : "text-gray-700 hover:bg-gray-100"
+                    }`}
                   style={{
                     backgroundColor: pathname === item.href ? themeColor : 'transparent'
                   }}
@@ -566,7 +562,7 @@ const isCollapsed = isMobile ? !expanded : !expanded
             </div>
           </div>
         </nav>
- 
+
         {!isCollapsed && (
           <div className="p-2 md:p-3 mt-auto">
             <Image
@@ -587,14 +583,13 @@ const isCollapsed = isMobile ? !expanded : !expanded
               <h4 className="mt-1 md:mt-2 mb-0 md:mb-1 text-xs md:text-[15px] text-white font-poppins">
                 Need help?
               </h4>
-              <p className="mb-1 md:mb-2 text-[11px] md:text-[13px] text-white font-poppins">
-                Please check our docs
-              </p>
-              <button 
+
+              <button
+                onClick={() => window.location.href = 'tel:+919633779922'}
                 className="w-full px-2 py-1 md:px-3 md:py-2 text-xs md:text-[13px] text-center text-white font-poppins rounded-md transition-colors"
                 style={{ backgroundColor: themeColor }}
               >
-                DOCUMENTATION
+                Call Us
               </button>
             </div>
           </div>
