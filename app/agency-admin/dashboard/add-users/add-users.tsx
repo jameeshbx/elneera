@@ -176,74 +176,57 @@ export default function AddUsers() {
     fetchUsers()
   }, [])
 
-  const fetchUsers = async () => {
-    try {
-      // Let the API resolve the agency admin from the server session
-      const response = await fetch('/api/auth/agency-add-user', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch users');
-      }
-      
-      const data = await response.json();
-      console.log('Fetched users:', data);
-      
-      if (data.success && Array.isArray(data.data)) {
-        interface ApiUser {
-        id: string;
-        name: string;
-        phoneNumber: string;
-        phoneExtension: string;
-        email: string;
-        userType: 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL';
-        password: string;
-        maskedPassword: string;
-        status: 'ACTIVE' | 'INACTIVE';
-        createdAt: string;
-        profileImage?: {
-          name: string;
-          url: string;
-        } | null;
-      }
-
-      const mappedUsers = data.data.map((user: ApiUser) => ({
-          id: user.id,
-          userId: `UID${user.id.slice(0, 4).toUpperCase()}`,
-          name: user.name,
-          phoneNumber: user.phoneNumber,
-          phoneExtension: user.phoneExtension,
-          email: user.email,
-          userType: user.userType || 'TEAM_LEAD',
-          password: user.password,
-          maskedPassword: "•••••••",
-          status: user.status || 'ACTIVE',
-          createdAt: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
-          profileImage: user.profileImage ? {
-            name: user.profileImage.name,
-            url: user.profileImage.url
-          } : null
-        }));
-        
-        console.log('Mapped users:', mappedUsers);
-        
-        setUsers(mappedUsers);
-        setDisplayedUsers(mappedUsers.slice(0, itemsPerPage));
-      }
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch users",
-        variant: "destructive",
-      });
+ const fetchUsers = async () => {
+  try {
+    console.log("🔄 Fetching users...");
+    
+    const response = await fetch('/api/auth/agency-add-user', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch users');
     }
-  };
+    
+    const data = await response.json();
+    console.log('📊 Fetched data:', data);
+    
+    if (data.success && Array.isArray(data.data)) {
+       const mappedUsers = data.data.map((user: User) => ({
+        id: user.id,
+        userId: `UID${user.id.slice(0, 4).toUpperCase()}`,
+        name: user.name,
+        username: user.username || user.email.split('@')[0],
+        phoneNumber: user.phoneNumber,
+        phoneExtension: user.phoneExtension,
+        email: user.email,
+        userType: user.userType || 'TEAM_LEAD',
+        password: user.password,
+        maskedPassword: "•••••••",
+        status: user.status || 'ACTIVE',
+        createdAt: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
+        profileImage: user.profileImage
+      }));
+      
+      console.log(`✅ Mapped ${mappedUsers.length} users`);
+      
+      setUsers(mappedUsers);
+      setCurrentPage(1);
+      setDisplayedUsers(mappedUsers.slice(0, itemsPerPage));
+    }
+  } catch (error) {
+    console.error('❌ Error fetching users:', error);
+    toast({
+      title: "Error",
+      description: "Failed to fetch users",
+      variant: "destructive",
+    });
+  }
+};
+useEffect(() => {
+  fetchUsers();
+}, []);
 
   useEffect(() => {
     if (users.length === 0) return
@@ -341,92 +324,82 @@ export default function AddUsers() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+ const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  if (!validateForm()) {
+    return;
+  }
+  
+  setIsLoading(true);
+  
+  try {
+    const formDataToSend = new FormData();
     
-    if (!validateForm()) {
-      console.log("Form validation failed");
-      return;
+    const userData = {
+      name: formData.name.trim(),
+      phoneNumber: formData.phone.trim(),
+      phoneExtension: phoneExtension,
+      email: formData.email.trim().toLowerCase(),
+      username: formData.email.trim().toLowerCase(),
+      password: formData.password,
+      userType: formData.userType,
+    };
+    
+    Object.entries(userData).forEach(([key, value]) => {
+      formDataToSend.append(key, value);
+    });
+    
+    if (formData.profile) {
+      formDataToSend.append("profileImage", formData.profile);
     }
+
+    const response = await fetch('/api/auth/agency-add-user', {
+      method: 'POST',
+      body: formDataToSend,
+      credentials: 'include',
+    });
+
+    const responseData = await response.json();
     
-    setIsLoading(true);
-    
-    try {
-      const formDataToSend = new FormData();
-      
-      // Basic user data
-      const userData = {
-        name: formData.name.trim(),
-        phoneNumber: formData.phone.trim(),
-        phoneExtension: phoneExtension,
-        email: formData.email.trim().toLowerCase(),
-        username: formData.email.trim().toLowerCase(), // Using email as username
-        password: formData.password,
-        userType: formData.userType,
-      };
-      
-      // Append all form data
-      Object.entries(userData).forEach(([key, value]) => {
-        formDataToSend.append(key, value);
-      });
-      
-      // Handle file upload if exists
-      if (formData.profile) {
-        formDataToSend.append("profileImage", formData.profile);
-      }
+    if (!response.ok) {
+      throw new Error(responseData.error || 'Failed to create user');
+    }
 
-      console.log('Submitting form with data:', {
-        name: formData.name,
-        phoneNumber: formData.phone,
-        phoneExtension,
-        email: formData.email,
-        userType: formData.userType,
-        hasProfileImage: !!formData.profile
-      });
-
-      // Add credentials to include cookies for session
-      const response = await fetch('/api/auth/agency-add-user', {
-        method: 'POST',
-        body: formDataToSend,
-        credentials: 'include',
-        // Don't set Content-Type header - let the browser set it with the correct boundary
-      });
-
-      const responseData = await response.json();
-      
-      if (!response.ok) {
-        console.error('API Error Response:', responseData);
-        throw new Error(responseData.error || responseData.message || 'Failed to create user');
-      }
-
-      if (responseData.success) {
-        toast({
-          title: "Success!",
-          description: "User has been created successfully!",
-          variant: "default",
-        });
-        
-        resetForm();
-        setUploadedFile(null);
-        
-        // Refresh the users list
-        await fetchUsers();
-      } else {
-        throw new Error(responseData.message || 'Failed to add user');
-      }
-
-    } catch (error) {
-      console.error('Error creating user:', error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to create user. Please try again.";
+    if (responseData.success) {
       toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
+        title: "Success!",
+        description: "User has been created successfully!",
+        variant: "default",
       });
-    } finally {
-      setIsLoading(false);
+      
+      resetForm();
+      
+      // KEY CHANGE: Fetch immediately after successful creation
+      await fetchUsers();
+      
+      // Dispatch event for profile page
+      window.dispatchEvent(new CustomEvent('userCreated', {
+        detail: {
+          user: responseData.data,
+          timestamp: new Date().toISOString()
+        }
+      }));
+      
+      console.log("✅ User created and list refreshed");
     }
-  };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    toast({
+      title: "Error",
+      description: error instanceof Error ? error.message : "Failed to create user",
+      variant: "destructive",
+    });
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const togglePasswordVisibility = async (id: string) => {
     try {

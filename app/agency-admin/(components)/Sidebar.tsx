@@ -233,7 +233,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
       href: "/agency-admin/dashboard/enquiry",
       icon: <Image src="/login.svg" alt="Enquiries" width={20} height={20} className="min-w-[20px]" />,
     },
-    {
+   /*  {
       title: "Flights",
       href: "/agency-admin/dashboard/flights",
       icon: <Image src="/flight.png" alt="Flights" width={20} height={20} className="min-w-[20px]" />,
@@ -283,7 +283,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
           ),
         },
       ],
-    },
+    }, */
     {
       title: "Add Users", 
       href: "/agency-admin/dashboard/add-users",
@@ -319,7 +319,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
         />
       ),
     },
-    {
+   /*  {
       title: "Settings",
       href: "/agency-admin/dashboard/settings",
       icon: (
@@ -333,7 +333,7 @@ const Sidebar = ({ expanded: externalExpanded, setExpanded, profileData: initial
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       ),
-    },
+    }, */
     {
       title: "Logout",
       href: "#",
