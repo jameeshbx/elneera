@@ -746,7 +746,7 @@ const [tempBudget, setTempBudget] = useState(1000);
 
               {/* Name */}
               <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Name *</label>
+                <label className="text-xs sm:text-sm font-medium font-poppins">Name</label>
                 <Input
                   value={newEnquiry.name}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange("name", e.target.value)}
@@ -756,7 +756,7 @@ const [tempBudget, setTempBudget] = useState(1000);
                     "text-sm sm:text-base",
                     touched.name && validationErrors.name && "border-red-500 focus-visible:ring-red-500"
                   )}
-                  required
+                 
                 />
                 {touched.name && validationErrors.name && (
                   <p className="text-xs text-red-500 mt-1">{validationErrors.name}</p>
@@ -765,7 +765,7 @@ const [tempBudget, setTempBudget] = useState(1000);
 
               {/* Phone */}
               <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Phone No. *</label>
+                <label className="text-xs sm:text-sm font-medium font-poppins">Phone No. </label>
                 <div className="flex flex-col">
                   <div className="flex">
                     <div className="flex items-center border rounded-l-md px-2 bg-gray-50">
@@ -793,7 +793,7 @@ const [tempBudget, setTempBudget] = useState(1000);
                         "rounded-l-none text-sm sm:text-base",
                         touched.phone && validationErrors.phone && "border-red-500 focus-visible:ring-red-500"
                       )}
-                      required
+                      
                       maxLength={10}
                     />
                   </div>
@@ -804,24 +804,23 @@ const [tempBudget, setTempBudget] = useState(1000);
               </div>
 
               {/* Email */}
-              <div className="space-y-1 sm:space-y-2">
-                <label className="text-xs sm:text-sm font-medium font-poppins">Email *</label>
-                <Input
-                  type="email"
-                  value={newEnquiry.email}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange("email", e.target.value)}
-                  onBlur={() => handleBlur("email")}
-                  placeholder="Email address"
-                  className={cn(
-                    "text-sm sm:text-base",
-                    touched.email && validationErrors.email && "border-red-500 focus-visible:ring-red-500"
-                  )}
-                  required
-                />
-                {touched.email && validationErrors.email && (
-                  <p className="text-xs text-red-500 mt-1">{validationErrors.email}</p>
-                )}
-              </div>
+             <div className="space-y-1 sm:space-y-2">
+  <label className="text-xs sm:text-sm font-medium font-poppins">Email</label>
+  <Input
+    type="email"
+    value={newEnquiry.email}
+    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleInputChange("email", e.target.value)}
+    onBlur={() => handleBlur("email")}
+    placeholder="Email address"
+    className={cn(
+      "text-sm sm:text-base",
+      touched.email && validationErrors.email && "border-red-500 focus-visible:ring-red-500"
+    )}
+  />
+  {touched.email && validationErrors.email && (
+    <p className="text-xs text-red-500 mt-1">{validationErrors.email}</p>
+  )}
+</div>
 
               {/* Locations */}
               <div className="space-y-1 sm:space-y-2">
