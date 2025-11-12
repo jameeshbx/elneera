@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Star,
   FileDown,
+  Upload,
 } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useToast } from "@/hooks/use-toast"
@@ -40,8 +41,8 @@ interface ExtendedItinerary {
   id: string
   originalId?: string
   createdAt?: Date | string
-  pdfUrl?: string | null // Changed from any to string | null
-  editedPdfUrl?: string | null // Changed from any to string | null
+  pdfUrl?: string | null
+  editedPdfUrl?: string | null
   isEdited?: boolean
   activeStatus?: boolean
   status?: string
@@ -91,6 +92,10 @@ export default function ShareCustomerDashboard() {
     document: null,
   })
 
+  // New states for manual PDF upload
+  const [manualPdfFile, setManualPdfFile] = useState<File | null>(null)
+  const [uploadingManualPdf, setUploadingManualPdf] = useState(false)
+
   const [itineraryVersions, setItineraryVersions] = useState<ExtendedItinerary[]>([])
   const [customerFeedbacks, setCustomerFeedbacks] = useState<CustomerFeedback[]>([])
   const [sentItineraries, setSentItineraries] = useState<SentItinerary[]>([])
@@ -103,6 +108,9 @@ export default function ShareCustomerDashboard() {
   const [addingNote, setAddingNote] = useState(false)
   const [generatingPDF, setGeneratingPDF] = useState<string | null>(null)
   const { toast } = useToast()
+
+  // Check if generated PDFs are available
+  const hasGeneratedPDF = itineraryVersions.some(v => v.activePdfUrl)
 
   // Keep URL and state in sync; restore from localStorage if URL lacks params
   useEffect(() => {
@@ -117,7 +125,6 @@ export default function ShareCustomerDashboard() {
       setEnquiryId(enquiryIdParam)
       setItineraryId(itineraryIdParam)
 
-      // Show notification if coming from PDF generation
       if (pdfGeneratedParam === "true") {
         setTimeout(() => {
           toast({
@@ -129,7 +136,6 @@ export default function ShareCustomerDashboard() {
       }
 
       fetchCustomerData(customerIdParam, enquiryIdParam, itineraryIdParam)
-      // Persist context
       if (typeof window !== "undefined") {
         localStorage.setItem(
           "shareCustomerContext",
@@ -139,7 +145,6 @@ export default function ShareCustomerDashboard() {
       return
     }
 
-    // Fallback to last context from localStorage
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem("shareCustomerContext")
@@ -157,7 +162,6 @@ export default function ShareCustomerDashboard() {
           setEnquiryId(restoreEnquiryId)
           setItineraryId(restoreItineraryId)
 
-          // Update URL to reflect restored context without adding history entry
           const params = new URLSearchParams()
           if (restoreCustomerId) params.set("customerId", restoreCustomerId)
           if (restoreEnquiryId) params.set("enquiryId", restoreEnquiryId)
@@ -174,240 +178,221 @@ export default function ShareCustomerDashboard() {
 
     setError("Either Customer ID or Enquiry ID is required")
     setLoading(false)
-  }, [searchParams, router, toast]) // Added missing dependencies
+  }, [searchParams, router, toast])
 
-  // Update the fetchCustomerData function to properly handle both generated and regenerated PDFs
+  const fetchCustomerData = async (
+    customerIdParam: string | null,
+    enquiryIdParam: string | null,
+    itineraryIdParam: string | null,
+    forceRefresh = false,
+  ) => {
+    try {
+      setLoading(true)
+      setError(null)
 
-// Key changes in fetchCustomerData function:
+      const prevSelectedId = selectedItinerary?.id
+      const prevSelectedUrl = selectedPDFVersion
 
-const fetchCustomerData = async (
-  customerIdParam: string | null,
-  enquiryIdParam: string | null,
-  itineraryIdParam: string | null,
-  forceRefresh = false,
-) => {
-  try {
-    setLoading(true)
-    setError(null)
+      if (forceRefresh) {
+        setSelectedItinerary(null)
+        setItineraryVersions([])
+        setCustomerFeedbacks([])
+        setSentItineraries([])
+      }
 
-    const prevSelectedId = selectedItinerary?.id
-    const prevSelectedUrl = selectedPDFVersion
+      const params = new URLSearchParams()
+      if (customerIdParam) params.append("customerId", customerIdParam)
+      if (enquiryIdParam) params.append("enquiryId", enquiryIdParam)
+      if (itineraryIdParam) params.append("itineraryId", itineraryIdParam)
 
-    if (forceRefresh) {
-      setSelectedItinerary(null)
-      setItineraryVersions([])
-      setCustomerFeedbacks([])
-      setSentItineraries([])
-    }
+      const response = await fetch(`/api/share-customer?${params.toString()}`)
 
-    console.log("Fetching customer data for:", { customerIdParam, enquiryIdParam, itineraryIdParam })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+      }
 
-    const params = new URLSearchParams()
-    if (customerIdParam) params.append("customerId", customerIdParam)
-    if (enquiryIdParam) params.append("enquiryId", enquiryIdParam)
-    if (itineraryIdParam) params.append("itineraryId", itineraryIdParam)
+      const data: CustomerDashboardData = await response.json()
+      if (data.customer) {
+        setFormData((prev) => ({
+          ...prev,
+          name: data.customer?.name || "",
+          email: data.customer?.email || "",
+          whatsappNumber: data.customer?.whatsappNumber || data.customer?.phone || "",
+        }))
+      }
 
-    const response = await fetch(`/api/share-customer?${params.toString()}`)
+      const ensureUrlForVersion = async (version: PDFVersion): Promise<string | null> => {
+        try {
+          if (version.url) {
+            try {
+              const u = new URL(version.url)
+              const isS3 = u.hostname.includes("amazonaws.com")
+              const isAlreadySigned =
+                u.searchParams.has("X-Amz-Signature") ||
+                u.searchParams.has("X-Amz-Credential") ||
+                u.searchParams.has("X-Amz-Algorithm")
 
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
-    }
-
-    const data: CustomerDashboardData = await response.json()
-    if (data.customer) {
-      setFormData((prev) => ({
-        ...prev,
-        name: data.customer?.name || "",
-        email: data.customer?.email || "",
-        whatsappNumber: data.customer?.whatsappNumber || data.customer?.phone || "",
-      }))
-    }
-
-    const ensureUrlForVersion = async (version: PDFVersion): Promise<string | null> => {
-      try {
-        if (version.url) {
-          try {
-            const u = new URL(version.url)
-            const isS3 = u.hostname.includes("amazonaws.com")
-            const isAlreadySigned =
-              u.searchParams.has("X-Amz-Signature") ||
-              u.searchParams.has("X-Amz-Credential") ||
-              u.searchParams.has("X-Amz-Algorithm")
-
-            if (isS3 && !isAlreadySigned) {
-              const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(version.url)}`)
-              if (!resp.ok) return version.url
-              const { url: signedUrl } = await resp.json()
-              return signedUrl || version.url
+              if (isS3 && !isAlreadySigned) {
+                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(version.url)}`)
+                if (!resp.ok) return version.url
+                const { url: signedUrl } = await resp.json()
+                return signedUrl || version.url
+              }
+            } catch {
+              return version.url
             }
-          } catch {
             return version.url
           }
-          return version.url
-        }
 
-        const s3Key = version.metadata?.s3Key
-        if (s3Key) {
-          const signed = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(s3Key)}`)
-          if (!signed.ok) return null
-          const { url: signedUrl } = await signed.json()
-          return signedUrl || null
-        }
-
-        return null
-      } catch {
-        return null
-      }
-    }
-
-    // **KEY FIX: Process all PDF versions separately**
-    const allVersions: ExtendedItinerary[] = []
-
-    if (data.itineraries && data.itineraries.length > 0) {
-      for (const itinerary of data.itineraries) {
-        const pdfVersions = Array.isArray(itinerary.pdfVersions) ? itinerary.pdfVersions : []
-
-        if (pdfVersions.length > 0) {
-          // Resolve URLs for all versions
-          const versionsWithResolvedUrls = await Promise.all(
-            pdfVersions.map(async (v) => {
-              const resolvedUrl = await ensureUrlForVersion(v)
-              return { ...v, url: resolvedUrl ?? v.url ?? null }
-            }),
-          )
-
-          // Sort versions by version number (ascending)
-          const sortedVersions = versionsWithResolvedUrls.sort((a, b) => a.version - b.version)
-
-          // Create a row for EACH version
-          sortedVersions.forEach((version) => {
-            const versionItinerary: ExtendedItinerary = {
-              ...itinerary,
-              id: `${itinerary.id}-v${version.version}`,
-              originalId: itinerary.id,
-              activePdfUrl: version.url || null,
-              displayVersion: version.metadata?.isEdited
-                ? `REGENERATED (V${version.version})`
-                : `GENERATED (V${version.version})`,
-              versionNumber: version.version,
-              isLatestVersion: version.isActive,
-              isEdited: version.metadata?.isEdited || false,
-              createdAt: version.createdAt,
-              pdfVersions: [version],
-              activeStatus: version.isActive,
-            }
-            allVersions.push(versionItinerary)
-          })
-        } else {
-          // **CRITICAL FIX: Handle legacy itineraries - show BOTH generated and regenerated**
-          
-          // Always add the original generated PDF if it exists
-          if (itinerary.pdfUrl) {
-            let pdfUrl = itinerary.pdfUrl
-            // Generate signed URL if it's an S3 URL
-            if (typeof pdfUrl === 'string' && pdfUrl.includes('amazonaws.com')) {
-              try {
-                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(pdfUrl)}`)
-                if (resp.ok) {
-                  const { url: signedUrl } = await resp.json()
-                  pdfUrl = signedUrl || pdfUrl
-                }
-              } catch (error) {
-                console.error("Error generating signed URL:", error)
-              }
-            }
-            
-            const generatedVersion: ExtendedItinerary = {
-              ...itinerary,
-              id: `${itinerary.id}-v1`,
-              originalId: itinerary.id,
-              activePdfUrl: pdfUrl,
-              pdfUrl: pdfUrl,
-              displayVersion: "GENERATED (V1)",
-              versionNumber: 1,
-              isLatestVersion: !itinerary.editedPdfUrl, // Only latest if no edited version
-              isEdited: false,
-              pdfVersions: [],
-            }
-            allVersions.push(generatedVersion)
+          const s3Key = version.metadata?.s3Key
+          if (s3Key) {
+            const signed = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(s3Key)}`)
+            if (!signed.ok) return null
+            const { url: signedUrl } = await signed.json()
+            return signedUrl || null
           }
 
-          // Add regenerated PDF as a separate row if it exists
-          if (itinerary.editedPdfUrl) {
-            let editedPdfUrl = itinerary.editedPdfUrl
-            // Generate signed URL if it's an S3 URL
-            if (typeof editedPdfUrl === 'string' && editedPdfUrl.includes('amazonaws.com')) {
-              try {
-                const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(editedPdfUrl)}`)
-                if (resp.ok) {
-                  const { url: signedUrl } = await resp.json()
-                  editedPdfUrl = signedUrl || editedPdfUrl
-                }
-              } catch (error) {
-                console.error("Error generating signed URL:", error)
+          return null
+        } catch {
+          return null
+        }
+      }
+
+      const allVersions: ExtendedItinerary[] = []
+
+      if (data.itineraries && data.itineraries.length > 0) {
+        for (const itinerary of data.itineraries) {
+          const pdfVersions = Array.isArray(itinerary.pdfVersions) ? itinerary.pdfVersions : []
+
+          if (pdfVersions.length > 0) {
+            const versionsWithResolvedUrls = await Promise.all(
+              pdfVersions.map(async (v) => {
+                const resolvedUrl = await ensureUrlForVersion(v)
+                return { ...v, url: resolvedUrl ?? v.url ?? null }
+              }),
+            )
+
+            const sortedVersions = versionsWithResolvedUrls.sort((a, b) => a.version - b.version)
+
+            sortedVersions.forEach((version) => {
+              const versionItinerary: ExtendedItinerary = {
+                ...itinerary,
+                id: `${itinerary.id}-v${version.version}`,
+                originalId: itinerary.id,
+                activePdfUrl: version.url || null,
+                displayVersion: version.metadata?.isEdited
+                  ? `REGENERATED (V${version.version})`
+                  : `GENERATED (V${version.version})`,
+                versionNumber: version.version,
+                isLatestVersion: version.isActive,
+                isEdited: version.metadata?.isEdited || false,
+                createdAt: version.createdAt,
+                pdfVersions: [version],
+                activeStatus: version.isActive,
               }
+              allVersions.push(versionItinerary)
+            })
+          } else {
+            if (itinerary.pdfUrl) {
+              let pdfUrl = itinerary.pdfUrl
+              if (typeof pdfUrl === 'string' && pdfUrl.includes('amazonaws.com')) {
+                try {
+                  const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(pdfUrl)}`)
+                  if (resp.ok) {
+                    const { url: signedUrl } = await resp.json()
+                    pdfUrl = signedUrl || pdfUrl
+                  }
+                } catch (error) {
+                  console.error("Error generating signed URL:", error)
+                }
+              }
+              
+              const generatedVersion: ExtendedItinerary = {
+                ...itinerary,
+                id: `${itinerary.id}-v1`,
+                originalId: itinerary.id,
+                activePdfUrl: pdfUrl,
+                pdfUrl: pdfUrl,
+                displayVersion: "GENERATED (V1)",
+                versionNumber: 1,
+                isLatestVersion: !itinerary.editedPdfUrl,
+                isEdited: false,
+                pdfVersions: [],
+              }
+              allVersions.push(generatedVersion)
             }
-            
-            const regeneratedVersion: ExtendedItinerary = {
-              ...itinerary,
-              id: `${itinerary.id}-v2`,
-              originalId: itinerary.id,
-              activePdfUrl: editedPdfUrl,
-              editedPdfUrl: editedPdfUrl,
-              displayVersion: "REGENERATED (V2)",
-              versionNumber: 2,
-              isLatestVersion: true, // Edited version is always latest
-              isEdited: true,
-              pdfVersions: [],
+
+            if (itinerary.editedPdfUrl) {
+              let editedPdfUrl = itinerary.editedPdfUrl
+              if (typeof editedPdfUrl === 'string' && editedPdfUrl.includes('amazonaws.com')) {
+                try {
+                  const resp = await fetch(`/api/generate-presigned-url?url=${encodeURIComponent(editedPdfUrl)}`)
+                  if (resp.ok) {
+                    const { url: signedUrl } = await resp.json()
+                    editedPdfUrl = signedUrl || editedPdfUrl
+                  }
+                } catch (error) {
+                  console.error("Error generating signed URL:", error)
+                }
+              }
+              
+              const regeneratedVersion: ExtendedItinerary = {
+                ...itinerary,
+                id: `${itinerary.id}-v2`,
+                originalId: itinerary.id,
+                activePdfUrl: editedPdfUrl,
+                editedPdfUrl: editedPdfUrl,
+                displayVersion: "REGENERATED (V2)",
+                versionNumber: 2,
+                isLatestVersion: true,
+                isEdited: true,
+                pdfVersions: [],
+              }
+              allVersions.push(regeneratedVersion)
             }
-            allVersions.push(regeneratedVersion)
           }
         }
       }
-    }
 
-    // Sort versions: Latest first within each itinerary group
-    const sortedVersions = allVersions.sort((a, b) => {
-      const idCompare = (a.originalId || a.id).localeCompare(b.originalId || b.id)
-      if (idCompare !== 0) return idCompare
-      
-      return (b.versionNumber || 0) - (a.versionNumber || 0)
-    })
+      const sortedVersions = allVersions.sort((a, b) => {
+        const idCompare = (a.originalId || a.id).localeCompare(b.originalId || b.id)
+        if (idCompare !== 0) return idCompare
+        
+        return (b.versionNumber || 0) - (a.versionNumber || 0)
+      })
 
-    setItineraryVersions(sortedVersions)
+      setItineraryVersions(sortedVersions)
 
-    // Restore previous selection or select latest
-    const stillExists = prevSelectedId && sortedVersions.find((v) => v.id === prevSelectedId && v.activePdfUrl)
-    if (stillExists) {
-      setSelectedItinerary(stillExists)
-      setSelectedPDFVersion(prevSelectedUrl || stillExists.activePdfUrl || null)
-    } else {
-      const latestVersion = sortedVersions
-        .filter((v) => v.activePdfUrl)
-        .sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0))[0]
-      
-      if (latestVersion && latestVersion.activePdfUrl) {
-        setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
-        setSelectedItinerary(latestVersion)
-        setSelectedPDFVersion(latestVersion.activePdfUrl)
+      const stillExists = prevSelectedId && sortedVersions.find((v) => v.id === prevSelectedId && v.activePdfUrl)
+      if (stillExists) {
+        setSelectedItinerary(stillExists)
+        setSelectedPDFVersion(prevSelectedUrl || stillExists.activePdfUrl || null)
       } else {
-        setSelectedItinerary(null)
-        setSelectedPDFVersion(null)
+        const latestVersion = sortedVersions
+          .filter((v) => v.activePdfUrl)
+          .sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0))[0]
+        
+        if (latestVersion && latestVersion.activePdfUrl) {
+          setSelectedPDFUrl(latestVersion.activePdfUrl + `?t=${Date.now()}`)
+          setSelectedItinerary(latestVersion)
+          setSelectedPDFVersion(latestVersion.activePdfUrl)
+        } else {
+          setSelectedItinerary(null)
+          setSelectedPDFVersion(null)
+        }
       }
+
+      setCustomerFeedbacks(data.feedbacks || [])
+      setSentItineraries(data.sentItineraries || [])
+    } catch (error) {
+      console.error("Error fetching customer data:", error)
+      setError(error instanceof Error ? error.message : "Failed to fetch customer data")
+    } finally {
+      setLoading(false)
     }
-
-    setCustomerFeedbacks(data.feedbacks || [])
-    setSentItineraries(data.sentItineraries || [])
-  } catch (error) {
-    console.error("Error fetching customer data:", error)
-    setError(error instanceof Error ? error.message : "Failed to fetch customer data")
-  } finally {
-    setLoading(false)
   }
-}
 
-  // Add refresh handler
   const handleRefresh = () => {
     fetchCustomerData(customerId, enquiryId, itineraryId, true)
     toast({
@@ -416,21 +401,56 @@ const fetchCustomerData = async (
     })
   }
 
-  // Handle itinerary selection
   const handleSelectItinerary = (itinerary: ExtendedItinerary) => {
     setSelectedItinerary(itinerary);
-    // Make sure we're using the correct URL (try activePdfUrl first, then fall back to pdfUrl)
     const pdfUrl = itinerary.activePdfUrl || itinerary.pdfUrl;
     setSelectedPDFVersion(pdfUrl || null);
-    console.log("Selected itinerary version:", itinerary, "PDF URL:", pdfUrl);
   };
-  // Email validation function
+
+  // Handle manual PDF file upload
+  const handleManualPdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      const file = files[0]
+      
+      // Validate file type
+      if (file.type !== 'application/pdf') {
+        toast({
+          variant: "destructive",
+          title: "Invalid File Type",
+          description: "Please upload a PDF file only",
+        })
+        return
+      }
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          variant: "destructive",
+          title: "File Too Large",
+          description: "Please upload a PDF file smaller than 10MB",
+        })
+        return
+      }
+
+      setManualPdfFile(file)
+      toast({
+        title: "PDF Selected",
+        description: `${file.name} ready to send`,
+      })
+    }
+  }
+
+  // Clear manual PDF
+  const clearManualPdf = () => {
+    setManualPdfFile(null)
+  }
+
   const validateEmail = (email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     return emailRegex.test(email)
   }
 
-  // Phone number validation function
   const validatePhoneNumber = (phone: string): boolean => {
     const phoneRegex = /^[+]?[1-9][\d]{0,15}$/
     return phoneRegex.test(phone.replace(/\s+/g, ""))
@@ -472,7 +492,6 @@ const fetchCustomerData = async (
           variant: "default",
         })
 
-        // Refresh the data to show the new PDF
         await fetchCustomerData(customerId, enquiryId, itineraryId, true)
       } else {
         throw new Error(result.error || "Failed to generate PDF")
@@ -489,13 +508,7 @@ const fetchCustomerData = async (
     }
   }
 
-  // Send Itinerary function with PDF version selection
   const sendItineraryViaEmail = async () => {
-    console.log("sendItineraryViaEmail called", {
-      selectedPDFVersion,
-      selectedItinerary,
-      formData
-    });
     // Validation checks
     if (!formData.name?.trim()) {
       toast({ variant: "destructive", title: "Error", description: "Please enter customer name" })
@@ -511,7 +524,6 @@ const fetchCustomerData = async (
       toast({ variant: "destructive", title: "Error", description: "Please enter a valid email address" })
       return
     }
-
 
     if (!formData.whatsappNumber?.trim()) {
       toast({
@@ -531,37 +543,14 @@ const fetchCustomerData = async (
       return
     }
 
-    if (!selectedPDFVersion) {
-      console.error("No PDF version selected. Current state:", {
-        selectedPDFVersion,
-        selectedItinerary,
-        itineraryVersions: itineraryVersions.map(i => ({
-          id: i.id,
-          activePdfUrl: i.activePdfUrl,
-          pdfUrl: i.pdfUrl,
-          versionNumber: i.versionNumber
-        }))
-      });
+    // Check if either generated PDF or manual PDF is available
+    if (!selectedPDFVersion && !manualPdfFile) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Please select a PDF version to send",
+        description: "Please select a generated PDF version or upload a manual PDF to send",
       });
       return;
-    }
-
-    const itineraryToSend =
-      selectedItinerary ||
-      itineraryVersions.find((it) => it.activeStatus && it.activePdfUrl) ||
-      itineraryVersions.find((it) => it.activePdfUrl)
-
-    if (!itineraryToSend) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No itinerary available to send. Please generate an itinerary first.",
-      })
-      return
     }
 
     if (!customerId && !enquiryId) {
@@ -576,28 +565,34 @@ const fetchCustomerData = async (
     try {
       setSendingItinerary(true)
 
-      const requestBody = {
-        customerId: customerId || enquiryId,
-        itineraryId: itineraryToSend.originalId || itineraryToSend.id, // Use original ID for database reference
-        enquiryId: enquiryId,
-        customerName: formData.name.trim(),
-        email: formData.email.trim(),
-        whatsappNumber: formData.whatsappNumber.trim(),
-        notes: formData.notes?.trim() || null,
-        pdfUrl: selectedPDFVersion, // Send the selected PDF version
-        pdfVersion: itineraryToSend.versionNumber,
-        isEditedVersion: itineraryToSend.isEdited,
-      }
+      // Use FormData for file upload
+      const formDataToSend = new FormData()
+      formDataToSend.append("customerId", customerId || enquiryId || "")
+      formDataToSend.append("enquiryId", enquiryId || "")
+      formDataToSend.append("customerName", formData.name.trim())
+      formDataToSend.append("email", formData.email.trim())
+      formDataToSend.append("whatsappNumber", formData.whatsappNumber.trim())
+      formDataToSend.append("notes", formData.notes?.trim() || "")
 
-      console.log("Sending request to API:", requestBody)
+      // If manual PDF is uploaded, use it; otherwise use selected version
+      if (manualPdfFile) {
+        formDataToSend.append("manualPdf", manualPdfFile)
+        formDataToSend.append("isManualUpload", "true")
+      } else {
+        const itineraryToSend = selectedItinerary || itineraryVersions.find((it) => it.activeStatus && it.activePdfUrl) || itineraryVersions.find((it) => it.activePdfUrl)
+        
+        if (itineraryToSend) {
+          formDataToSend.append("itineraryId", itineraryToSend.originalId || itineraryToSend.id)
+          formDataToSend.append("pdfUrl", selectedPDFVersion || "")
+          formDataToSend.append("pdfVersion", String(itineraryToSend.versionNumber || 1))
+          formDataToSend.append("isEditedVersion", String(itineraryToSend.isEdited || false))
+        }
+      }
 
       const response = await fetch("/api/sent-itinerary", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(60000), // 60 second timeout
+        body: formDataToSend,
+        signal: AbortSignal.timeout(60000),
       })
 
       const responseText = await response.text()
@@ -633,22 +628,21 @@ const fetchCustomerData = async (
       }
 
       if (result.success && result.sentItinerary) {
-        // Refresh full dashboard data to ensure persistence and show existing entries
         await fetchCustomerData(customerId, enquiryId, itineraryId)
         setFormData((prev) => ({
           ...prev,
           notes: "",
         }))
+        setManualPdfFile(null)
 
-        const versionText = itineraryToSend?.displayVersion || "Selected PDF"
+        const messageType = manualPdfFile ? "Manual PDF" : (selectedItinerary?.displayVersion || "Selected PDF")
 
         toast({
           variant: "default",
           title: "Email Sent Successfully!",
-          description: `${versionText} sent to ${formData.email}. Customer will receive it shortly.`,
+          description: `${messageType} sent to ${formData.email}. Customer will receive it shortly.`,
         })
 
-        // Redirect to Share DMC section after success, preserving context
         const dmcParams = new URLSearchParams()
         if (customerId) dmcParams.set("customerId", customerId)
         if (enquiryId) dmcParams.set("enquiryId", enquiryId)
@@ -685,7 +679,6 @@ const fetchCustomerData = async (
     }
   }
 
-  // View PDF function with S3 URL handling
   const handleViewPDF = async (pdfUrl: string) => {
     if (!pdfUrl) {
       toast({
@@ -697,10 +690,9 @@ const fetchCustomerData = async (
     }
 
     try {
-      // If it's an S3 URL, generate a fresh pre-signed URL
       if (pdfUrl.includes("amazonaws.com")) {
         const url = new URL(pdfUrl)
-        const key = url.pathname.substring(1) // Remove leading slash
+        const key = url.pathname.substring(1)
 
         const response = await fetch(`/api/generate-presigned-url?key=${encodeURIComponent(key)}`)
 
@@ -725,7 +717,6 @@ const fetchCustomerData = async (
     }
   }
 
-  // Download PDF function
   const handleDownloadPDF = (pdfUrl: string | null, filename: string) => {
     if (pdfUrl) {
       const link = document.createElement("a")
@@ -965,7 +956,7 @@ const fetchCustomerData = async (
                     <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                     <h4 className="text-lg font-medium text-gray-700 mb-2">No PDF Versions Available</h4>
                     <p className="text-sm text-gray-500 mb-4">
-                      Generate your first PDF to get started with sharing itineraries
+                      Generate your first PDF or upload manually to get started
                     </p>
                     <button
                       onClick={() => {
@@ -1128,19 +1119,65 @@ const fetchCustomerData = async (
                         </table>
                       </div>
                     </div>
-
-                    {/* Previous PDFs Section */}
-                  
                   </>
                 )}
               </div>
             </div>
 
             <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-semibold mb-6">Send Selected PDF Version via Email</h3>
+              <h3 className="text-lg font-semibold mb-6">Send PDF via Email</h3>
 
-              {/* Selected PDF Info */}
-              {selectedPDFVersion && selectedItinerary ? (
+              {/* Selected PDF or Manual Upload Info */}
+              {!hasGeneratedPDF ? (
+                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <h4 className="text-sm font-semibold text-yellow-800 mb-2 flex items-center gap-2">
+                    <Upload className="w-4 h-4" />
+                    No Generated PDF Available - Manual Upload Required
+                  </h4>
+                  <p className="text-xs text-yellow-700 mb-3">
+                    Please upload a PDF manually to send to the customer
+                  </p>
+                  
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Upload PDF Document*
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <label className="flex-1 cursor-pointer">
+                        <div className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 transition-colors">
+                          <Upload className="w-5 h-5 text-gray-400" />
+                          <span className="text-sm text-gray-600">
+                            {manualPdfFile ? manualPdfFile.name : "Click to upload PDF"}
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          onChange={handleManualPdfUpload}
+                          className="hidden"
+                          disabled={sendingItinerary}
+                        />
+                      </label>
+                      {manualPdfFile && (
+                        <button
+                          onClick={clearManualPdf}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Remove file"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                    {manualPdfFile && (
+                      <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-xs text-green-700">
+                          ✓ {manualPdfFile.name} ({(manualPdfFile.size / 1024 / 1024).toFixed(2)} MB)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : selectedPDFVersion ? (
                 <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
                   <h4 className="text-sm font-semibold text-green-800 mb-2 flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
@@ -1149,19 +1186,50 @@ const fetchCustomerData = async (
                   <div className="grid grid-cols-2 gap-4 text-xs text-green-700">
                     <div>
                       <p>
-                        <strong>Version:</strong> {selectedItinerary.versionNumber}
+                        <strong>Version:</strong> {selectedItinerary?.versionNumber}
                       </p>
                       <p>
-                        <strong>Type:</strong> {selectedItinerary.displayVersion}
+                        <strong>Type:</strong> {selectedItinerary?.displayVersion}
                       </p>
                     </div>
                     <div>
                       <p>
-                        <strong>Status:</strong> {selectedItinerary.activePdfUrl ? "Available" : "Missing"}
+                        <strong>Status:</strong> {selectedItinerary?.activePdfUrl ? "Available" : "Missing"}
                       </p>
                       <p>
-                        <strong>Latest:</strong> {selectedItinerary.isLatestVersion ? "Yes" : "No"}
+                        <strong>Latest:</strong> {selectedItinerary?.isLatestVersion ? "Yes" : "No"}
                       </p>
+                    </div>
+                  </div>
+                  
+                  {/* Option to upload manual PDF even if generated PDF exists */}
+                  <div className="mt-3 pt-3 border-t border-green-200">
+                    <p className="text-xs text-green-700 mb-2">Or upload a different PDF:</p>
+                    <div className="flex items-center gap-3">
+                      <label className="flex-1 cursor-pointer">
+                        <div className="flex items-center justify-center gap-2 p-2 border border-green-300 rounded-lg hover:bg-green-100 transition-colors">
+                          <Upload className="w-4 h-4 text-green-600" />
+                          <span className="text-xs text-green-700">
+                            {manualPdfFile ? manualPdfFile.name : "Upload manual PDF"}
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          onChange={handleManualPdfUpload}
+                          className="hidden"
+                          disabled={sendingItinerary}
+                        />
+                      </label>
+                      {manualPdfFile && (
+                        <button
+                          onClick={clearManualPdf}
+                          className="p-1 text-red-600 hover:bg-red-50 rounded"
+                          title="Remove file"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1169,11 +1237,43 @@ const fetchCustomerData = async (
                 <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <h4 className="text-sm font-semibold text-yellow-800 mb-2 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4" />
-                    No PDF Version Selected
+                    No PDF Selected
                   </h4>
-                  <p className="text-xs text-yellow-700">
-                    Please select a PDF version from the table above to send via email.
+                  <p className="text-xs text-yellow-700 mb-3">
+                    Please select a PDF version from the table above or upload a manual PDF
                   </p>
+                  
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Upload Manual PDF
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <label className="flex-1 cursor-pointer">
+                        <div className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-green-500 transition-colors">
+                          <Upload className="w-5 h-5 text-gray-400" />
+                          <span className="text-sm text-gray-600">
+                            {manualPdfFile ? manualPdfFile.name : "Click to upload PDF"}
+                          </span>
+                        </div>
+                        <input
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          onChange={handleManualPdfUpload}
+                          className="hidden"
+                          disabled={sendingItinerary}
+                        />
+                      </label>
+                      {manualPdfFile && (
+                        <button
+                          onClick={clearManualPdf}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Remove file"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1231,7 +1331,7 @@ const fetchCustomerData = async (
 
               <button
                 onClick={sendItineraryViaEmail}
-                disabled={sendingItinerary || !selectedPDFVersion}
+                disabled={sendingItinerary || (!selectedPDFVersion && !manualPdfFile)}
                 className="w-full py-3 bg-green-900 text-white font-medium rounded-lg hover:bg-green-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {sendingItinerary ? (
@@ -1239,16 +1339,16 @@ const fetchCustomerData = async (
                     <LoadingSpinner size="sm" />
                     Sending Email...
                   </>
-                ) : selectedPDFVersion ? (
-                  <>Send Selected PDF Version via Email</>
+                ) : (selectedPDFVersion || manualPdfFile) ? (
+                  <>Send {manualPdfFile ? "Manual" : "Selected"} PDF via Email</>
                 ) : (
-                  <>Select a PDF Version First</>
+                  <>Select or Upload PDF First</>
                 )}
               </button>
 
-              {!selectedPDFVersion && (
+              {!selectedPDFVersion && !manualPdfFile && (
                 <p className="text-center text-sm text-red-600 mt-2">
-                  ⚠️ Please select a PDF version from the table above to enable email sending
+                  ⚠️ Please select a generated PDF or upload a manual PDF to enable email sending
                 </p>
               )}
             </div>
@@ -1325,7 +1425,7 @@ const fetchCustomerData = async (
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Email Sent On</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Customer Name</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Email</th>
-                  <th className="text-left p-4 text-sm font-medium text-gray-700">PDF Version</th>
+                  <th className="text-left p-4 text-sm font-medium text-gray-700">PDF Type</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Notes</th>
                   <th className="text-left p-4 text-sm font-medium text-gray-700">Status</th>
                 </tr>
@@ -1345,7 +1445,11 @@ const fetchCustomerData = async (
                       <td className="p-4 text-sm text-gray-900">{item.customerName}</td>
                       <td className="p-4 text-sm text-gray-600">{item.email}</td>
                       <td className="p-4 text-sm text-gray-600">
-                        {item.isEdited ? (
+                        {item.isManualUpload ? (
+                          <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                            MANUAL UPLOAD
+                          </span>
+                        ) : item.isEdited ? (
                           <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
                             REGENERATED V{item.pdfVersion || "2"}
                           </span>

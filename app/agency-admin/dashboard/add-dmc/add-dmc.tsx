@@ -622,7 +622,7 @@ export function DMCRegistrationForm() {
         {/* Year of Registration */}
         <div className="space-y-2 w-full">
           <label htmlFor="yearOfRegistration" className="block text-sm font-medium text-gray-700 font-Poppins">
-            Year of Registration
+            Year of Incorporation
           </label>
           <div className="relative">
             <Input
