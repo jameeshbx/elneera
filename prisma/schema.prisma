@@ -646,6 +646,9 @@ model sent_itineraries {
   enquiryId      String?
   isEdited       Boolean      @default(false)
   pdfUrl         String?      @map("pdf_url")
+  isManualUpload  Boolean      @default(false)
+  manualPdfS3Key  String?
+  pdfVersion     Int?
   customer       customers    @relation(fields: [customerId], references: [id])
   itinerary      itineraries? @relation(fields: [itineraryId], references: [id])
 

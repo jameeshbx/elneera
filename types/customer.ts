@@ -77,10 +77,14 @@ export interface CustomerFeedback {
 }
 
 export interface SentItinerary {
+  isManualUpload?: boolean;        
+  manualPdfS3Key?: string | null;
   pdfVersion: string;
   id: string;
   date: string;
   customerId: string | null;
+  enquiryId: string | null;
+  itineraryId: string | null;
   customerName: string;
   email: string;
   whatsappNumber: string | null;
