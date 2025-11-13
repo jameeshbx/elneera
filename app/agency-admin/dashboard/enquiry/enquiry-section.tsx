@@ -20,6 +20,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import AddressGeocoder from "@/components/AddressGeocoder"
 
 // Types
 interface Enquiry {
@@ -37,6 +38,8 @@ interface Enquiry {
   pointOfContact: string
   pickupLocation: string
   dropLocation: string
+  pickupCoords?: { lat: number; lng: number }
+  dropCoords?: { lat: number; lng: number }
   numberOfTravellers: string
   numberOfKids: string
   travelingWithPets: string
@@ -1073,28 +1076,44 @@ const [tempBudget, setTempBudget] = useState(1000);
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <span className="text-xs sm:text-sm font-medium">Pickup</span>
                     </div>
-                    <Input
-                      value={newEnquiry.pickupLocation || ""}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        handleInputChange("pickupLocation", e.target.value)
-                      }
-                      placeholder="Ernakulam, KSRTC"
-                      className="text-sm sm:text-base"
-                    />
+                    <div className="text-sm sm:text-base">
+                      <AddressGeocoder
+                        placeholder="Enter pickup location..."
+                        onLocationSelect={(location) => {
+                          handleInputChange("pickupLocation", location.placeName);
+                          setNewEnquiry(prev => ({
+                            ...prev,
+                            pickupCoords: {
+                              lat: location.latitude,
+                              lng: location.longitude
+                            }
+                          }));
+                        }}
+                        value={newEnquiry.pickupLocation || ""}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                       <span className="text-xs sm:text-sm font-medium">Drop off</span>
                     </div>
-                    <Input
-                      value={newEnquiry.dropLocation || ""}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        handleInputChange("dropLocation", e.target.value)
-                      }
-                      placeholder="Ernakulam, KSRTC"
-                      className="text-sm sm:text-base"
-                    />
+                    <div className="text-sm sm:text-base">
+                      <AddressGeocoder
+                        placeholder="Enter drop off location..."
+                        onLocationSelect={(location) => {
+                          handleInputChange("dropLocation", location.placeName);
+                          setNewEnquiry(prev => ({
+                            ...prev,
+                            dropCoords: {
+                              lat: location.latitude,
+                              lng: location.longitude
+                            }
+                          }));
+                        }}
+                        value={newEnquiry.dropLocation || ""}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

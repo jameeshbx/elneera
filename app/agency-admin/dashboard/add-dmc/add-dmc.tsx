@@ -13,6 +13,9 @@ import { Toaster } from "@/components/ui/toaster"
 import { countries, cities, destinations } from "@/data/add-dmc"
 import { z } from "zod"
 import { useDMCForm } from "@/context/dmc-form-context"
+import { useGeolocation } from '@/hooks/useGeolocation';
+import { GeolocationResult } from '@/types/mapbox';
+import { Badge } from '@/components/ui/badge';
 
 // Validation schemas
 const dmcSchema = z.object({
@@ -46,6 +49,72 @@ export function DMCRegistrationForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDestinationDropdownOpen, setIsDestinationDropdownOpen] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  // Add these state variables inside your component
+const [countrySearch, setCountrySearch] = useState('');
+const [citySearch, setCitySearch] = useState('');
+const [destinationSearch, setDestinationSearch] = useState('');
+const [countryResults, setCountryResults] = useState<GeolocationResult[]>([]);
+const [cityResults, setCityResults] = useState<GeolocationResult[]>([]);
+const [destinationResults, setDestinationResults] = useState<GeolocationResult[]>([]);
+const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+const [showCityDropdown, setShowCityDropdown] = useState(false);
+const [showDestinationDropdown, setShowDestinationDropdown] = useState(false);
+const { geocodeAddress } = useGeolocation();
+
+
+const handleCountrySearch = async (query: string) => {
+  setCountrySearch(query);
+  if (query.trim() !== '') {
+    const results = await geocodeAddress(query, 'country');
+    setCountryResults(results);
+    setShowCountryDropdown(true);
+  } else {
+    setCountryResults([]);
+    setShowCountryDropdown(false);
+  }
+};
+
+const handleCitySearch = async (query: string) => {
+  setCitySearch(query);
+  if (query.trim() !== '' && formData.primaryCountry) {
+    const results = await geocodeAddress(
+      `${query}, ${formData.primaryCountry}`,
+      'place'
+    );
+    setCityResults(results);
+    setShowCityDropdown(true);
+  } else {
+    setCityResults([]);
+    setShowCityDropdown(false);
+  }
+};
+const handleDestinationSearch = async (query: string) => {
+  setDestinationSearch(query);
+  if (query.length > 2) {
+    const results = await geocodeAddress(
+      query,
+      'poi,address,place'
+    );
+    setDestinationResults(results);
+    setShowDestinationDropdown(true);
+  } else {
+    setDestinationResults([]);
+    setShowDestinationDropdown(false);
+  }
+};
+
+const addDestination = (destination: string) => {
+  const currentDestinations = getDestinationsArray();
+  if (!currentDestinations.includes(destination)) {
+    setFormData(prev => ({
+      ...prev,
+      destinationsCovered: JSON.stringify([...currentDestinations, destination])
+    }));
+  }
+  setDestinationSearch('');
+  setShowDestinationDropdown(false);
+};
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -72,29 +141,16 @@ export function DMCRegistrationForm() {
     return []
   }
 
-  const handleDestinationToggle = (destination: string) => {
-    const currentDestinations = getDestinationsArray()
-  
-    const newDestinations = currentDestinations.includes(destination)
-      ? currentDestinations.filter((d: string) => d !== destination)
-      : [...currentDestinations, destination]
-  
-    // Convert array back to string before setting
-    setFormData({ 
-      ...formData, 
-      destinationsCovered: JSON.stringify(newDestinations) 
-    })
-  }
 
-  const removeDestination = (destination: string) => {
-    const currentDestinations = getDestinationsArray()
-  
-    const newDestinations = currentDestinations.filter((d: string) => d !== destination)
-    setFormData({ 
-      ...formData, 
-      destinationsCovered: JSON.stringify(newDestinations) 
-    })
-  }
+// Update the existing removeDestination function
+const removeDestination = (destination: string) => {
+  const currentDestinations = getDestinationsArray();
+  const newDestinations = currentDestinations.filter(d => d !== destination);
+  setFormData(prev => ({
+    ...prev,
+    destinationsCovered: JSON.stringify(newDestinations)
+  }));
+};
 
   const validateForm = (): { valid: boolean; firstErrorField?: string } => {
     try {
@@ -212,7 +268,6 @@ export function DMCRegistrationForm() {
     }
   }
 
-  const selectedDestinations = getDestinationsArray()
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-6">
@@ -449,129 +504,135 @@ export function DMCRegistrationForm() {
         </div>
 
         {/* Primary Country */}
-        <div className="space-y-2 w-full">
-          <label htmlFor="primaryCountry" className="block text-sm font-medium text-gray-700 font-Poppins">
-            Primary country
-          </label>
-          <Select
-            value={formData.primaryCountry}
-            onValueChange={(value) => {
-              setFormData((prev) => ({ ...prev, primaryCountry: value }))
-              if (errors.primaryCountry) {
-                const { ...rest } = errors
-                setErrors(rest)
-              }
+<div className="space-y-2 w-full relative">
+  <label htmlFor="primaryCountry" className="block text-sm font-medium text-gray-700 font-Poppins">
+    Primary country
+  </label>
+  <div className="relative">
+    <input
+      type="text"
+      id="primaryCountry"
+      value={countrySearch}
+      onChange={(e) => handleCountrySearch(e.target.value)}
+      onFocus={() => countrySearch.trim() !== '' && setShowCountryDropdown(true)}
+      placeholder="Search for a country..."
+      className="w-full h-12 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+    />
+    {showCountryDropdown && countryResults.length > 0 && (
+      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+        {countryResults.map((result) => (
+          <div
+            key={result.id}
+            className="p-3 cursor-pointer hover:bg-gray-50"
+            onClick={() => {
+              setFormData(prev => ({
+                ...prev,
+                primaryCountry: result.placeName
+              }));
+              setCountrySearch(result.placeName);
+              setShowCountryDropdown(false);
+              setCitySearch('');
+              setFormData(prev => ({ ...prev, cities: '' }));
             }}
           >
-            <SelectTrigger id="primaryCountry" className="w-full h-12">
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent className="max-h-60 overflow-y-auto">
-              {countries.map((country) => (
-                <SelectItem key={country.code} value={country.name}>
-                  {country.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.primaryCountry && (<p className="text-sm text-red-600">{errors.primaryCountry}</p>)}
-        </div>
-
-        {/* Destinations Covered - Multi-Select */}
-        <div className="space-y-2 w-full">
-          <label htmlFor="destinationsCovered" className="block text-sm font-medium text-gray-700 font-Poppins">
-            Destinations Covered
-          </label>
-          <div className="relative">
-            <div
-              id="destinationsCovered"
-              onClick={() => setIsDestinationDropdownOpen(!isDestinationDropdownOpen)}
-              className="w-full h-12 px-3 py-2 border border-gray-300 rounded-md cursor-pointer hover:border-emerald-500 focus:border-emerald-500 transition-colors flex items-center justify-between bg-white"
-            >
-              <span className="text-sm text-gray-700">
-                {selectedDestinations.length > 0
-                  ? `${selectedDestinations.length} selected`
-                  : "Select destinations..."}
-              </span>
-              <svg
-                className={`w-4 h-4 transition-transform ${isDestinationDropdownOpen ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-
-            {isDestinationDropdownOpen && (
-              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                {destinations.map((destination: string) => (
-                  <div
-                    key={destination}
-                    onClick={() => handleDestinationToggle(destination)}
-                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
-                  >
-                    <span className="text-sm">{destination}</span>
-                    {selectedDestinations.includes(destination) && (
-                      <Check className="w-4 h-4 text-emerald-600" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Selected Destinations Tags - Shows ALL selected destinations */}
-            {selectedDestinations.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {selectedDestinations.map((destination: string) => (
-                  <div
-                    key={destination}
-                    className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm"
-                  >
-                    <span>{destination}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeDestination(destination)}
-                      className="hover:bg-emerald-200 rounded-full p-0.5"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {errors.destinationsCovered && (<p className="text-sm text-red-600 mt-2">{errors.destinationsCovered}</p>)}
+            {result.placeName}
           </div>
-        </div>
+        ))}
+      </div>
+    )}
+  </div>
+  {errors.primaryCountry && <p className="text-sm text-red-600">{errors.primaryCountry}</p>}
+</div>
 
-        {/* Cities */}
-        <div className="space-y-2 w-full">
-          <label htmlFor="cities" className="block text-sm font-medium text-gray-700 font-Poppins">
-            Cities
-          </label>
-          <Select
-            value={formData.cities}
-            onValueChange={(value) => {
-              setFormData((prev) => ({ ...prev, cities: value }))
-              if (errors.cities) {
-                const { ...rest } = errors
-                setErrors(rest)
-              }
+{/* Cities */}
+<div className="space-y-2 w-full relative">
+  <label htmlFor="cities" className="block text-sm font-medium text-gray-700 font-Poppins">
+    Cities
+  </label>
+  <div className="relative">
+    <input
+      type="text"
+      id="cities"
+      value={citySearch}
+      onChange={(e) => handleCitySearch(e.target.value)}
+      onFocus={() => citySearch.length > 2 && setShowCityDropdown(true)}
+      disabled={!formData.primaryCountry}
+      placeholder={formData.primaryCountry ? "Search for a city..." : "Select a country first"}
+      className={`w-full h-12 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        !formData.primaryCountry ? 'bg-gray-100 cursor-not-allowed' : ''
+      }`}
+    />
+    {showCityDropdown && cityResults.length > 0 && (
+      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+        {cityResults.map((result) => (
+          <div
+            key={result.id}
+            className="p-3 cursor-pointer hover:bg-gray-50"
+            onClick={() => {
+              setFormData(prev => ({
+                ...prev,
+                cities: result.placeName
+              }));
+              setCitySearch(result.placeName);
+              setShowCityDropdown(false);
             }}
           >
-            <SelectTrigger id="cities" className="w-full h-12">
-              <SelectValue placeholder="Select..." />
-            </SelectTrigger>
-            <SelectContent className="max-h-60 overflow-y-auto">
-              {cities.map((city) => (
-                <SelectItem key={city} value={city}>
-                  {city}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {errors.cities && (<p className="text-sm text-red-600">{errors.cities}</p>)}
-        </div>
+            {result.placeName}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+  {errors.cities && <p className="text-sm text-red-600">{errors.cities}</p>}
+</div>
+
+{/* Destinations Covered */}
+<div className="space-y-2 w-full">
+  <label htmlFor="destinationsCovered" className="block text-sm font-medium text-gray-700 font-Poppins">
+    Destinations Covered
+  </label>
+  <div className="relative">
+    <div className="w-full min-h-12 p-2 border border-gray-300 rounded-md bg-white flex flex-wrap gap-2 items-center">
+      {getDestinationsArray().map((destination) => (
+        <Badge key={destination} className="bg-blue-100 text-blue-800 px-2 py-1 text-xs flex items-center gap-1">
+          {destination}
+          <X
+            className="h-3 w-3 cursor-pointer hover:text-blue-600"
+            onClick={() => removeDestination(destination)}
+          />
+        </Badge>
+      ))}
+      <input
+        type="text"
+        value={destinationSearch}
+        onChange={(e) => handleDestinationSearch(e.target.value)}
+        onFocus={() => destinationSearch.trim() !== '' && setShowDestinationDropdown(true)}
+        placeholder="Search for destinations..."
+        className="flex-1 min-w-[120px] h-8 px-2 border-0 focus:ring-0 focus:outline-none"
+      />
+    </div>
+    {showDestinationDropdown && destinationResults.length > 0 && (
+      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+        {destinationResults.map((result) => (
+          <div
+            key={result.id}
+            className="p-3 cursor-pointer hover:bg-gray-50"
+            onClick={() => {
+              addDestination(result.placeName);
+              setDestinationSearch('');
+              setShowDestinationDropdown(false);
+            }}
+          >
+            {result.placeName}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+  {errors.destinationsCovered && <p className="text-sm text-red-600">{errors.destinationsCovered}</p>}
+</div>
+
+        
 
         {/* GST Registration */}
         <div className="space-y-2 w-full">

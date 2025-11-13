@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect , useRef} from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import Image from "next/image"
 import { ChevronDown, Minus, Plus, Calendar, Check, Edit, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
+import MultiDestinationGeocoder from '@/components/MultiDestinationGeocoder';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
@@ -18,6 +19,7 @@ import { Input } from "@/components/ui/input"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense } from "react"
 import LoadingComponent from "@/app/agency-admin/dashboard/Itenary-form/loading"
+import { GeolocationResult } from "@/types/mapbox"
 
 // Define types for the itinerary data (matching ItineraryView)
 interface Activity {
@@ -73,6 +75,7 @@ interface TravelFormData {
   additionalRequests: string
   moreDetails: string
   mustSeeSpots: string
+
   dailyItinerary: DayItinerary[]
   accommodation: Accommodation[]
   cancellationPolicyType: string
@@ -103,7 +106,7 @@ interface EnquiryData {
   notes?: string
   tags?: string
   mustSeeSpots?: string
-  
+
   customerId?: string
 }
 
@@ -143,7 +146,7 @@ interface ItineraryData {
   additionalRequests: string | null
   moreDetails: string | null
   mustSeeSpots: string | null
- 
+
   status: string
   createdAt: string
   updatedAt: string
@@ -163,7 +166,7 @@ interface ItineraryData {
     notes: string | null
     tags: string | null
     mustSeeSpots: string | null
-  
+
     flightsRequired: string | null
   }
 }
@@ -248,7 +251,7 @@ function ItineraryFormContent() {
     additionalRequests: "",
     moreDetails: "",
     mustSeeSpots: "",
-    
+
     dailyItinerary: [],
     accommodation: [],
     cancellationPolicyType: "DEFAULT",
@@ -425,7 +428,7 @@ function ItineraryFormContent() {
         const additionalRequests = existingItinerary?.additionalRequests || ""
         let moreDetails = existingItinerary?.moreDetails || enquiry?.notes || ""
         const mustSeeSpots = existingItinerary?.mustSeeSpots || enquiry?.mustSeeSpots || ""
-        
+
         const dailyItinerary = existingItinerary?.dailyItinerary || []
         const accommodation = existingItinerary?.accommodation || []
 
@@ -459,7 +462,7 @@ function ItineraryFormContent() {
           if (enquiry.mustSeeSpots && !moreDetails.includes("Must-see spots:")) {
             moreDetails += `\n\nMust-see spots: ${enquiry.mustSeeSpots}`
           }
-          
+
         }
 
         const baseFormData: TravelFormData = {
@@ -485,7 +488,7 @@ function ItineraryFormContent() {
           additionalRequests,
           moreDetails,
           mustSeeSpots,
-         
+
           dailyItinerary,
           accommodation,
           cancellationPolicyType,
@@ -540,9 +543,9 @@ function ItineraryFormContent() {
       alert("Please select an enquiry first.")
       return
     }
-  
+
     setIsGenerating(true)
-  
+
     try {
       const dataToSend = {
         ...formData,
@@ -554,9 +557,9 @@ function ItineraryFormContent() {
         dietaryPreference: formData.dietaryPreference.join(", "),
         transportPreferences: formData.transportPreferences.join(", "),
       }
-  
+
       let response
-  
+
       if (itineraryId) {
         console.log("Updating itinerary with ID:", itineraryId, "Data:", dataToSend)
         response = await fetch("/api/itineraries", {
@@ -564,8 +567,8 @@ function ItineraryFormContent() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ 
-            id: itineraryId, 
+          body: JSON.stringify({
+            id: itineraryId,
             ...dataToSend,
             // Reset edit flags when regenerating from form
             isEdited: false,
@@ -583,7 +586,7 @@ function ItineraryFormContent() {
           body: JSON.stringify(dataToSend),
         })
       }
-  
+
       if (!response.ok) {
         let errorMessage = "Failed to process itinerary"
         try {
@@ -600,9 +603,9 @@ function ItineraryFormContent() {
         alert(`Error: ${errorMessage}`)
         return
       }
-  
+
       const processedItinerary = await response.json()
-  console.log(processedItinerary)
+      console.log(processedItinerary)
       // Generate PDF after successfully creating/updating itinerary
       // This is the ORIGINAL PDF generation (not edited)
       try {
@@ -619,16 +622,16 @@ function ItineraryFormContent() {
             isEditedVersion: false, // This is the original version
           }),
         })
-  
+
         console.log("[v0] PDF response status:", pdfResponse.status)
-  
+
         if (pdfResponse.ok) {
           const pdfResult = await pdfResponse.json()
           console.log("[v0] Original PDF generated successfully:", pdfResult)
-  
+
           alert("Itinerary and PDF generated successfully!")
           setIsGenerated(true)
-  
+
           // Redirect to itinerary view
           router.push(
             `/agency-admin/dashboard/Itenary-view?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
@@ -638,7 +641,7 @@ function ItineraryFormContent() {
           let pdfErrorMessage = "PDF generation failed"
           try {
             const contentType = pdfResponse.headers.get("content-type")
-            
+
             if (contentType && contentType.includes("application/json")) {
               const pdfError = await pdfResponse.json()
               pdfErrorMessage = pdfError.error || pdfError.message || pdfErrorMessage
@@ -649,13 +652,13 @@ function ItineraryFormContent() {
               const errorText = await pdfResponse.text()
               pdfErrorMessage = errorText || `HTTP ${pdfResponse.status}: ${pdfResponse.statusText}`
             }
-          } catch  {
+          } catch {
             pdfErrorMessage = `HTTP ${pdfResponse.status}: ${pdfResponse.statusText}`
           }
-  
+
           console.error("[v0] PDF generation failed:", pdfErrorMessage)
           alert(`PDF generation failed: ${pdfErrorMessage}`)
-  
+
           // Still redirect to share customer page
           router.push(
             `/agency-admin/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
@@ -664,7 +667,7 @@ function ItineraryFormContent() {
       } catch (pdfError) {
         console.error("[v0] Error generating PDF:", pdfError)
         alert("Itinerary saved, but PDF generation failed. You can regenerate it later.")
-  
+
         // Still redirect
         router.push(
           `/agency-admin/dashboard/share-customer?enquiryId=${enquiryData.id}&itineraryId=${processedItinerary.id}&customerId=${enquiryData.customerId || ""}`,
@@ -747,8 +750,8 @@ function ItineraryFormContent() {
               rows={3}
             />
           </div>
-         
-         
+
+
         </>
       )
     } else if (enquiryData?.tags === "full-package") {
@@ -911,6 +914,10 @@ function ItineraryFormContent() {
     )
   }
 
+  function addDestination(location: GeolocationResult): void {
+    throw new Error("Function not implemented.")
+  }
+
   return (
     <div id="generate" className="min-h-screen bg-gray-50 p-6 font-poppins">
       <div className="max-w-7xl mx-auto h-full">
@@ -922,25 +929,32 @@ function ItineraryFormContent() {
                 <h1 className="text-lg font-semibold text-gray-900 font-poppins">Choose travel destination</h1>
 
                 {/* Destination Selection */}
-                <div className="relative">
-                  <div
-                    className="w-full min-h-12 p-3 border border-gray-300 rounded-md bg-white cursor-pointer flex flex-wrap gap-2 items-center"
-                    onClick={() => setShowDestinationDropdown(!showDestinationDropdown)}
-                  >
-                    {formData.destinations.map((dest) => (
-                      <Badge key={dest} className="bg-orange-500 text-white px-3 py-1 text-xs flex items-center gap-1">
-                        {dest}
-                        <X
-                          className="h-3 w-3 cursor-pointer hover:bg-orange-600 rounded-full"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeDestination(dest)
-                          }}
-                        />
-                      </Badge>
-                    ))}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-gray-700">Destinations</label>
+                    <span className="text-xs text-gray-500">Add one or more destinations</span>
                   </div>
-                  
+                  <div className="relative">
+                    <MultiDestinationGeocoder
+                      destinations={formData.destinations}
+                      onAddDestination={(destination) => {
+                        if (!formData.destinations.includes(destination)) {
+                          setFormData(prev => ({
+                            ...prev,
+                            destinations: [...prev.destinations, destination]
+                          }));
+                        }
+                      }}
+                      onRemoveDestination={(destination) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          destinations: prev.destinations.filter(dest => dest !== destination)
+                        }));
+                      }}
+                      placeholder="Search for a destination..."
+                      className="w-full"
+                    />
+                  </div>
                 </div>
 
                 {/* Date Selection */}
@@ -1089,20 +1103,18 @@ function ItineraryFormContent() {
                     ].map((type) => (
                       <div
                         key={type.id}
-                        className={`h-16 flex items-center justify-between px-4 rounded-lg border-2 cursor-pointer transition-all ${
-                          formData.travelType.toLowerCase() === type.id
+                        className={`h-16 flex items-center justify-between px-4 rounded-lg border-2 cursor-pointer transition-all ${formData.travelType.toLowerCase() === type.id
                             ? "border-gray-200 bg-gray-200 bg-orange-200"
                             : "border-gray-200 hover:border-gray-300 bg-white"
-                        }`}
+                          }`}
                         onClick={() => updateFormData("travelType", type.id)}
                       >
                         <span className="text-sm font-medium text-gray-900">{type.label}</span>
                         <div
-                          className={`p-5 mr-[-12px] rounded-lg transition-colors ${
-                            formData.travelType.toLowerCase() === type.id
+                          className={`p-5 mr-[-12px] rounded-lg transition-colors ${formData.travelType.toLowerCase() === type.id
                               ? "bg-light-orange text-white"
                               : "bg-gray-100 text-gray-600"
-                          }`}
+                            }`}
                         >
                           {type.icon}
                         </div>
@@ -1260,65 +1272,64 @@ function ItineraryFormContent() {
                 </div>
 
                 {/* Hotel Preference */}
-               <div>
-  <Label className="text-sm font-medium text-black mb-3 block text-lg font-semibold font-poppins">
-    Hotel preference
-  </Label>
-  <div className="relative">
-    <div
-      className="w-full min-h-12 p-3 border border-gray-300 rounded-md bg-white cursor-pointer flex flex-wrap gap-2 items-center"
-      onClick={() => setShowHotelDropdown(!showHotelDropdown)}
-    >
-      {formData.hotelPreferences.map((pref) => {
-        const option = hotelOptions.find((opt) => opt.value === pref)
-        return (
-          <Badge
-            key={pref}
-            className="bg-orange-500 text-white px-3 py-1 text-xs flex items-center gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {option?.label}
-            <X
-              className="h-3 w-3 cursor-pointer hover:bg-orange-600 rounded-full"
-              onClick={(e) => {
-                e.stopPropagation()
-                removeHotelPreference(pref)
-              }}
-            />
-          </Badge>
-        )
-      })}
-      <ChevronDown className="h-4 w-4 text-gray-400 ml-auto" />
-    </div>
-    {showHotelDropdown && (
-      <div 
-        className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg"
-        ref={dropdownRef}
-      >
-        {hotelOptions.map((option) => (
-          <div
-            key={option.value}
-            className={`p-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${
-              formData.hotelPreferences.includes(option.value) ? "bg-green-50" : ""
-            }`}
-            onClick={() => {
-              toggleHotelPreference(option.value);
-              setShowHotelDropdown(false);
-            }}
-          >
-            <span>{option.label}</span>
-            {formData.hotelPreferences.includes(option.value) && (
-              <Check className="h-4 w-4 text-green-600" />
-            )}
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-  <p className="text-xs text-gray-500 font-poppins mt-2">
-    *This helps us match your comfort expectations and budget
-  </p>
-</div>
+                <div>
+                  <Label className="text-sm font-medium text-black mb-3 block text-lg font-semibold font-poppins">
+                    Hotel preference
+                  </Label>
+                  <div className="relative">
+                    <div
+                      className="w-full min-h-12 p-3 border border-gray-300 rounded-md bg-white cursor-pointer flex flex-wrap gap-2 items-center"
+                      onClick={() => setShowHotelDropdown(!showHotelDropdown)}
+                    >
+                      {formData.hotelPreferences.map((pref) => {
+                        const option = hotelOptions.find((opt) => opt.value === pref)
+                        return (
+                          <Badge
+                            key={pref}
+                            className="bg-orange-500 text-white px-3 py-1 text-xs flex items-center gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {option?.label}
+                            <X
+                              className="h-3 w-3 cursor-pointer hover:bg-orange-600 rounded-full"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                removeHotelPreference(pref)
+                              }}
+                            />
+                          </Badge>
+                        )
+                      })}
+                      <ChevronDown className="h-4 w-4 text-gray-400 ml-auto" />
+                    </div>
+                    {showHotelDropdown && (
+                      <div
+                        className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg"
+                        ref={dropdownRef}
+                      >
+                        {hotelOptions.map((option) => (
+                          <div
+                            key={option.value}
+                            className={`p-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${formData.hotelPreferences.includes(option.value) ? "bg-green-50" : ""
+                              }`}
+                            onClick={() => {
+                              toggleHotelPreference(option.value);
+                              setShowHotelDropdown(false);
+                            }}
+                          >
+                            <span>{option.label}</span>
+                            {formData.hotelPreferences.includes(option.value) && (
+                              <Check className="h-4 w-4 text-green-600" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 font-poppins mt-2">
+                    *This helps us match your comfort expectations and budget
+                  </p>
+                </div>
 
                 {/* Meal and Dietary Preferences */}
                 <div className="grid grid-cols-2 gap-6">
@@ -1416,11 +1427,11 @@ function ItineraryFormContent() {
                         className={cn(
                           "h-10 justify-center text-xs border-2 ",
                           formData.transportPreferences.includes(transport.id)
-                          ? `${transport.color} bg-gray-600 text-white`
- : "bg-white border-white hover:border-gray-900",
+                            ? `${transport.color} bg-gray-600 text-white`
+                            : "bg-white border-white hover:border-gray-900",
                         )}
                         onClick={() => toggleTransportPreference(transport.id)}
-                        
+
                       >
                         {transport.label}
                       </Button>
@@ -1448,7 +1459,7 @@ function ItineraryFormContent() {
 
                 {/* Generate Button */}
                 <div className="pt-2">
-                  <Button 
+                  <Button
                     className="bg-dark-green hover:bg-dark-green text-white py-2 px-6 rounded-lg font-medium transition-colors"
                     onClick={handleGenerateItinerary}
                     disabled={isGenerating || isGenerated}
