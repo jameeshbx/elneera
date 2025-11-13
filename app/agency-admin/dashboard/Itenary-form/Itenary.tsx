@@ -385,7 +385,8 @@ function ItineraryFormContent() {
             const staffRes = await fetch(`/api/auth/agency-add-user/${staffId}`)
             if (staffRes.ok) {
               const staffData = await staffRes.json()
-              setAssignedStaffName(staffData.name || staffId)
+              console.log("staffData", staffData)
+              setAssignedStaffName(staffData.data.name || staffId)
             } else {
               setAssignedStaffName(staffId)
             }
