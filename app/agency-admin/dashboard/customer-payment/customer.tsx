@@ -2,13 +2,14 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { Download, Info, AlertCircle } from "lucide-react"
+import { Download, Info, AlertCircle, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { toast } from "@/hooks/use-toast"
 
 interface PaymentData {
   upiId: string
@@ -37,7 +38,30 @@ interface PaymentHistory {
   amountPaid: number
   pendingAmount: number
   status: string
+  currency?: string
+  transactionId?: string
   invoiceUrl?: string
+  paymentMethod?: string
+}
+
+interface PaymentRecord {
+  id: string
+  paymentDate: string
+  transactionId: string | null
+  amountPaid: number
+  remainingBalance: number
+  paymentStatus: string
+  paymentChannel: string
+  receiptUrl?: string | null
+  receiptFile?: {
+    id: string
+    url: string
+    name: string
+  } | null
+  enquiry?: {
+    currency: string
+  }
+  currency?: string
 }
 
 interface CustomerPayment {
@@ -114,7 +138,8 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
     paymentLinks: [],
     qrCodes: []
   })
-  
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [isDownloadingInvoice, setIsDownloadingInvoice] = useState<string | null>(null)
   const [agencyInfo, setAgencyInfo] = useState<{ name: string; id: string } | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [, setCustomerPayments] = useState<CustomerPayment[]>([])
@@ -197,6 +222,91 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
       setSelectedPaymentMethod("UPI Method")
     }
   }
+ const fetchPayments = async () => {
+    if (!enquiryId && !customerId) return
+
+    try {
+      const params = new URLSearchParams()
+      if (enquiryId) params.append("enquiryId", enquiryId)
+      if (customerId) params.append("customerId", customerId)
+
+      const response = await fetch(`/api/customer-payment?${params.toString()}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (Array.isArray(data.data)) {
+          setPayments(data.data)
+        } else if (Array.isArray(data)) {
+          setPayments(data)
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching payments:', err)
+    }
+  }
+const handleInvoiceDownload = async (paymentId: string) => {
+    if (!paymentId) return
+
+    setIsDownloadingInvoice(paymentId)
+    try {
+      toast({
+        title: 'Downloading Invoice',
+        description: 'Your invoice download has started...',
+      })
+
+      const response = await fetch(`/api/customer-payment/invoice/${paymentId}`)
+
+      if (!response.ok) {
+        throw new Error(`Failed to download invoice: ${response.status} ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
+
+      if (blob.size === 0) {
+        throw new Error('Received empty invoice file')
+      }
+
+      const downloadUrl = window.URL.createObjectURL(blob)
+
+      let fileName = `invoice-${paymentId}.pdf`
+      const contentDisposition = response.headers.get('content-disposition')
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        if (filenameMatch && filenameMatch[1]) {
+          fileName = filenameMatch[1].replace(/['"]/g, '')
+        }
+      }
+
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = fileName
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+
+      setTimeout(() => {
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(downloadUrl)
+      }, 100)
+
+      toast({
+        title: 'Invoice Downloaded',
+        description: 'Invoice PDF has been downloaded successfully.',
+      })
+    } catch (error) {
+      console.error('Error downloading invoice:', error)
+      toast({
+        title: 'Error',
+        description: `Failed to download invoice: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsDownloadingInvoice(null)
+    }
+  }
+
+   useEffect(() => {
+    fetchPayments()
+  }, [enquiryId, customerId])
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -206,94 +316,85 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
     }
   }
 
-  // Fixed handleSubmit function with complete payment details
-  const handleSubmit = async () => {
-    if (!paymentData || !customerEmail) {
-      setError("Missing payment data or customer email")
-      return
-    }
-
-    setIsLoading(true)
-    try {
-      // 1. First save the payment data
-      const paymentPayload = {
-        enquiryId,
-        customerId,
-        paymentMethod: selectedPaymentMethod,
-        selectedBankIndex: paymentData.selectedBankIndex,
-        amountPaid: paymentData.amountPaid,
-        paymentDate: paymentData.paymentDate,
-        paymentStatus: paymentData.paymentStatus,
-        transactionId: paymentData.transactionId,
-        upiId: paymentData.upiId,
-        notes: shareFormData.notes,
-      }
-
-      const paymentResponse = await fetch("/api/auth/customer-payment", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paymentPayload),
-      })
-
-      const paymentResult = await paymentResponse.json()
-
-      if (!paymentResult.success) {
-        throw new Error(paymentResult.error || "Failed to save payment")
-      }
-
-      // 2. Generate payment details HTML
-      const paymentDetailsHTML = generatePaymentDetailsHTML();
-
-      // 3. Then send the email using POST method
-      const emailData = {
-        to: customerEmail,
-        subject: `Payment Update for Itinerary ${paymentData.itineraryReference}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #183F30;">Payment Update</h2>
-            <p>Dear ${customerName},</p>
-            <p>Your payment for itinerary <strong>${paymentData.itineraryReference}</strong> has been updated.</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3 style="color: #183F30; margin-top: 0;">Payment Summary:</h3>
-              <p><strong>Amount Paid:</strong> ${paymentData.amountPaid} ${paymentData.currency}</p>
-              <p><strong>Remaining Balance:</strong> ${paymentData.remainingBalance} ${paymentData.currency}</p>
-              <p><strong>Payment Status:</strong> ${paymentData.paymentStatus}</p>
-            </div>
-
-            ${paymentDetailsHTML}
-            
-            <p style="margin-top: 20px;">Thank you for your business!</p>
-            <p style="color: #666; font-size: 12px;">This is an automated message. Please do not reply to this email.</p>
-          </div>
-        `,
-      }
-
-      const emailResponse = await fetch("/api/auth/customer-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailData),
-      })
-
-      const emailResult = await emailResponse.json()
-
-      if (!emailResult.success) {
-        console.error("Failed to send email:", emailResult.error)
-        setError("Payment saved but email failed to send: " + emailResult.error)
-      } else {
-        console.log("Email sent successfully:", emailResult.messageId)
-        await fetchPaymentData()
-        setError(null)
-        alert("Payment updated and email sent successfully!")
-      }
-
-    } catch (error) {
-      console.error("Error in submit:", error)
-      setError(error instanceof Error ? error.message : "Failed to update payment")
-    } finally {
-      setIsLoading(false)
-    }
+ // Update the handleSubmit function
+const handleSubmit = async () => {
+  if (!paymentData || !customerEmail) {
+    setError("Missing payment data or customer email");
+    return;
   }
+
+  setIsLoading(true);
+  setError(null);
+
+  try {
+    const formData = new FormData();
+    
+    // Add payment data to form data
+    formData.append('customerId', customerId || '');
+    formData.append('enquiryId', enquiryId || '');
+    formData.append('amountPaid', paymentData.amountPaid);
+    formData.append('paymentDate', paymentData.paymentDate);
+    formData.append('paymentChannel', paymentChannel);
+    formData.append('paymentStatus', paymentData.paymentStatus);
+    formData.append('totalCost', paymentData.totalCost || '0');
+    formData.append('currency', paymentData.currency || 'USD');
+    formData.append('customerName', paymentData.customerName || '');
+    formData.append('itineraryReference', paymentData.itineraryReference || `ITN-${Date.now()}`);
+    
+    // Add transaction details based on payment method
+    if (paymentData.transactionId) {
+      formData.append('transactionId', paymentData.transactionId);
+    }
+    
+    if (selectedPaymentMethod === 'Bank Transfer' && paymentData.selectedBank) {
+      formData.append('selectedBank', paymentData.selectedBank);
+    }
+    
+    if (selectedPaymentMethod === 'UPI Method' && paymentData.upiId) {
+      formData.append('upiId', paymentData.upiId);
+    }
+    
+    // Add receipt file if exists
+    if (selectedFile) {
+      formData.append('receipt', selectedFile);
+    }
+
+    // Determine if this is an update or create
+    const url = paymentId 
+      ? `/api/auth/customer-payment?id=${paymentId}`
+      : '/api/auth/customer-payment';
+    
+    const method = paymentId ? 'PUT' : 'POST';
+
+    const response = await fetch(url, {
+      method,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to save payment');
+    }
+
+    const result = await response.json();
+    
+    // Show success message
+    toast({ title: 'Success', description: 'Payment saved successfully!', variant: 'success' });
+    
+    // Refresh payment data
+    setRefreshTrigger(prev => prev + 1);
+    setShowShareModal(false);
+    
+    return result.data;
+
+  } catch (err) {
+    console.error('Error saving payment:', err);
+    setError(err instanceof Error ? err.message : 'Failed to save payment');
+    toast({ title: 'Error', description: err instanceof Error ? err.message : 'Failed to save payment', variant: 'destructive' });
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   // Separate function for just saving payment (without email)
   const handleSavePayment = async () => {
@@ -480,8 +581,8 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
         // Fetch agency payment methods
         await fetchAgencyPaymentMethods(agencyId)
 
-        // 2. Now fetch customer-payment details by agencyId
-        const paymentRes = await fetch(`/api/payments/customer?id=${agencyId}`)
+        // 2. Now fetch customer-payment details by enquiryId
+        const paymentRes = await fetch(`/api/payments/customer?enquiryId=${enquiryId}`)
         const paymentData = await paymentRes.json()
 
         // 3. Set state with paymentData as needed
@@ -495,6 +596,8 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
     fetchData()
   }, [])
 
+
+  
   const fetchPaymentData = async () => {
     try {
       setLoading(true)
@@ -534,9 +637,18 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
       }
 
       // Fetch markup price from commissions table
-      const commissionResponse = await fetch(`/api/commission?enquiryId=${enquiryId}`)
-      const commissionData = await commissionResponse.json()
-      const markupPrice = commissionData?.markupPrice || "0.00"
+      let markupPrice = "0.00";
+      try {
+        const commissionResponse = await fetch(`/api/commission?enquiryId=${encodeURIComponent(enquiryId || "")}`)
+        if (commissionResponse.ok) {
+          const commissionData = await commissionResponse.json()
+          // Support both { markupPrice } and { data: { markupPrice } }
+          const price = commissionData?.markupPrice ?? commissionData?.data?.markupPrice
+          markupPrice = (typeof price === 'number' ? price.toFixed(2) : (price || "0.00")).toString()
+        }
+      } catch (e) {
+        console.warn('Failed to fetch commission markup price, defaulting to 0.00')
+      }
 
       if (!paymentId) {
         // Use the first available bank details if exists
@@ -546,8 +658,8 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
           id: "demo-payment-1",
           customerName: "John Doe",
           itineraryReference: "IT-2025-001",
-          totalCost: quotationAmount,
-          quotationAmount: quotationAmount,
+          totalCost: markupPrice,
+          quotationAmount: markupPrice,
           amountPaid: "0.00",
           paymentDate: new Date().toISOString().split("T")[0],
           remainingBalance: markupPrice,
@@ -556,8 +668,8 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
           paymentLink: "",
           currency: defaultBank?.currency || "USD",
           upiId: "",
-          selectedBank: "",
-          transactionId: "",
+          selectedBank: defaultBank ? `${defaultBank.bankName} - ${defaultBank.accountNumber}` : "",
+          transactionId: "", // Add this required field
         })
         setPaymentHistory([
           {
@@ -592,7 +704,14 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
       if (result.success) {
         // Ensure enquiryId is present in paymentData
         const payment = result.data.payment
-        setPaymentData({ ...payment, enquiryId: payment.enquiryId || payment.enquiry_id })
+        const currentTotal = parseFloat(payment.totalCost || '0')
+        const updatedTotal = currentTotal > 0 ? payment.totalCost : (typeof markupPrice === 'string' ? markupPrice : String(markupPrice))
+        const updatedRemaining = (() => {
+          const paid = parseFloat(payment.amountPaid || '0')
+          const total = parseFloat(updatedTotal || '0')
+          return (total - paid).toFixed(2)
+        })()
+        setPaymentData({ ...payment, totalCost: updatedTotal, remainingBalance: updatedRemaining, enquiryId: payment.enquiryId || payment.enquiry_id })
         setPaymentHistory(result.data.history)
         setReminders(result.data.reminders)
       } else {
@@ -822,6 +941,7 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
         )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
+
           {/* Left Column - Payment Overview */}
           <div className="bg-white rounded-lg shadow-sm">
             <div className="p-4 sm:p-6">
@@ -1190,10 +1310,12 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
                       {isLoading ? "SAVING..." : "SAVE ONLY"}
                     </Button>
                   </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+
+            
 
           {/* Right Column - Share Payment Link & Send Reminder */}
           <div className="space-y-4 sm:space-y-6">
@@ -1401,6 +1523,9 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
                         Paid on
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Transaction ID
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Amount paid
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1410,49 +1535,61 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
                         Status
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Payment Channel
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Invoice
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paymentHistory.length > 0 ? (
-                      paymentHistory.map((payment) => (
+                    {payments.length > 0 ? (
+                      payments.map((payment) => (
                         <tr key={payment.id}>
-                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">{payment.paidDate}</td>
                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {payment.amountPaid.toFixed(2)} {paymentData.currency}
+                            {new Date(payment.paymentDate).toLocaleDateString()}
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {payment.pendingAmount.toFixed(2)} {paymentData.currency}
+                            {payment.transactionId || '-'}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {payment.amountPaid} {payment.enquiry?.currency || payment.currency || paymentData?.currency}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {payment.remainingBalance} {payment.enquiry?.currency || payment.currency || paymentData?.currency}
                           </td>
                           <td className="px-4 py-4 whitespace-nowrap">
                             <span
                               className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                payment.status === "PAID" ? "bg-green-500 text-white" : "bg-yellow-500 text-white"
+                                payment.paymentStatus === 'PAID'
+                                  ? 'bg-green-500 text-white'
+                                  : payment.paymentStatus === 'PARTIAL'
+                                  ? 'bg-yellow-500 text-white'
+                                  : 'bg-gray-400 text-white'
                               }`}
                             >
-                              {payment.status}
+                              {payment.paymentStatus}
                             </span>
                           </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {payment.paymentChannel}
+                          </td>
                           <td className="px-4 py-4 whitespace-nowrap">
-                            {payment.invoiceUrl ? (
-                              <a
-                                href={payment.invoiceUrl}
-                                download
-                                className="flex items-center text-sm text-white bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded transition-colors"
-                              >
-                                <Download className="w-4 h-4 mr-1" />
-                                Download
-                              </a>
-                            ) : (
-                              <span className="text-sm text-gray-400">N/A</span>
-                            )}
+                            <button
+                              onClick={() => handleInvoiceDownload(payment.id)}
+                              disabled={isDownloadingInvoice === payment.id}
+                              className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Download Invoice"
+                            >
+                              <Download className="w-4 h-4 mr-1" />
+                              {isDownloadingInvoice === payment.id ? 'Downloading...' : 'Download'}
+                            </button>
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                           No payment history available
                         </td>
                       </tr>
@@ -1463,50 +1600,59 @@ const PaymentOverviewForm: React.FC<{ paymentId?: string; enquiryId?: string; cu
 
               {/* Mobile Card View */}
               <div className="block sm:hidden p-4">
-                {paymentHistory.length > 0 ? (
-                  paymentHistory.map((payment) => (
+                {payments.length > 0 ? (
+                  payments.map((payment) => (
                     <div key={payment.id} className="bg-gray-50 rounded-lg p-4 border mb-4">
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-gray-600 font-medium">Paid on:</span>
-                          <span className="text-gray-900">{payment.paidDate}</span>
+                          <span className="text-gray-900">{new Date(payment.paymentDate).toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 font-medium">Transaction ID:</span>
+                          <span className="text-gray-900">{payment.transactionId || '-'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600 font-medium">Amount paid:</span>
                           <span className="text-gray-900">
-                            {payment.amountPaid.toFixed(2)} {paymentData.currency}
+                            {payment.amountPaid} {payment.enquiry?.currency || payment.currency || paymentData?.currency}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600 font-medium">Pending:</span>
                           <span className="text-gray-900">
-                            {payment.pendingAmount.toFixed(2)} {paymentData.currency}
+                            {payment.remainingBalance} {payment.enquiry?.currency || payment.currency || paymentData?.currency}
                           </span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-gray-600 font-medium">Status:</span>
                           <span
                             className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              payment.status === "PAID" ? "bg-green-500 text-white" : "bg-yellow-500 text-white"
+                              payment.paymentStatus === 'PAID'
+                                ? 'bg-green-500 text-white'
+                                : payment.paymentStatus === 'PARTIAL'
+                                ? 'bg-yellow-500 text-white'
+                                : 'bg-gray-400 text-white'
                             }`}
                           >
-                            {payment.status}
+                            {payment.paymentStatus}
                           </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600 font-medium">Channel:</span>
+                          <span className="text-gray-900 text-xs">{payment.paymentChannel}</span>
                         </div>
                         <div className="flex justify-between items-center pt-2 border-t">
                           <span className="text-gray-600 font-medium">Invoice:</span>
-                          {payment.invoiceUrl ? (
-                            <a
-                              href={payment.invoiceUrl}
-                              download
-                              className="flex items-center text-sm text-white bg-gray-600 px-2 py-1 rounded"
-                            >
-                              <Download className="w-3 h-3 mr-1" />
-                              Download
-                            </a>
-                          ) : (
-                            <span className="text-sm text-gray-400">N/A</span>
-                          )}
+                          <button
+                            onClick={() => handleInvoiceDownload(payment.id)}
+                            disabled={isDownloadingInvoice === payment.id}
+                            className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Download Invoice"
+                          >
+                            <Download className="w-4 h-4 mr-1" />
+                            {isDownloadingInvoice === payment.id ? 'Downloading...' : 'Download'}
+                          </button>
                         </div>
                       </div>
                     </div>
