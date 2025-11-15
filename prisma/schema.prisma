@@ -19,6 +19,7 @@ model File {
   agencyLogo                AgencyForm?          @relation("AgencyFormLogoMain")
   agencyLogoAgency          Agency?              @relation("AgencyLogo")
   dmcPaymentReceipt         DmcPayment?          @relation("DmcPaymentReceipt")
+  customerPaymentReceipt    CustomerPayment?     @relation("CustomerPaymentReceipt")
   managerProfile            Manager?             @relation("ManagerProfile")
   userProfile               UserForm?            @relation("UserProfileImage")
   userProfileImage          User?                @relation("UserProfileImage")
@@ -79,7 +80,6 @@ model Agency {
   subscriptions    Subscription[]
   users            User[]
   paymentMethods   AgencyPaymentMethod[]
-  customerPayments CustomerPayment[]
   forms            AgencyForm[]
   enquiries        enquiries[]
 
@@ -373,6 +373,7 @@ model enquiries {
   feedback           Feedback?
   commissions        Commission[]
   dmcPayments        DmcPayment[]
+  customerPayments   CustomerPayment[]
   sharedDMCs         SharedDMC[]         @relation("EnquirySharedDMCs")
 
   @@index([status])
@@ -480,7 +481,6 @@ model itineraries {
   sentItineraries            sent_itineraries[]
   agencyCancellationPolicy   AgencyCancellationPolicy? @relation(fields: [agencyCancellationPolicyId], references: [id])
   sharedCustomerPdfs         SharedCustomerPdf[]
-  customerPayment            CustomerPayment[]
   pdfVersions                PDFVersion[]
   BookingProgress            BookingProgress[]
   BookingFeedback            BookingFeedback[]
@@ -916,48 +916,34 @@ model DmcPayment {
 }
 
 model CustomerPayment {
-  id                 String           @id @default(cuid())
-  customerName       String
-  email              String
+  id                 String        @id @default(cuid())
+  enquiryId          String
   itineraryReference String
-  transactionId      String
   totalCost          Float
   amountPaid         Float
   paymentDate        DateTime
   remainingBalance   Float
-  paymentStatus      PaymentStatus
-  shareMethod        ShareMethod
-  paymentLink        String?
-  currency           String           @default("USD")
-  agencyId           String
-  itineraryId        String
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  agency             Agency           @relation(fields: [agencyId], references: [id])
-  itinerary          itineraries      @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  paymentHistory     PaymentHistory[]
+  paymentStatus      PaymentStatus @default(PENDING)
+  paymentChannel     String
+  transactionId      String?
+  selectedBank       String?
+  upiId              String?
+  receiptUrl         String?
+  receiptFileId      String?       @unique
+  invoice            Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  
+  // Relations
+  enquiry            enquiries     @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  receiptFile        File?         @relation("CustomerPaymentReceipt", fields: [receiptFileId], references: [id])
 
-  @@index([agencyId])
-  @@index([itineraryId])
+  @@index([enquiryId])
+  @@index([receiptFileId])
   @@map("customer_payments")
 }
 
-model PaymentHistory {
-  id                String            @id @default(cuid())
-  paymentMethod     PaymentMethodType
-  paidDate          DateTime
-  amountPaid        Float
-  pendingAmount     Float
-  status            PaymentStatus
-  invoiceUrl        String?
-  customerPaymentId String
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  customerPayment   CustomerPayment   @relation(fields: [customerPaymentId], references: [id], onDelete: Cascade)
 
-  @@index([customerPaymentId])
-  @@map("payment_histories")
-}
 
 enum CustomerPaymentstatus {
   PENDING

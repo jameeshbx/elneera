@@ -211,62 +211,11 @@ export default function AddUsers() {
       
       console.log(`✅ Mapped ${mappedUsers.length} users`);
       
-      if (data.success && Array.isArray(data.data)) {
-        interface ApiUser {
-        id: string;
-        name: string;
-        phoneNumber: string;
-        phoneExtension: string;
-        email: string;
-        username?: string;
-        userType: 'TEAM_LEAD' | 'EXECUTIVE' | 'MANAGER' | 'TL';
-        password: string;
-        maskedPassword: string;
-        status: 'ACTIVE' | 'INACTIVE';
-        createdAt: string;
-        profileImage?: {
-          name: string;
-          url: string;
-        } | null;
-      }
-
-      const mappedUsers = data.data.map((user: ApiUser) => ({
-          id: user.id,
-          userId: `UID${user.id.slice(0, 4).toUpperCase()}`,
-          name: user.name,
-          phoneNumber: user.phoneNumber,
-          phoneExtension: user.phoneExtension,
-          email: user.email,
-          username: user.username || user.email,
-          userType: user.userType || 'TEAM_LEAD',
-          password: user.password,
-          maskedPassword: "•••••••",
-          status: user.status || 'ACTIVE',
-          createdAt: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString(),
-          profileImage: user.profileImage ? {
-            name: user.profileImage.name,
-            url: user.profileImage.url
-          } : null
-        }));
-        
-        console.log('Mapped users:', mappedUsers);
-        
-        setUsers(mappedUsers);
-        setDisplayedUsers(mappedUsers.slice(0, itemsPerPage));
-      }
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch users",
-        variant: "destructive",
-      });
       setUsers(mappedUsers);
-      setCurrentPage(1);
       setDisplayedUsers(mappedUsers.slice(0, itemsPerPage));
     }
   } catch (error) {
-    console.error('❌ Error fetching users:', error);
+    console.error('Error fetching users:', error);
     toast({
       title: "Error",
       description: "Failed to fetch users",
