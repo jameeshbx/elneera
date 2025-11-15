@@ -637,31 +637,40 @@ const handleSubmit = async () => {
       }
 
       // Fetch markup price from commissions table
-      const commissionResponse = await fetch(`/api/commission?enquiryId=${enquiryId}`)
-      const commissionData = await commissionResponse.json()
-      const markupPrice = commissionData?.markupPrice || "0.00"
+      let markupPrice = "0.00";
+      try {
+        const commissionResponse = await fetch(`/api/commission?enquiryId=${encodeURIComponent(enquiryId || "")}`)
+        if (commissionResponse.ok) {
+          const commissionData = await commissionResponse.json()
+          // Support both { markupPrice } and { data: { markupPrice } }
+          const price = commissionData?.markupPrice ?? commissionData?.data?.markupPrice
+          markupPrice = (typeof price === 'number' ? price.toFixed(2) : (price || "0.00")).toString()
+        }
+      } catch (e) {
+        console.warn('Failed to fetch commission markup price, defaulting to 0.00')
+      }
 
       if (!paymentId) {
         // Use the first available bank details if exists
         const defaultBank = paymentMethodsResult.data?.bankAccounts?.[0]
 
         setPaymentData({
-  id: "demo-payment-1",
-  customerName: "John Doe",
-  itineraryReference: "IT-2025-001",
-  totalCost: markupPrice,
-  quotationAmount: markupPrice,
-  amountPaid: "0.00",
-  paymentDate: new Date().toISOString().split("T")[0],
-  remainingBalance: markupPrice,
-  paymentStatus: "Pending",
-  shareMethod: "email",
-  paymentLink: "",
-  currency: defaultBank?.currency || "USD",
-  upiId: "",
-  selectedBank: defaultBank ? `${defaultBank.bankName} - ${defaultBank.accountNumber}` : "",
-  transactionId: "", // Add this required field
-})
+          id: "demo-payment-1",
+          customerName: "John Doe",
+          itineraryReference: "IT-2025-001",
+          totalCost: markupPrice,
+          quotationAmount: markupPrice,
+          amountPaid: "0.00",
+          paymentDate: new Date().toISOString().split("T")[0],
+          remainingBalance: markupPrice,
+          paymentStatus: "Pending",
+          shareMethod: "email",
+          paymentLink: "",
+          currency: defaultBank?.currency || "USD",
+          upiId: "",
+          selectedBank: defaultBank ? `${defaultBank.bankName} - ${defaultBank.accountNumber}` : "",
+          transactionId: "", // Add this required field
+        })
         setPaymentHistory([
           {
             id: "1",
@@ -695,7 +704,14 @@ const handleSubmit = async () => {
       if (result.success) {
         // Ensure enquiryId is present in paymentData
         const payment = result.data.payment
-        setPaymentData({ ...payment, enquiryId: payment.enquiryId || payment.enquiry_id })
+        const currentTotal = parseFloat(payment.totalCost || '0')
+        const updatedTotal = currentTotal > 0 ? payment.totalCost : (typeof markupPrice === 'string' ? markupPrice : String(markupPrice))
+        const updatedRemaining = (() => {
+          const paid = parseFloat(payment.amountPaid || '0')
+          const total = parseFloat(updatedTotal || '0')
+          return (total - paid).toFixed(2)
+        })()
+        setPaymentData({ ...payment, totalCost: updatedTotal, remainingBalance: updatedRemaining, enquiryId: payment.enquiryId || payment.enquiry_id })
         setPaymentHistory(result.data.history)
         setReminders(result.data.reminders)
       } else {
